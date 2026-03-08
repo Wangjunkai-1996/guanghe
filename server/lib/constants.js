@@ -35,6 +35,7 @@ function getAppPaths(rootDir = process.cwd()) {
     rootDir,
     dataDir: path.resolve(rootDir, 'data'),
     accountsFile: path.resolve(rootDir, 'data', 'accounts.json'),
+    tasksFile: path.resolve(rootDir, 'data', 'tasks.json'),
     profileRootDir: path.resolve(rootDir, '.cache', 'profiles'),
     artifactsRootDir: path.resolve(rootDir, 'artifacts', 'web'),
     distDir: path.resolve(rootDir, 'dist')

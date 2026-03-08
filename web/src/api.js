@@ -31,5 +31,10 @@ export const api = {
   createLoginSession: () => request('/api/accounts/login-sessions', { method: 'POST' }),
   getLoginSession: (loginSessionId) => request(`/api/accounts/login-sessions/${loginSessionId}`, { method: 'GET' }),
   deleteAccount: (accountId) => request(`/api/accounts/${accountId}`, { method: 'DELETE' }),
+  listTasks: () => request('/api/tasks', { method: 'GET' }),
+  createTaskBatch: (tasks) => request('/api/tasks/batch', { method: 'POST', body: JSON.stringify({ tasks }) }),
+  refreshTaskLogin: (taskId) => request(`/api/tasks/${taskId}/refresh-login`, { method: 'POST' }),
+  retryTaskQuery: (taskId) => request(`/api/tasks/${taskId}/retry-query`, { method: 'POST' }),
+  deleteTask: (taskId) => request(`/api/tasks/${taskId}`, { method: 'DELETE' }),
   queryContent: ({ accountId, contentId }) => request('/api/queries', { method: 'POST', body: JSON.stringify({ accountId, contentId }) })
 }

@@ -76,6 +76,18 @@ class GuangheLoginService {
     this.accountStore.remove(accountId)
   }
 
+  async discardLoginSession(loginSessionId) {
+    const session = this.sessions.get(loginSessionId)
+    if (!session) return
+
+    if (session.status !== LOGIN_SESSION_STATUS.LOGGED_IN) {
+      await this.browserManager.closeLoginSession(loginSessionId)
+      removeDir(session.profileDir)
+    }
+
+    this.sessions.delete(loginSessionId)
+  }
+
   startPolling(loginSessionId, page) {
     const loop = async () => {
       const session = this.sessions.get(loginSessionId)
