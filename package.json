@@ -1,0 +1,33 @@
+{
+  "name": "guanghe-automation",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Guanghe multi-account web tool with Playwright automation and React UI.",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "node server/index.js",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "vitest run",
+    "guanghe:fetch": "node scripts/guanghe-fetch.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "playwright-core": "^1.52.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "jsdom": "^26.0.0",
+    "supertest": "^7.1.1",
+    "vite": "^5.4.14",
+    "vitest": "^3.1.1"
+  }
+}
