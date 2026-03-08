@@ -5,9 +5,13 @@
 - 后端：`Node.js + Express + Playwright`
 - 用途：扫码登录多个光合账号，按账号查询指定内容 ID 的近 30 日固定 5 项指标，并返回字段值、原始截图、汇总截图
 
+## Codex 接手说明
+
+- 面向另一台电脑上的 Codex 的快速交接文档：`docs/codex-onboarding.md`
+
 ## 当前能力
 
-- 工具口令登录，使用 `HTTP-only session cookie` 保护页面
+- 默认关闭工具口令，本地可直接进入；如需保护页面，可开启 `TOOL_AUTH_ENABLED=true` 并使用 `HTTP-only session cookie`
 - 多个光合账号长期保存登录态，每个账号独立浏览器 profile
 - 支持两种工作模式：
   - `批量任务`：一次创建多个二维码任务，扫码成功后自动查询并回填结果
@@ -60,8 +64,11 @@
 ## 环境变量
 
 必填建议：
-- `TOOL_PASSWORD`：工具页面访问口令
 - `SESSION_SECRET`：Session 签名密钥
+
+按需开启：
+- `TOOL_AUTH_ENABLED`：设为 `true` 后启用工具口令登录
+- `TOOL_PASSWORD`：工具页面访问口令，仅在启用口令后生效
 
 可选：
 - `HOST`：默认 `0.0.0.0`
@@ -82,8 +89,10 @@
 示例：
 
 ```bash
-export TOOL_PASSWORD='your-password'
 export SESSION_SECRET='your-session-secret'
+# 如需开启口令，再额外设置：
+# export TOOL_AUTH_ENABLED='true'
+# export TOOL_PASSWORD='your-password'
 export PORT=3001
 export MAX_ACTIVE_LOGIN_SESSIONS=5
 export MAX_CONCURRENT_QUERIES=2
