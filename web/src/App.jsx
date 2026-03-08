@@ -16,7 +16,7 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
-  const [workspaceTab, setWorkspaceTab] = useState('tasks')
+  const [isManualWorkspaceOpen, setIsManualWorkspaceOpen] = useState(false)
 
   const [accounts, setAccounts] = useState([])
   const [accountsLoading, setAccountsLoading] = useState(false)
@@ -180,7 +180,7 @@ export default function App() {
   }
 
   const activeLoginBanner = useMemo(() => {
-    if (!loginSession || isLoginDrawerOpen || workspaceTab !== 'accounts') return null
+    if (!loginSession || isLoginDrawerOpen || !isManualWorkspaceOpen) return null
     if (loginSession.status === 'LOGGED_IN') return null
     if (LOGIN_SESSION_PENDING_STATUSES.includes(loginSession.status)) {
       return {
@@ -207,7 +207,13 @@ export default function App() {
       }
     }
     return null
-  }, [handleCreateLoginSession, isLoginDrawerOpen, loginSession, workspaceTab])
+  }, [handleCreateLoginSession, isLoginDrawerOpen, isManualWorkspaceOpen, loginSession])
+
+  const manualEntryStatus = useMemo(() => {
+    if (!loginSession) return null
+    if (loginSession.status === 'LOGGED_IN') return null
+    return formatLoginStatus(loginSession.status)
+  }, [loginSession])
 
   if (booting) {
     return <div className="page-shell centered">加载中...</div>
@@ -226,7 +232,7 @@ export default function App() {
       <header className="workspace-header panel">
         <div className="workspace-header-copy">
           <h1>光合平台查询工作台</h1>
-          <p>支持批量二维码任务和单账号手动查询两种模式，适合微信群批量扫码收数。</p>
+          <p>优先围绕批量发码和任务跟进设计；手动账号查询保留为次级入口，用于补查和校对。</p>
         </div>
         <div className="workspace-header-stats">
           <div className="header-stat-card">
@@ -242,58 +248,66 @@ export default function App() {
         </div>
       </header>
 
-      <div className="workspace-tabs">
-        <button className={`workspace-tab-btn ${workspaceTab === 'tasks' ? 'active' : ''}`} type="button" onClick={() => setWorkspaceTab('tasks')}>
-          批量任务
-        </button>
-        <button className={`workspace-tab-btn ${workspaceTab === 'accounts' ? 'active' : ''}`} type="button" onClick={() => setWorkspaceTab('accounts')}>
-          账号查询
-        </button>
-      </div>
-
-      {workspaceTab === 'tasks' ? (
-        <BatchTasksWorkspace />
-      ) : (
-        <div className="workspace-layout">
-          <aside className="workspace-sidebar">
-            <AccountList
-              accounts={accounts}
-              selectedAccountId={selectedAccountId}
-              loading={accountsLoading}
-              onSelect={setSelectedAccountId}
-              onCreate={handleCreateLoginSession}
-              onDelete={handleDeleteAccount}
-            />
-          </aside>
-
-          <main className="workspace-main stack-lg">
-            {activeLoginBanner ? (
-              <div className={`status-banner tone-${activeLoginBanner.tone}`}>
-                <div>
-                  <strong>{activeLoginBanner.title}</strong>
-                </div>
-                <button className="secondary-btn" type="button" onClick={activeLoginBanner.action}>
-                  {activeLoginBanner.actionLabel}
-                </button>
-              </div>
-            ) : null}
-
-            <QueryForm
-              activeAccount={activeAccount}
-              loading={queryLoading}
-              onSubmit={handleQuery}
-            />
-
-            <ResultPanel
-              result={queryResult}
-              error={queryError}
-              loading={queryLoading}
-              activeAccount={activeAccount}
-              onRetryLogin={handleCreateLoginSession}
-            />
-          </main>
+      <section className="panel manual-entry-strip">
+        <div className="manual-entry-bar">
+          <div className="compact-panel-header">
+            <h2>账号查询（次级入口）</h2>
+            <p>用于临时补查单个账号、手动扫码登录或校对批量任务结果，不作为默认主工作区。</p>
+          </div>
+          <div className="manual-entry-actions">
+            {manualEntryStatus ? <span className="status-pill status-info">{manualEntryStatus}</span> : null}
+            <button className="secondary-btn" type="button" onClick={() => setIsManualWorkspaceOpen((current) => !current)}>
+              {isManualWorkspaceOpen ? '收起账号查询' : '展开账号查询'}
+            </button>
+          </div>
         </div>
-      )}
+      </section>
+
+      {isManualWorkspaceOpen ? (
+        <section className="panel manual-query-shell stack-lg">
+          {activeLoginBanner ? (
+            <div className={`status-banner tone-${activeLoginBanner.tone}`}>
+              <div>
+                <strong>{activeLoginBanner.title}</strong>
+              </div>
+              <button className="secondary-btn" type="button" onClick={activeLoginBanner.action}>
+                {activeLoginBanner.actionLabel}
+              </button>
+            </div>
+          ) : null}
+
+          <div className="workspace-layout manual-workspace-layout">
+            <aside className="workspace-sidebar">
+              <AccountList
+                accounts={accounts}
+                selectedAccountId={selectedAccountId}
+                loading={accountsLoading}
+                onSelect={setSelectedAccountId}
+                onCreate={handleCreateLoginSession}
+                onDelete={handleDeleteAccount}
+              />
+            </aside>
+
+            <main className="workspace-main stack-lg">
+              <QueryForm
+                activeAccount={activeAccount}
+                loading={queryLoading}
+                onSubmit={handleQuery}
+              />
+
+              <ResultPanel
+                result={queryResult}
+                error={queryError}
+                loading={queryLoading}
+                activeAccount={activeAccount}
+                onRetryLogin={handleCreateLoginSession}
+              />
+            </main>
+          </div>
+        </section>
+      ) : null}
+
+      <BatchTasksWorkspace />
 
       <LoginSessionPanel
         loginSession={loginSession}

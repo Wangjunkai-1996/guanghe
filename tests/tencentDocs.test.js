@@ -205,6 +205,7 @@ function createAppWithService(options = {}) {
   const app = createApp({
     config: {
       sessionSecret: 'test-secret',
+      toolAuthEnabled: true,
       toolPassword: 'pass123',
       secureCookie: false,
       artifactsRootDir,

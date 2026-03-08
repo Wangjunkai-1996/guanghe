@@ -7,6 +7,7 @@ const { AppError } = require('../server/lib/errors')
 describe('app auth flow', () => {
   const config = {
     sessionSecret: 'test-secret',
+    toolAuthEnabled: true,
     toolPassword: 'pass123',
     secureCookie: false,
     artifactsRootDir: process.cwd(),
@@ -84,6 +85,24 @@ describe('app auth flow', () => {
     expect(response.status).toBe(200)
     expect(response.body.accounts).toHaveLength(1)
     expect(response.body.accounts[0].nickname).toBe('测试账号')
+  })
+
+
+  test('allows access without auth when tool auth disabled', async () => {
+    const app = createApp({
+      config: { ...config, toolAuthEnabled: false },
+      loginService,
+      taskService,
+      queryService: { queryByContentId: async () => ({ ok: true }) }
+    })
+
+    const meResponse = await request(app).get('/api/auth/me')
+    expect(meResponse.status).toBe(200)
+    expect(meResponse.body.authenticated).toBe(true)
+
+    const response = await request(app).get('/api/accounts')
+    expect(response.status).toBe(200)
+    expect(response.body.accounts).toHaveLength(1)
   })
 
   test('blocks protected routes without session', async () => {

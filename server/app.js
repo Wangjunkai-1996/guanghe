@@ -24,11 +24,16 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
   })
 
   app.get('/api/auth/me', (req, res) => {
-    res.json({ authenticated: Boolean(req.session.authenticated) })
+    res.json({ authenticated: config.toolAuthEnabled ? Boolean(req.session.authenticated) : true })
   })
 
   app.post('/api/auth/login', (req, res, next) => {
     try {
+      if (!config.toolAuthEnabled) {
+        req.session.authenticated = true
+        return res.json({ ok: true, skipped: true })
+      }
+
       const { password } = req.body || {}
       if (!password || password !== config.toolPassword) {
         throw new AppError(401, 'AUTH_INVALID', '口令不正确')
@@ -42,6 +47,9 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
 
   app.use('/api', (req, _res, next) => {
     if (req.path === '/health' || req.path === '/auth/login' || req.path === '/auth/me') {
+      return next()
+    }
+    if (!config.toolAuthEnabled) {
       return next()
     }
     if (!req.session.authenticated) {
