@@ -1,7 +1,6 @@
 const path = require('path')
 const { chromium } = require('playwright-core')
 const { ensureDir } = require('../../lib/files')
-const { BASE_TEMPLATE_COLUMNS } = require('./mapping')
 const { createTencentDocsError, ERROR_CODES } = require('./errors')
 
 class TencentDocsBrowserAdapter {
@@ -37,13 +36,13 @@ class TencentDocsBrowserAdapter {
 
       await assertLoggedIn(page)
       await ensureSheetSelected(page, target.sheetName)
-      await assertTemplateVisible(page, columns)
+      await assertTemplateVisible(page, columns, this.platform)
 
       let writeSummary
       if (mode === 'upsert') {
         const found = await findExistingRow(page, syncKey, this.platform)
         writeSummary = found
-          ? await overwriteCurrentRow(page, row, columns)
+          ? await overwriteCurrentRow(page, row, columns, this.platform)
           : await appendRow(page, row, columns, this.platform)
       } else {
         writeSummary = await appendRow(page, row, columns, this.platform)
@@ -89,19 +88,17 @@ async function ensureSheetSelected(page, sheetName) {
   await page.waitForTimeout(800)
 }
 
-async function assertTemplateVisible(page, columns) {
-  await page.keyboard.press('Control+Home').catch(() => {})
-  await page.waitForTimeout(500)
+async function assertTemplateVisible(page, columns, platform) {
+  await moveToSheetStart(page, platform)
   const bodyText = await readBodyText(page)
-  const expectedColumns = columns.filter((column) => BASE_TEMPLATE_COLUMNS.includes(column))
-  const missingColumns = expectedColumns.filter((column) => !bodyText.includes(column))
+  const missingColumns = getRequiredTemplateColumns(columns).filter((column) => !bodyText.includes(column))
   if (missingColumns.length > 0) {
     throw createTencentDocsError(400, ERROR_CODES.TEMPLATE_INVALID, '腾讯文档模板校验失败', { missingColumns })
   }
 }
 
 async function findExistingRow(page, syncKey, platform) {
-  const shortcutKey = platform === 'darwin' ? 'Meta' : 'Control'
+  const shortcutKey = getShortcutKey(platform)
   await page.keyboard.press(`${shortcutKey}+f`)
   await page.waitForTimeout(300)
   await page.keyboard.type(syncKey)
@@ -113,9 +110,8 @@ async function findExistingRow(page, syncKey, platform) {
   return bodyText.includes(syncKey)
 }
 
-async function overwriteCurrentRow(page, row, columns) {
-  await page.keyboard.press('Home').catch(() => {})
-  await page.waitForTimeout(200)
+async function overwriteCurrentRow(page, row, columns, platform) {
+  await moveToRowStart(page, platform)
   await fillRow(page, row, columns)
   return {
     action: 'UPDATED',
@@ -124,11 +120,8 @@ async function overwriteCurrentRow(page, row, columns) {
 }
 
 async function appendRow(page, row, columns, platform) {
-  const shortcutKey = platform === 'darwin' ? 'Meta' : 'Control'
-  await page.keyboard.press(`${shortcutKey}+End`).catch(() => {})
-  await page.waitForTimeout(500)
-  await page.keyboard.press('Home').catch(() => {})
-  await page.waitForTimeout(200)
+  await moveToSheetEnd(page, platform)
+  await moveToRowStart(page, platform)
   await page.keyboard.press('ArrowDown')
   await page.waitForTimeout(200)
   await fillRow(page, row, columns)
@@ -148,6 +141,53 @@ async function fillRow(page, row, columns) {
       await page.waitForTimeout(50)
     }
   }
+}
+
+async function moveToSheetStart(page, platform) {
+  const shortcutKey = getShortcutKey(platform)
+  const candidates = platform === 'darwin'
+    ? [`${shortcutKey}+ArrowUp`, `${shortcutKey}+Home`, 'Home']
+    : [`${shortcutKey}+Home`, 'Home']
+
+  await pressFirstAvailable(page, candidates)
+  await page.waitForTimeout(500)
+}
+
+async function moveToSheetEnd(page, platform) {
+  const shortcutKey = getShortcutKey(platform)
+  const candidates = platform === 'darwin'
+    ? [`${shortcutKey}+ArrowDown`, `${shortcutKey}+End`, 'End']
+    : [`${shortcutKey}+End`, 'End']
+
+  await pressFirstAvailable(page, candidates)
+  await page.waitForTimeout(500)
+}
+
+async function moveToRowStart(page, platform) {
+  const shortcutKey = getShortcutKey(platform)
+  const candidates = platform === 'darwin'
+    ? [`${shortcutKey}+ArrowLeft`, 'Home']
+    : ['Home']
+
+  await pressFirstAvailable(page, candidates)
+  await page.waitForTimeout(200)
+}
+
+async function pressFirstAvailable(page, candidates) {
+  for (const candidate of candidates) {
+    const succeeded = await page.keyboard.press(candidate)
+      .then(() => true)
+      .catch(() => false)
+    if (succeeded) return
+  }
+}
+
+function getRequiredTemplateColumns(columns) {
+  return [...new Set(columns)]
+}
+
+function getShortcutKey(platform) {
+  return platform === 'darwin' ? 'Meta' : 'Control'
 }
 
 async function readBodyText(page) {

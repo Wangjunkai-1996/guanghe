@@ -43,8 +43,37 @@ describe('tencent docs integration', () => {
     expect(response.body.row.原图链接).toBeUndefined()
   })
 
+  test('preview includes absolute artifact links when TOOL_BASE_URL is configured', async () => {
+    const { app, artifactsRootDir } = createTestContext({ toolBaseUrl: 'https://tool.example.com' })
+    const agent = await loginAgent(app)
+    const resultUrl = writeResultPayload(artifactsRootDir)
+
+    const response = await agent
+      .post('/api/tencent-docs/jobs/preview')
+      .send({ source: { resultUrl } })
+
+    expect(response.status).toBe(200)
+    expect(response.body.omittedColumns).toEqual([])
+    expect(response.body.row.原图链接).toBe('https://tool.example.com/api/artifacts/query-1/04-results.png')
+    expect(response.body.row.汇总图链接).toBe('https://tool.example.com/api/artifacts/query-1/05-summary-strip.png')
+    expect(response.body.row.结果JSON).toBe('https://tool.example.com/api/artifacts/query-1/results.json')
+  })
+
   test('jobs fail fast when sync is not enabled', async () => {
     const { app, artifactsRootDir } = createTestContext({ enabled: false })
+    const agent = await loginAgent(app)
+    const resultUrl = writeResultPayload(artifactsRootDir)
+
+    const response = await agent
+      .post('/api/tencent-docs/jobs')
+      .send({ source: { resultUrl } })
+
+    expect(response.status).toBe(400)
+    expect(response.body.error.code).toBe('TENCENT_DOCS_NOT_CONFIGURED')
+  })
+
+  test('jobs fail when no default target is configured and request omits target', async () => {
+    const { app, artifactsRootDir } = createTestContext({ docUrl: '', sheetName: '' })
     const agent = await loginAgent(app)
     const resultUrl = writeResultPayload(artifactsRootDir)
 
