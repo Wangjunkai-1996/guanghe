@@ -9,7 +9,10 @@
 
 - 工具口令登录，使用 `HTTP-only session cookie` 保护页面
 - 多个光合账号长期保存登录态，每个账号独立浏览器 profile
-- 同一账号查询串行执行，不同账号允许并发查询
+- 支持两种工作模式：
+  - `批量任务`：一次创建多个二维码任务，扫码成功后自动查询并回填结果
+  - `账号查询`：手动选择已保存账号并发起单次查询
+- 同一账号查询串行执行，不同批量任务支持受控并发
 - 页面内发起扫码登录，并展示登录后的账号昵称/头像
 - 固定查询 `30日` 和以下 5 个指标：
   - `内容查看次数`
@@ -24,11 +27,32 @@
   - `network-log.json`
 - 当接口未返回目标 `contentId` 时，明确报错“近 30 日无可查数据”，避免误读页面其他数字
 
+## 批量任务模式
+
+- 批量输入格式支持：
+  - `备注,内容ID`
+  - `备注<TAB>内容ID`
+- 每条任务都会生成独立二维码，并跟踪：
+  - 登录状态：`等待扫码 / 等待手机确认 / 登录成功 / 二维码已过期 / 登录失败 / 任务中断`
+  - 查询状态：`待查询 / 排队中 / 查询中 / 查询成功 / 无可查数据 / 查询失败`
+- 登录成功后自动发起查询，并在任务卡片中直接展示：
+  - 5 项指标
+  - 汇总截图 / 原始截图
+  - 结果 JSON
+  - 网络日志
+- 支持对单条任务执行：
+  - 下载二维码
+  - 复制二维码图片
+  - 刷新二维码
+  - 重试查询
+  - 删除任务
+
 ## 目录结构
 
-- `/server`：后端接口、登录管理、查询服务、截图服务
+- `/server`：后端接口、登录管理、查询服务、任务编排服务、截图服务
 - `/web`：前端单页应用
 - `/data/accounts.json`：已保存账号元数据
+- `/data/tasks.json`：批量任务持久化数据
 - `/.cache/profiles`：Playwright 持久化登录态
 - `/artifacts/web`：查询截图和结果文件
 - `/scripts/guanghe-fetch.js`：旧版 CLI 脚本，保留作调试参考
@@ -44,6 +68,8 @@
 - `PORT`：默认 `3001`
 - `BROWSER_PATH`：Chrome / Chromium 可执行文件路径
 - `COOKIE_SECURE`：`true` 时启用安全 Cookie，部署 HTTPS 时建议开启
+- `MAX_ACTIVE_LOGIN_SESSIONS`：默认 `5`，限制同时待扫码任务数
+- `MAX_CONCURRENT_QUERIES`：默认 `2`，限制批量任务自动查询并发数
 - `TOOL_BASE_URL`：工具对外访问基地址；配置后腾讯文档同步会写入完整 artifacts 链接
 - `TENCENT_DOCS_ENABLED`：是否启用腾讯文档同步，默认 `false`
 - `TENCENT_DOCS_MODE`：默认 `browser`
@@ -59,6 +85,8 @@
 export TOOL_PASSWORD='your-password'
 export SESSION_SECRET='your-session-secret'
 export PORT=3001
+export MAX_ACTIVE_LOGIN_SESSIONS=5
+export MAX_CONCURRENT_QUERIES=2
 ```
 
 ## 本地开发
@@ -107,6 +135,11 @@ npm run start
 - `POST /api/accounts/login-sessions`
 - `GET /api/accounts/login-sessions/:loginSessionId`
 - `DELETE /api/accounts/:accountId`
+- `GET /api/tasks`
+- `POST /api/tasks/batch`
+- `POST /api/tasks/:taskId/refresh-login`
+- `POST /api/tasks/:taskId/retry-query`
+- `DELETE /api/tasks/:taskId`
 - `POST /api/queries`
 - `GET /api/tencent-docs/config`
 - `POST /api/tencent-docs/jobs/preview`

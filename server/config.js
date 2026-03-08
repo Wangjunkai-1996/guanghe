@@ -12,6 +12,8 @@ module.exports = {
   secureCookie: process.env.COOKIE_SECURE === 'true',
   toolBaseUrl: process.env.TOOL_BASE_URL || '',
   browserExecutablePath: process.env.BROWSER_PATH || resolveBrowserExecutable(),
+  maxActiveLoginSessions: Number(process.env.MAX_ACTIVE_LOGIN_SESSIONS || 5),
+  maxConcurrentQueries: Number(process.env.MAX_CONCURRENT_QUERIES || 2),
   tencentDocsEnabled: process.env.TENCENT_DOCS_ENABLED === 'true',
   tencentDocsMode: process.env.TENCENT_DOCS_MODE || 'browser',
   tencentDocsDocUrl: process.env.TENCENT_DOCS_DOC_URL || '',

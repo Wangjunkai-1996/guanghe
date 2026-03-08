@@ -3,7 +3,7 @@ const path = require('path')
 const session = require('express-session')
 const { AppError } = require('./lib/errors')
 
-function createApp({ config, loginService, queryService, tencentDocsSyncService }) {
+function createApp({ config, loginService, queryService, taskService, tencentDocsSyncService }) {
   const app = express()
   app.set('trust proxy', 1)
   app.use(express.json())
@@ -79,6 +79,48 @@ function createApp({ config, loginService, queryService, tencentDocsSyncService 
       next(error)
     }
   })
+
+  if (taskService) {
+    app.get('/api/tasks', (_req, res) => {
+      res.json({ tasks: taskService.listTasks() })
+    })
+
+    app.post('/api/tasks/batch', async (req, res, next) => {
+      try {
+        const payload = await taskService.createTasksBatch(req.body?.tasks)
+        res.status(201).json(payload)
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tasks/:taskId/refresh-login', async (req, res, next) => {
+      try {
+        const task = await taskService.refreshTaskLogin(req.params.taskId)
+        res.json(task)
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tasks/:taskId/retry-query', async (req, res, next) => {
+      try {
+        const task = await taskService.retryTaskQuery(req.params.taskId)
+        res.json(task)
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.delete('/api/tasks/:taskId', async (req, res, next) => {
+      try {
+        await taskService.deleteTask(req.params.taskId)
+        res.status(204).end()
+      } catch (error) {
+        next(error)
+      }
+    })
+  }
 
   app.post('/api/queries', async (req, res, next) => {
     try {

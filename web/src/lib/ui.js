@@ -27,6 +27,43 @@ export function formatLoginStatus(status) {
   }
 }
 
+export function formatTaskLoginStatus(status) {
+  if (status === 'INTERRUPTED') return '任务中断'
+  return formatLoginStatus(status)
+}
+
+export function formatTaskQueryStatus(status) {
+  switch (status) {
+    case 'IDLE':
+      return '待查询'
+    case 'QUEUED':
+      return '排队中'
+    case 'RUNNING':
+      return '查询中'
+    case 'SUCCEEDED':
+      return '查询成功'
+    case 'NO_DATA':
+      return '无可查数据'
+    case 'FAILED':
+      return '查询失败'
+    default:
+      return status || '未知状态'
+  }
+}
+
+export function getTaskQueryTone(status) {
+  if (status === 'SUCCEEDED') return 'success'
+  if (status === 'NO_DATA') return 'warning'
+  if (status === 'FAILED') return 'danger'
+  if (status === 'RUNNING' || status === 'QUEUED') return 'info'
+  return 'info'
+}
+
+export function isTaskFinished(task) {
+  if (['SUCCEEDED', 'NO_DATA', 'FAILED'].includes(task?.query?.status)) return true
+  return ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task?.login?.status) && task?.query?.status === 'IDLE'
+}
+
 export function formatDateTime(value) {
   if (!value) return '-'
   const date = new Date(value)

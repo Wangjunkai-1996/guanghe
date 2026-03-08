@@ -62,14 +62,18 @@ class GuangheQueryService {
 
         await settle(page)
         const rawScreenshotPath = path.join(artifactDir, '04-results.png')
+        const networkPath = path.join(artifactDir, 'network-log.json')
         await takePageScreenshot(page, rawScreenshotPath)
 
         const apiRecord = findApiRecord(networkLog, contentId)
         if (!apiRecord) {
-          writeJson(path.join(artifactDir, 'network-log.json'), networkLog)
+          writeJson(networkPath, networkLog)
           throw new AppError(404, 'NO_DATA', '当前 ID 在近 30 日内无可查数据', {
             screenshots: {
               rawUrl: toArtifactUrl(path.relative(this.artifactsRootDir, rawScreenshotPath))
+            },
+            artifacts: {
+              networkLogUrl: toArtifactUrl(path.relative(this.artifactsRootDir, networkPath))
             }
           })
         }
@@ -90,7 +94,6 @@ class GuangheQueryService {
         }
 
         const resultPath = path.join(artifactDir, 'results.json')
-        const networkPath = path.join(artifactDir, 'network-log.json')
         const summaryPath = path.join(artifactDir, '05-summary-strip.png')
 
         writeJson(resultPath, resultsPayload)
