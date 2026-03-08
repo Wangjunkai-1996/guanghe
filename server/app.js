@@ -3,7 +3,7 @@ const path = require('path')
 const session = require('express-session')
 const { AppError } = require('./lib/errors')
 
-function createApp({ config, loginService, queryService }) {
+function createApp({ config, loginService, queryService, tencentDocsSyncService }) {
   const app = express()
   app.set('trust proxy', 1)
   app.use(express.json())
@@ -95,6 +95,37 @@ function createApp({ config, loginService, queryService }) {
       next(error)
     }
   })
+
+  if (tencentDocsSyncService) {
+    app.get('/api/tencent-docs/config', (_req, res) => {
+      res.json(tencentDocsSyncService.getConfig())
+    })
+
+    app.post('/api/tencent-docs/jobs/preview', (req, res, next) => {
+      try {
+        res.json(tencentDocsSyncService.previewJob(req.body || {}))
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tencent-docs/jobs', (req, res, next) => {
+      try {
+        const payload = tencentDocsSyncService.createJob(req.body || {})
+        res.status(202).json(payload)
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.get('/api/tencent-docs/jobs/:jobId', (req, res, next) => {
+      try {
+        res.json(tencentDocsSyncService.getJob(req.params.jobId))
+      } catch (error) {
+        next(error)
+      }
+    })
+  }
 
   app.get('/api/artifacts/*', (req, res, next) => {
     try {

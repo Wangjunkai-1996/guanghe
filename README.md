@@ -44,6 +44,14 @@
 - `PORT`：默认 `3001`
 - `BROWSER_PATH`：Chrome / Chromium 可执行文件路径
 - `COOKIE_SECURE`：`true` 时启用安全 Cookie，部署 HTTPS 时建议开启
+- `TOOL_BASE_URL`：工具对外访问基地址；配置后腾讯文档同步会写入完整 artifacts 链接
+- `TENCENT_DOCS_ENABLED`：是否启用腾讯文档同步，默认 `false`
+- `TENCENT_DOCS_MODE`：默认 `browser`
+- `TENCENT_DOCS_DOC_URL`：默认目标腾讯在线表格地址
+- `TENCENT_DOCS_SHEET_NAME`：默认工作表名，默认 `数据汇总`
+- `TENCENT_DOCS_WRITE_MODE`：默认写入模式，支持 `append` / `upsert`，默认 `upsert`
+- `TENCENT_DOCS_HEADLESS`：是否无头执行腾讯文档浏览器，默认 `true`
+- `TENCENT_DOCS_TIMEZONE`：写入“查询时间”时使用的时区，默认 `Asia/Shanghai`
 
 示例：
 
@@ -100,6 +108,10 @@ npm run start
 - `GET /api/accounts/login-sessions/:loginSessionId`
 - `DELETE /api/accounts/:accountId`
 - `POST /api/queries`
+- `GET /api/tencent-docs/config`
+- `POST /api/tencent-docs/jobs/preview`
+- `POST /api/tencent-docs/jobs`
+- `GET /api/tencent-docs/jobs/:jobId`
 - `GET /api/artifacts/*`
 
 ## 测试

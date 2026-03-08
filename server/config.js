@@ -1,3 +1,4 @@
+const path = require('path')
 const { getAppPaths } = require('./lib/constants')
 const { resolveBrowserExecutable } = require('./lib/browserPath')
 
@@ -9,6 +10,16 @@ module.exports = {
   toolPassword: process.env.TOOL_PASSWORD || 'change-this-password',
   sessionSecret: process.env.SESSION_SECRET || 'change-this-session-secret',
   secureCookie: process.env.COOKIE_SECURE === 'true',
+  toolBaseUrl: process.env.TOOL_BASE_URL || '',
   browserExecutablePath: process.env.BROWSER_PATH || resolveBrowserExecutable(),
+  tencentDocsEnabled: process.env.TENCENT_DOCS_ENABLED === 'true',
+  tencentDocsMode: process.env.TENCENT_DOCS_MODE || 'browser',
+  tencentDocsDocUrl: process.env.TENCENT_DOCS_DOC_URL || '',
+  tencentDocsSheetName: process.env.TENCENT_DOCS_SHEET_NAME || '数据汇总',
+  tencentDocsWriteMode: process.env.TENCENT_DOCS_WRITE_MODE || 'upsert',
+  tencentDocsHeadless: process.env.TENCENT_DOCS_HEADLESS !== 'false',
+  tencentDocsTimezone: process.env.TENCENT_DOCS_TIMEZONE || 'Asia/Shanghai',
+  tencentDocsJobsFile: path.resolve(paths.dataDir, 'tencent-docs-jobs.json'),
+  tencentDocsProfileDir: path.resolve(paths.profileRootDir, 'tencent-docs'),
   ...paths
 }

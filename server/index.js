@@ -4,6 +4,7 @@ const { AccountStore } = require('./lib/accountStore')
 const { BrowserManager } = require('./lib/browserManager')
 const { GuangheLoginService } = require('./services/loginService')
 const { GuangheQueryService } = require('./services/queryService')
+const { TencentDocsSyncService } = require('./integrations/tencentDocs')
 const { createApp } = require('./app')
 
 ensureDir(config.dataDir)
@@ -25,7 +26,23 @@ const queryService = new GuangheQueryService({
   accountStore,
   artifactsRootDir: config.artifactsRootDir
 })
-const app = createApp({ config, loginService, queryService })
+const tencentDocsSyncService = new TencentDocsSyncService({
+  config: {
+    enabled: config.tencentDocsEnabled,
+    mode: config.tencentDocsMode,
+    docUrl: config.tencentDocsDocUrl,
+    sheetName: config.tencentDocsSheetName,
+    writeMode: config.tencentDocsWriteMode,
+    headless: config.tencentDocsHeadless,
+    timezone: config.tencentDocsTimezone,
+    jobsFile: config.tencentDocsJobsFile,
+    profileDir: config.tencentDocsProfileDir,
+    toolBaseUrl: config.toolBaseUrl,
+    browserExecutablePath: config.browserExecutablePath,
+    artifactsRootDir: config.artifactsRootDir
+  }
+})
+const app = createApp({ config, loginService, queryService, tencentDocsSyncService })
 
 app.listen(config.port, config.host, () => {
   console.log(`Guanghe tool server listening on http://${config.host}:${config.port}`)
