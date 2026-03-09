@@ -483,6 +483,7 @@ async function copySheetSelection(page, { maxRows, platform }) {
     await moveToSheetStart(page, platform)
     await moveToRowStart(page, platform)
   }
+  await refocusPrimarySelection(page)
   await page.waitForTimeout(150)
   await page.keyboard.press(`${getShortcutKey(platform)}+Shift+ArrowRight`)
   await page.waitForTimeout(200)
@@ -513,6 +514,22 @@ async function focusSheetGrid(page) {
 
   await page.mouse.click(260, 220)
   await page.waitForTimeout(150)
+}
+
+
+async function refocusPrimarySelection(page) {
+  const selectionBounds = await getPrimarySelectionBounds(page)
+  if (selectionBounds) {
+    await page.mouse.click(
+      Math.round(selectionBounds.x + Math.max(selectionBounds.w / 2, 12)),
+      Math.round(selectionBounds.y + Math.max(selectionBounds.h / 2, 12))
+    ).catch(() => {})
+    await page.waitForTimeout(120)
+    return true
+  }
+
+  await focusSheetGrid(page)
+  return false
 }
 
 async function readClipboardText(page) {
