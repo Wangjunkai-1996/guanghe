@@ -155,17 +155,17 @@ class TencentDocsBrowserAdapter {
         await page.waitForTimeout(250)
       }
 
-      for (const group of buildContiguousGroups(textCells)) {
+      for (const cell of textCells) {
         await focusCell(page, {
           sheetRow,
-          columnIndex: group[0].columnIndex,
+          columnIndex: cell.columnIndex,
           platform: this.platform
         })
-        await pasteTextIntoFocusedRange(page, group.map((cell) => String(cell.value ?? '')).join('	'), this.platform)
+        await writeTextIntoFocusedCell(page, String(cell.value ?? ''), this.platform)
         await page.waitForTimeout(250)
         await verifyTextGroupWritten(page, {
           sheetRow,
-          group,
+          group: [cell],
           platform: this.platform
         })
       }
@@ -378,6 +378,23 @@ async function pasteTextIntoFocusedRange(page, text, platform) {
     await navigator.clipboard.writeText(text)
   }, { text })
   await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => {})
+}
+
+async function writeTextIntoFocusedCell(page, value, platform) {
+  const refocused = await refocusPrimarySelection(page)
+  if (!refocused) {
+    await focusSheetGrid(page)
+  }
+  await page.waitForTimeout(120)
+  await page.keyboard.press('Backspace').catch(() => {})
+  await page.waitForTimeout(80)
+  const normalizedValue = String(value ?? '')
+  if (normalizedValue) {
+    await page.keyboard.insertText(normalizedValue).catch(() => {})
+    await page.waitForTimeout(80)
+  }
+  await page.keyboard.press('Enter').catch(() => {})
+  await page.waitForTimeout(120)
 }
 
 async function pasteImageIntoFocusedCell(page, imageUrl, platform) {
@@ -689,6 +706,7 @@ module.exports = {
     focusCell,
     refocusPrimarySelection,
     parseClipboardRowValues,
-    clipboardRowMatches
+    clipboardRowMatches,
+    writeTextIntoFocusedCell
   }
 }
