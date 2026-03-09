@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
+import { TencentDocsHandoffHub } from './TencentDocsHandoffHub'
 import { parseTaskBatchInput } from '../lib/taskBatch'
 import {
   formatDateTime,
@@ -51,7 +52,7 @@ export function BatchTasksWorkspace() {
   const [searchValue, setSearchValue] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [isDetailOpen, setIsDetailOpen] = useState(false)
-  const [isBuilderOpen, setIsBuilderOpen] = useState(true)
+  const [isBuilderOpen, setIsBuilderOpen] = useState(false)
   const [builderTouched, setBuilderTouched] = useState(false)
   const [toasts, setToasts] = useState([])
   const [lastSyncedAt, setLastSyncedAt] = useState('')
@@ -61,13 +62,30 @@ export function BatchTasksWorkspace() {
     enabled: false,
     defaultTargetConfigured: false,
     defaultSheetName: '',
-    defaultWriteMode: 'upsert'
+    defaultWriteMode: 'upsert',
+    mode: 'browser',
+    target: { docUrl: '', sheetName: '' },
+    login: { status: 'IDLE', updatedAt: '', error: null },
+    error: ''
   })
+  const [docsConfigDraft, setDocsConfigDraft] = useState({ docUrl: '', sheetName: '' })
+  const [docsLoginSession, setDocsLoginSession] = useState(null)
+  const [demandFilter, setDemandFilter] = useState('open')
+  const [demandSearch, setDemandSearch] = useState('')
+  const [creatingSheetTasks, setCreatingSheetTasks] = useState(0)
   const [syncPreviewState, setSyncPreviewState] = useState({})
   const [syncActionLoading, setSyncActionLoading] = useState({})
   const [docsDiagnostic, setDocsDiagnostic] = useState(createTencentDocsDiagnosticState())
 
   const textareaRef = useRef(null)
+  const docsLoginPollingRef = useRef(null)
+
+  const stopDocsLoginPolling = useCallback(() => {
+    if (docsLoginPollingRef.current) {
+      window.clearInterval(docsLoginPollingRef.current)
+      docsLoginPollingRef.current = null
+    }
+  }, [])
 
   const loadTasks = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
@@ -86,7 +104,6 @@ export function BatchTasksWorkspace() {
     }
   }, [])
 
-
   const loadSyncConfig = useCallback(async () => {
     try {
       const payload = await api.getTencentDocsConfig()
@@ -98,9 +115,22 @@ export function BatchTasksWorkspace() {
         defaultSheetName: payload?.defaultSheetName || '',
         defaultWriteMode: payload?.defaultWriteMode || 'upsert',
         mode: payload?.mode || 'browser',
+        target: {
+          docUrl: payload?.target?.docUrl || '',
+          sheetName: payload?.target?.sheetName || ''
+        },
+        login: {
+          status: payload?.login?.status || 'IDLE',
+          updatedAt: payload?.login?.updatedAt || '',
+          error: payload?.login?.error || null
+        },
         error: ''
       }
       setSyncConfig(nextConfig)
+      setDocsConfigDraft((current) => ({
+        docUrl: current.docUrl || nextConfig.target.docUrl || '',
+        sheetName: current.sheetName || nextConfig.target.sheetName || ''
+      }))
       return nextConfig
     } catch (nextError) {
       const nextConfig = {
@@ -111,13 +141,14 @@ export function BatchTasksWorkspace() {
         defaultSheetName: '',
         defaultWriteMode: 'upsert',
         mode: 'browser',
+        target: { docUrl: '', sheetName: '' },
+        login: { status: 'IDLE', updatedAt: '', error: null },
         error: nextError.message || '腾讯文档配置读取失败'
       }
       setSyncConfig(nextConfig)
       return nextConfig
     }
   }, [])
-
 
   const pushToast = useCallback((message, tone = 'info') => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -127,8 +158,9 @@ export function BatchTasksWorkspace() {
     }, 2200)
   }, [])
 
-  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 20, configOverride } = {}) => {
+  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 200, configOverride } = {}) => {
     const effectiveConfig = configOverride || syncConfig
+    const effectiveTarget = target && target.docUrl ? target : undefined
     if (!effectiveConfig.available) {
       setDocsDiagnostic(createTencentDocsDiagnosticState({
         inspected: true,
@@ -155,7 +187,7 @@ export function BatchTasksWorkspace() {
       return null
     }
 
-    if (!effectiveConfig.defaultTargetConfigured && !target) {
+    if (!effectiveConfig.defaultTargetConfigured && !effectiveTarget) {
       setDocsDiagnostic(createTencentDocsDiagnosticState({
         inspected: true,
         error: {
@@ -176,13 +208,19 @@ export function BatchTasksWorkspace() {
     }))
 
     try {
-      const payload = await api.inspectTencentDocsSheet({ target, maxRows })
+      const payload = await api.inspectTencentDocsSheet({ target: effectiveTarget, maxRows })
       setDocsDiagnostic(createTencentDocsDiagnosticState({
         inspected: true,
         payload,
         checkedAt: new Date().toISOString()
       }))
-      if (!silent) pushToast('腾讯文档诊断完成', 'success')
+      if (payload?.target?.sheetName) {
+        setDocsConfigDraft((current) => ({
+          docUrl: current.docUrl || payload.target.docUrl || '',
+          sheetName: current.sheetName || payload.target.sheetName || ''
+        }))
+      }
+      if (!silent) pushToast('腾讯文档检查完成', 'success')
       return payload
     } catch (nextError) {
       const errorPayload = {
@@ -199,6 +237,26 @@ export function BatchTasksWorkspace() {
       return null
     }
   }, [pushToast, syncConfig])
+
+  const startDocsLoginPolling = useCallback((loginSessionId) => {
+    stopDocsLoginPolling()
+    docsLoginPollingRef.current = window.setInterval(async () => {
+      try {
+        const payload = await api.getTencentDocsLoginSession(loginSessionId)
+        setDocsLoginSession(payload)
+        if (['LOGGED_IN', 'EXPIRED', 'FAILED'].includes(payload.status)) {
+          stopDocsLoginPolling()
+          await loadSyncConfig()
+          if (payload.status === 'LOGGED_IN') {
+            pushToast('腾讯文档已登录，可继续检查交接表', 'success')
+            void runTencentDocsInspect({ silent: true, target: docsConfigDraft.docUrl ? docsConfigDraft : undefined })
+          }
+        }
+      } catch (_error) {
+        stopDocsLoginPolling()
+      }
+    }, 2000)
+  }, [docsConfigDraft, loadSyncConfig, pushToast, runTencentDocsInspect, stopDocsLoginPolling])
 
   useEffect(() => {
     let cancelled = false
@@ -218,10 +276,10 @@ export function BatchTasksWorkspace() {
 
     return () => {
       cancelled = true
+      stopDocsLoginPolling()
       window.clearInterval(timer)
     }
-  }, [loadSyncConfig, loadTasks])
-
+  }, [loadSyncConfig, loadTasks, stopDocsLoginPolling])
 
   useEffect(() => {
     if (syncConfig.loading) return
@@ -234,7 +292,7 @@ export function BatchTasksWorkspace() {
 
   useEffect(() => {
     if (builderTouched) return
-    setIsBuilderOpen(tasks.length === 0)
+    setIsBuilderOpen(false)
   }, [builderTouched, tasks.length])
 
   useEffect(() => {
@@ -270,7 +328,7 @@ export function BatchTasksWorkspace() {
       .filter((task) => matchesFilter(task, filterKey))
       .filter((task) => {
         if (!keyword) return true
-        return [task.remark, task.contentId, task.accountNickname, task.accountId]
+        return [task.remark, task.contentId, task.accountNickname, task.accountId, task.sheetMatch?.nickname, task.sheetMatch?.status]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(keyword))
       })
@@ -304,10 +362,68 @@ export function BatchTasksWorkspace() {
 
   const handleRefreshList = async () => {
     const [, nextConfig] = await Promise.all([loadTasks(), loadSyncConfig()])
-    if (nextConfig?.enabled && nextConfig?.defaultTargetConfigured) {
-      await runTencentDocsInspect({ silent: true, configOverride: nextConfig })
+    if (nextConfig?.enabled && (nextConfig?.defaultTargetConfigured || docsConfigDraft.docUrl)) {
+      await runTencentDocsInspect({
+        silent: true,
+        configOverride: nextConfig,
+        target: docsConfigDraft.docUrl ? docsConfigDraft : undefined
+      })
     }
     pushToast('任务列表已刷新', 'success')
+  }
+
+  const handleSaveTencentDocsConfig = async () => {
+    try {
+      const payload = await api.updateTencentDocsConfig(docsConfigDraft)
+      const nextConfig = {
+        loading: false,
+        available: true,
+        enabled: Boolean(payload?.enabled),
+        defaultTargetConfigured: Boolean(payload?.defaultTargetConfigured),
+        defaultSheetName: payload?.defaultSheetName || '',
+        defaultWriteMode: payload?.defaultWriteMode || 'upsert',
+        mode: payload?.mode || 'browser',
+        target: payload?.target || { docUrl: '', sheetName: '' },
+        login: payload?.login || { status: 'IDLE', updatedAt: '', error: null },
+        error: ''
+      }
+      setSyncConfig(nextConfig)
+      setDocsConfigDraft(nextConfig.target)
+      pushToast('腾讯文档目标已保存', 'success')
+      if (docsConfigDraft.docUrl) {
+        await runTencentDocsInspect({ target: docsConfigDraft })
+      }
+    } catch (nextError) {
+      pushToast(nextError.message || '保存腾讯文档目标失败', 'danger')
+    }
+  }
+
+  const handleStartTencentDocsLogin = async () => {
+    try {
+      stopDocsLoginPolling()
+      const payload = await api.createTencentDocsLoginSession({
+        target: docsConfigDraft.docUrl ? docsConfigDraft : undefined
+      })
+      setDocsLoginSession(payload)
+      startDocsLoginPolling(payload.loginSessionId)
+      pushToast('腾讯文档登录二维码已生成', 'success')
+    } catch (nextError) {
+      pushToast(nextError.message || '生成腾讯文档二维码失败', 'danger')
+    }
+  }
+
+  const handleCreateSheetDemandTasks = async (count) => {
+    setCreatingSheetTasks(count)
+    try {
+      const payload = await api.createSheetDemandTaskBatch(count)
+      const createdCount = payload?.tasks?.length || count
+      await loadTasks({ silent: true })
+      pushToast(`已生成 ${createdCount} 个交接表扫码任务`, 'success')
+    } catch (nextError) {
+      pushToast(nextError.message || '生成交接表扫码任务失败', 'danger')
+    } finally {
+      setCreatingSheetTasks(0)
+    }
   }
 
   const handleBuilderOpen = () => {
@@ -411,7 +527,17 @@ export function BatchTasksWorkspace() {
     }))
 
     try {
-      const payload = await api.previewTencentDocsHandoff({ resultUrl: task.artifacts.resultUrl })
+      const payload = await api.previewTencentDocsHandoff({
+        resultUrl: task.artifacts.resultUrl,
+        target: task.taskMode === 'SHEET_DEMAND' ? task.sheetTarget : undefined,
+        match: task.taskMode === 'SHEET_DEMAND' && task.sheetMatch?.sheetRow
+          ? {
+              sheetRow: task.sheetMatch.sheetRow,
+              nickname: task.sheetMatch.nickname,
+              contentId: task.sheetMatch.contentId
+            }
+          : undefined
+      })
       setSyncPreviewState((current) => ({
         ...current,
         [task.taskId]: {
@@ -450,7 +576,15 @@ export function BatchTasksWorkspace() {
     try {
       const payload = await api.syncTencentDocsHandoff({
         taskId: task.taskId,
-        resultUrl: task.artifacts.resultUrl
+        resultUrl: task.artifacts.resultUrl,
+        target: task.taskMode === 'SHEET_DEMAND' ? task.sheetTarget : undefined,
+        match: task.taskMode === 'SHEET_DEMAND' && task.sheetMatch?.sheetRow
+          ? {
+              sheetRow: task.sheetMatch.sheetRow,
+              nickname: task.sheetMatch.nickname,
+              contentId: task.sheetMatch.contentId
+            }
+          : undefined
       })
       setSyncPreviewState((current) => ({
         ...current,
@@ -502,20 +636,45 @@ export function BatchTasksWorkspace() {
 
   return (
     <section className="tasks-workspace stack-lg">
+      <TencentDocsHandoffHub
+        syncConfig={syncConfig}
+        docsConfigDraft={docsConfigDraft}
+        onDraftChange={(patch) => setDocsConfigDraft((current) => ({ ...current, ...patch }))}
+        onSaveConfig={handleSaveTencentDocsConfig}
+        onInspect={() => runTencentDocsInspect({ target: docsConfigDraft.docUrl ? docsConfigDraft : undefined })}
+        docsDiagnostic={docsDiagnostic}
+        docsLoginSession={docsLoginSession}
+        onStartLogin={handleStartTencentDocsLogin}
+        onCreateSheetTasks={handleCreateSheetDemandTasks}
+        creatingSheetTasks={creatingSheetTasks}
+        demandFilter={demandFilter}
+        onDemandFilterChange={setDemandFilter}
+        demandSearch={demandSearch}
+        onDemandSearchChange={setDemandSearch}
+      />
+
+      {(docsDiagnostic.inspected || docsDiagnostic.loading || docsDiagnostic.error || syncConfig.defaultTargetConfigured || docsConfigDraft.docUrl) ? (
+        <TencentDocsDiagnosticPanel
+          syncConfig={syncConfig}
+          diagnostic={docsDiagnostic}
+          onInspect={() => runTencentDocsInspect({ target: docsConfigDraft.docUrl ? docsConfigDraft : undefined })}
+        />
+      ) : null}
+
       <section className="panel tasks-overview-panel stack-lg">
         <div className="task-overview-header">
           <div className="compact-panel-header">
             <span className="section-eyebrow">主工作区</span>
             <h2>批量任务工作台</h2>
-            <p>先发码，再跟状态；异常处理和结果复核都收进右侧焦点区，减少来回滚动和误点。</p>
+            <p>交接表驱动链路优先；这里保留任务队列、焦点区和手工建任务入口，方便补查和异常兜底。</p>
           </div>
 
           <div className="tasks-toolbar-actions">
             <button className="primary-btn" type="button" onClick={isBuilderOpen ? handleBuilderClose : handleBuilderOpen}>
-              {isBuilderOpen ? '关闭新建任务' : '新建任务'}
+              {isBuilderOpen ? '关闭手工建任务' : '手工建任务'}
             </button>
             <button className="secondary-btn" type="button" onClick={handleRefreshList}>
-              {loading ? '同步中...' : '立即同步'}
+              {loading ? '刷新中...' : '刷新列表'}
             </button>
           </div>
         </div>
@@ -591,12 +750,6 @@ export function BatchTasksWorkspace() {
         </div>
       </section>
 
-      <TencentDocsDiagnosticPanel
-        syncConfig={syncConfig}
-        diagnostic={docsDiagnostic}
-        onInspect={() => runTencentDocsInspect()}
-      />
-
       <div className="task-board-layout">
         <section className="panel task-list-panel stack-md">
           <div className="panel-split-header">
@@ -612,7 +765,7 @@ export function BatchTasksWorkspace() {
           {!loading && !error && tasks.length === 0 ? (
             <div className="result-empty-state">
               <strong>还没有任务</strong>
-              <p>先点“新建任务”，粘贴多行内容 ID，即可批量生成二维码并开始跟进。</p>
+              <p>先点“手工建任务”补建任务，或直接在上方生成交接表驱动二维码。</p>
             </div>
           ) : null}
           {!loading && !error && tasks.length > 0 && filteredTasks.length === 0 ? (
@@ -908,7 +1061,10 @@ function TaskCard({ task, syncConfig, selected, recommended, onSelect }) {
         <div className="task-row-main">
           <div className="task-card-title-row">
             <strong>{task.remark || '未命名任务'}</strong>
-            {recommended ? <span className="task-priority-pill">建议先看</span> : null}
+            <div className="task-card-title-pills">
+              {task.taskMode === 'SHEET_DEMAND' ? <span className="task-priority-pill task-mode-pill">交接表</span> : null}
+              {recommended ? <span className="task-priority-pill">建议先看</span> : null}
+            </div>
           </div>
           <small>{getTaskSummary(task)}</small>
         </div>
@@ -930,7 +1086,7 @@ function TaskCard({ task, syncConfig, selected, recommended, onSelect }) {
       <div className="task-meta-grid">
         <div className="task-meta-item">
           <span>内容 ID</span>
-          <strong className="mono-cell">{task.contentId}</strong>
+          <strong className="mono-cell">{task.contentId || '-'}</strong>
         </div>
         <div className="task-meta-item">
           <span>账号</span>
@@ -940,6 +1096,12 @@ function TaskCard({ task, syncConfig, selected, recommended, onSelect }) {
           <span>更新时间</span>
           <strong>{formatDateTime(task.updatedAt)}</strong>
         </div>
+        {task.taskMode === 'SHEET_DEMAND' ? (
+          <div className="task-meta-item">
+            <span>交接表</span>
+            <strong>{formatTaskSheetMatchStatus(task.sheetMatch?.status)}</strong>
+          </div>
+        ) : null}
       </div>
 
       {task.sync?.status === 'FAILED' ? <div className="task-inline-hint">{task.sync.error?.message || '腾讯文档同步失败，请进入详情补同步。'}</div> : null}
@@ -1033,6 +1195,8 @@ function TaskDetailDrawer({
         ) : null}
       </div>
 
+      {task.taskMode === 'SHEET_DEMAND' ? <TaskDetailSheetMatchSection task={task} /> : null}
+
       <div className="task-detail-section stack-md">
         <div className="task-detail-title-row">
           <strong>{task.remark || '未命名任务'}</strong>
@@ -1044,9 +1208,12 @@ function TaskDetailDrawer({
         </div>
 
         <div className="task-summary-grid">
-          <div className="meta-card compact-meta-card"><span>内容 ID</span><strong>{task.contentId}</strong><small>任务 ID：{task.taskId}</small></div>
+          <div className="meta-card compact-meta-card"><span>内容 ID</span><strong>{task.contentId || '-'}</strong><small>任务 ID：{task.taskId}</small></div>
           <div className="meta-card compact-meta-card"><span>登录账号</span><strong>{task.accountNickname || '待扫码'}</strong><small>{task.accountId || '扫码成功后自动回填'}</small></div>
           <div className="meta-card compact-meta-card"><span>更新时间</span><strong>{formatDateTime(task.updatedAt)}</strong><small>{task.fetchedAt ? `查询时间：${formatDateTime(task.fetchedAt)}` : '等待自动查询'}</small></div>
+          {task.taskMode === 'SHEET_DEMAND' ? (
+            <div className="meta-card compact-meta-card"><span>交接表匹配</span><strong>{formatTaskSheetMatchStatus(task.sheetMatch?.status)}</strong><small>{getTaskSheetMatchDetail(task)}</small></div>
+          ) : null}
         </div>
       </div>
 
@@ -1123,6 +1290,30 @@ function TaskDetailDrawer({
         </button>
       </div>
     </aside>
+  )
+}
+
+function TaskDetailSheetMatchSection({ task }) {
+  return (
+    <div className="task-detail-section stack-md">
+      <div className="task-section-header">
+        <div>
+          <strong>交接表匹配</strong>
+          <small>交接表任务会在达人扫码成功后，按达人昵称命中目标行，再决定是否自动查询和回填。</small>
+        </div>
+      </div>
+
+      <div className={`task-state-banner tone-${getTaskSheetMatchTone(task.sheetMatch?.status)}`}>
+        <strong>{formatTaskSheetMatchStatus(task.sheetMatch?.status)}</strong>
+        <small>{getTaskSheetMatchDetail(task)}</small>
+      </div>
+
+      <div className="task-summary-grid">
+        <div className="meta-card compact-meta-card"><span>目标工作表</span><strong>{task.sheetTarget?.sheetName || '未设置'}</strong><small>{task.sheetTarget?.docUrl || '请先保存腾讯文档目标'}</small></div>
+        <div className="meta-card compact-meta-card"><span>目标行</span><strong>{task.sheetMatch?.sheetRow ? `第 ${task.sheetMatch.sheetRow} 行` : '待命中'}</strong><small>{task.sheetMatch?.nickname || task.accountNickname || '等待达人扫码'}</small></div>
+        <div className="meta-card compact-meta-card"><span>缺失列</span><strong>{task.sheetMatch?.missingColumns?.length || 0} 列</strong><small>{task.sheetMatch?.missingColumns?.length ? task.sheetMatch.missingColumns.join('、') : '当前没有缺失列'}</small></div>
+      </div>
+    </div>
   )
 }
 
@@ -1346,7 +1537,7 @@ function matchesFilter(task, filterKey) {
   if (filterKey === 'waiting') return isWaitingTask(task)
   if (filterKey === 'in-progress') return isInProgressTask(task)
   if (filterKey === 'exception') return isExceptionalTask(task)
-  if (filterKey === 'finished') return task.query?.status === 'SUCCEEDED' && task.sync?.status !== 'FAILED'
+  if (filterKey === 'finished') return isFinishedTask(task)
   return true
 }
 
@@ -1355,11 +1546,24 @@ function isWaitingTask(task) {
 }
 
 function isInProgressTask(task) {
-  return ['QUEUED', 'RUNNING'].includes(task.query?.status) || task.sync?.status === 'RUNNING' || (task.login?.status === 'LOGGED_IN' && task.query?.status === 'IDLE')
+  if (task.sheetMatch?.status === 'NEEDS_FILL' && task.query?.status === 'IDLE') return true
+  return ['QUEUED', 'RUNNING'].includes(task.query?.status) || task.sync?.status === 'RUNNING' || (task.login?.status === 'LOGGED_IN' && task.query?.status === 'IDLE' && !isTaskSheetTerminal(task))
+}
+
+function isFinishedTask(task) {
+  if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return true
+  return task.query?.status === 'SUCCEEDED' && task.sync?.status !== 'FAILED'
 }
 
 function isExceptionalTask(task) {
-  return ['NO_DATA', 'FAILED'].includes(task.query?.status) || ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status) || task.sync?.status === 'FAILED'
+  return ['NO_DATA', 'FAILED'].includes(task.query?.status)
+    || ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)
+    || task.sync?.status === 'FAILED'
+    || ['NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'].includes(task.sheetMatch?.status)
+}
+
+function isTaskSheetTerminal(task) {
+  return ['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'].includes(task.sheetMatch?.status)
 }
 
 function compareTasks(left, right) {
@@ -1374,7 +1578,7 @@ function getTaskPriority(task) {
   if (isWaitingTask(task)) return 0
   if (isInProgressTask(task)) return 1
   if (isExceptionalTask(task)) return 2
-  if (task.query?.status === 'SUCCEEDED') return 3
+  if (isFinishedTask(task)) return 3
   return 4
 }
 
@@ -1393,15 +1597,48 @@ function getTaskLoginTone(status) {
 }
 
 function getTaskOverallTone(task) {
+  if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return 'success'
   if (isExceptionalTask(task)) return 'danger'
   if (task.query?.status === 'SUCCEEDED') return 'success'
   if (isWaitingTask(task)) return 'info'
   return 'warning'
 }
 
+function formatTaskSheetMatchStatus(status) {
+  if (status === 'NEEDS_FILL') return '待补数'
+  if (status === 'ALREADY_COMPLETE') return '数据已全'
+  if (status === 'CONTENT_ID_MISSING') return '缺内容ID'
+  if (status === 'DUPLICATE_NICKNAME') return '达人重名'
+  if (status === 'NOT_IN_SHEET') return '表中无此达人'
+  if (status === 'ROW_CHANGED') return '目标行已变更'
+  return status || '待匹配'
+}
+
+function getTaskSheetMatchTone(status) {
+  if (status === 'ALREADY_COMPLETE') return 'success'
+  if (status === 'NEEDS_FILL') return 'warning'
+  if (['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'NOT_IN_SHEET', 'ROW_CHANGED'].includes(status)) return 'danger'
+  return 'info'
+}
+
+function getTaskSheetMatchDetail(task) {
+  if (task.sheetMatch?.status === 'NEEDS_FILL') return `已命中第 ${task.sheetMatch.sheetRow} 行，内容 ID：${task.sheetMatch.contentId || '-'}`
+  if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return `第 ${task.sheetMatch.sheetRow} 行数据已完整，无需重复查询`
+  if (task.sheetMatch?.status === 'CONTENT_ID_MISSING') return `第 ${task.sheetMatch.sheetRow} 行命中成功，但内容 ID 为空`
+  if (task.sheetMatch?.status === 'DUPLICATE_NICKNAME') return '交接表中存在同名达人，需先人工处理'
+  if (task.sheetMatch?.status === 'NOT_IN_SHEET') return '当前扫码达人未出现在交接表中'
+  if (task.sheetMatch?.status === 'ROW_CHANGED') return '写表前发现目标行已被修改，请重新检查交接表'
+  return task.sheetTarget?.sheetName ? `目标工作表：${task.sheetTarget.sheetName}` : '扫码后会自动匹配交接表达人行'
+}
+
 function getTaskSummary(task) {
   if (task.sync?.status === 'FAILED') return task.sync.error?.message || '腾讯文档同步失败，建议先预览再补同步。'
   if (task.sync?.status === 'RUNNING') return '查询结果已生成，正在自动回填腾讯文档。'
+  if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return '该达人在交接表中的目标数据已完整，无需重复查询。'
+  if (task.sheetMatch?.status === 'CONTENT_ID_MISSING') return '交接表已命中达人，但内容 ID 缺失，请先补齐。'
+  if (task.sheetMatch?.status === 'DUPLICATE_NICKNAME') return '交接表里存在同名达人，当前版本不会自动决策。'
+  if (task.sheetMatch?.status === 'NOT_IN_SHEET') return '扫码达人不在交接表里，本次不会自动查数。'
+  if (task.sheetMatch?.status === 'ROW_CHANGED') return '目标行已被修改，请重新检查交接表后再继续。'
   if (task.error?.message) return task.error.message
   if (task.query?.status === 'SUCCEEDED' && task.sync?.status === 'SUCCEEDED') return '5 项指标、截图和腾讯文档回填都已完成，可直接复核。'
   if (task.query?.status === 'SUCCEEDED') return '5 项指标和截图已生成，可继续预览或立即同步腾讯文档。'
@@ -1409,6 +1646,7 @@ function getTaskSummary(task) {
   if (task.query?.status === 'FAILED') return '查询流程异常结束，建议先看原图和错误信息。'
   if (task.query?.status === 'QUEUED') return '任务已进入查询队列，系统会自动执行。'
   if (task.query?.status === 'RUNNING') return '正在自动查询中，可先继续处理下一条二维码任务。'
+  if (task.taskMode === 'SHEET_DEMAND' && task.login?.status === 'LOGGED_IN' && task.query?.status === 'IDLE' && !task.sheetMatch) return '扫码成功，正在按达人昵称匹配交接表。'
   if (task.login?.status === 'WAITING_CONFIRM') return '已扫码，等待手机确认，确认后会自动开始查询。'
   if (task.login?.status === 'WAITING_QR') return '先把二维码发出去，扫码成功后会自动进入查询流程。'
   if (task.login?.status === 'LOGGED_IN') return '登录成功，等待自动查询或可手动重试。'
@@ -1417,6 +1655,8 @@ function getTaskSummary(task) {
 
 function getTaskPrimaryActionLabel(task) {
   if (isWaitingTask(task)) return '去发码'
+  if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return '已完整'
+  if (['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'NOT_IN_SHEET', 'ROW_CHANGED'].includes(task.sheetMatch?.status)) return '处理交接表'
   if (task.sync?.status === 'FAILED') return '补同步'
   if (isExceptionalTask(task)) return '处理异常'
   if (task.query?.status === 'SUCCEEDED') return '查看结果'
@@ -1424,7 +1664,7 @@ function getTaskPrimaryActionLabel(task) {
 }
 
 function getWorkspaceHeadline(tasks, filteredTasks) {
-  if (tasks.length === 0) return '先新建第一批任务，工作台会自动接管后续扫码、查询和回填跟进。'
+  if (tasks.length === 0) return '先在上方配置交接表并生成二维码任务，工作台会自动接管扫码、查询和回填跟进。'
   if (filteredTasks.length === 0) return '当前筛选下没有任务，切回全部即可继续处理。'
 
   const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
@@ -1432,7 +1672,7 @@ function getWorkspaceHeadline(tasks, filteredTasks) {
   const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
 
   if (waitingCount > 0) return `当前有 ${waitingCount} 条待扫码任务，建议优先发码。`
-  if (exceptionCount > 0) return `当前有 ${exceptionCount} 条异常任务，建议先处理查询异常或腾讯文档回填失败。`
+  if (exceptionCount > 0) return `当前有 ${exceptionCount} 条异常任务，建议先处理交接表异常、查询异常或同步失败。`
   if (inProgressCount > 0) return `当前有 ${inProgressCount} 条任务正在推进，可继续观察自动查询和回填结果。`
   return '所有任务都已进入完成状态，可按需抽查结果、截图和腾讯文档写入日志。'
 }
@@ -1440,7 +1680,7 @@ function getWorkspaceHeadline(tasks, filteredTasks) {
 function getFilterDescription(filterKey) {
   const current = FILTER_OPTIONS.find((option) => option.value === filterKey)
   if (!current) return '按优先级展示任务，点击任一任务即可进入右侧焦点区。'
-  if (filterKey === 'all') return '按优先级展示任务，优先把注意力放在待扫码、异常和同步失败项。'
+  if (filterKey === 'all') return '按优先级展示任务，优先把注意力放在待扫码、交接表异常和同步失败项。'
   return `当前聚焦：${current.label}。点击任一任务即可在右侧集中处理。`
 }
 
@@ -1461,7 +1701,10 @@ function canDeleteTask(task) {
 }
 
 function canPreviewTaskSync(task, syncConfig) {
-  return task?.query?.status === 'SUCCEEDED' && Boolean(task?.artifacts?.resultUrl) && Boolean(syncConfig?.enabled) && Boolean(syncConfig?.defaultTargetConfigured) && task?.sync?.status !== 'RUNNING'
+  const hasTarget = task?.taskMode === 'SHEET_DEMAND'
+    ? Boolean(task?.sheetTarget?.docUrl && task?.sheetTarget?.sheetName)
+    : Boolean(syncConfig?.defaultTargetConfigured)
+  return task?.query?.status === 'SUCCEEDED' && Boolean(task?.artifacts?.resultUrl) && Boolean(syncConfig?.enabled) && hasTarget && task?.sync?.status !== 'RUNNING'
 }
 
 function canSyncTask(task, syncConfig) {
@@ -1472,10 +1715,15 @@ function getTaskRecommendations(task, syncConfig) {
   if (task.login?.status === 'WAITING_QR') return ['下载或复制二维码发群', '提醒达人扫码后手机确认']
   if (task.login?.status === 'WAITING_CONFIRM') return ['等待手机确认', '若长时间无响应可刷新二维码']
   if (['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)) return ['先刷新二维码', '重新发群并等待达人扫码']
+  if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return ['该达人数据已全，可结束此任务', '继续处理下一位达人']
+  if (task.sheetMatch?.status === 'CONTENT_ID_MISSING') return ['先在交接表补内容 ID', '补完后点击重试查询']
+  if (task.sheetMatch?.status === 'DUPLICATE_NICKNAME') return ['先处理交接表中的同名达人', '处理后再点击重试查询']
+  if (task.sheetMatch?.status === 'NOT_IN_SHEET') return ['确认达人是否应存在于交接表', '如需继续请先补到交接表后重试']
+  if (task.sheetMatch?.status === 'ROW_CHANGED') return ['先重新检查交接表目标行', '确认后重新预览或重试查询']
   if (task.query?.status === 'NO_DATA') return ['打开原图和网络日志复核内容 ID', '确认无误后可结束此任务']
   if (task.query?.status === 'FAILED') return ['先看原图和错误信息', '确认账号状态后再重试查询']
   if (task.sync?.status === 'FAILED') return ['先点预览回填确认命中行', '确认腾讯文档登录态后点击立即同步']
-  if (task.query?.status === 'SUCCEEDED' && syncConfig?.enabled && syncConfig?.defaultTargetConfigured && task.sync?.status !== 'SUCCEEDED') return ['先预览回填确认目标行', '确认无误后立即同步']
+  if (task.query?.status === 'SUCCEEDED' && syncConfig?.enabled && canPreviewTaskSync(task, syncConfig) && task.sync?.status !== 'SUCCEEDED') return ['先预览回填确认目标行', '确认无误后立即同步']
   if (task.query?.status === 'SUCCEEDED' && task.sync?.status === 'SUCCEEDED') return ['抽查汇总图和写入日志', '继续处理下一条任务']
   if (task.query?.status === 'RUNNING' || task.query?.status === 'QUEUED') return ['等待自动查询完成', '先继续处理其他二维码任务']
   return []
@@ -1492,7 +1740,6 @@ function getTaskSyncDescription(task, syncConfig) {
   if (syncState === 'UNAVAILABLE') return syncConfig?.error || '当前服务未提供腾讯文档同步配置。'
   return '查询结果已准备好，可先预览命中行和列，再决定是否立即同步。'
 }
-
 
 function createTencentDocsDiagnosticState(overrides = {}) {
   return {

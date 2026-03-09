@@ -5,6 +5,8 @@ const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM'])
 const TRACKED_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'LOGGED_IN'])
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
 const BUSY_QUERY_STATUSES = new Set(['QUEUED', 'RUNNING'])
+const TERMINAL_SHEET_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
+const SHEET_DEMAND_RETRYABLE_STATUSES = new Set(['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'NOT_IN_SHEET', 'ROW_CHANGED', 'ALREADY_COMPLETE', 'NEEDS_FILL'])
 
 class GuangheTaskService {
   constructor({ taskStore, loginService, queryService, tencentDocsSyncService = null, maxActiveLoginSessions = 5, maxConcurrentQueries = 2, pollIntervalMs = 2000 }) {
@@ -48,12 +50,37 @@ class GuangheTaskService {
 
   async createTasksBatch(entries = []) {
     const normalizedEntries = validateBatchEntries(entries)
-    const tasks = []
+    return this.createTaskBatchFromEntries(normalizedEntries)
+  }
 
-    this.ensureActiveLoginCapacity(normalizedEntries.length)
+  async createSheetDemandTasksBatch(count = 1) {
+    if (!this.tencentDocsSyncService?.getConfig) {
+      throw new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '腾讯文档同步服务不可用，无法创建交接表扫码任务')
+    }
+    const syncConfig = this.tencentDocsSyncService.getConfig()
+    if (!syncConfig.enabled) {
+      throw new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '腾讯文档同步功能未启用，无法创建交接表扫码任务')
+    }
+    if (!syncConfig.target?.docUrl || !syncConfig.target?.sheetName) {
+      throw new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '请先在工作台保存腾讯文档链接和目标工作表')
+    }
+
+    const normalizedCount = validateSheetDemandCount(count)
+    const entries = Array.from({ length: normalizedCount }, (_item, index) => ({
+      remark: `交接表扫码位 ${index + 1}`,
+      contentId: '',
+      taskMode: 'SHEET_DEMAND',
+      sheetTarget: syncConfig.target
+    }))
+    return this.createTaskBatchFromEntries(entries)
+  }
+
+  async createTaskBatchFromEntries(entries) {
+    const tasks = []
+    this.ensureActiveLoginCapacity(entries.length)
 
     try {
-      for (const entry of normalizedEntries) {
+      for (const entry of entries) {
         const loginSession = await this.loginService.createLoginSession()
         const task = this.taskStore.upsert(createBaseTask(entry, loginSession))
         tasks.push(task)
@@ -80,7 +107,7 @@ class GuangheTaskService {
     }
 
     const loginSession = await this.loginService.createLoginSession()
-    return this.taskStore.patch(taskId, {
+    const patch = {
       loginSessionId: loginSession.loginSessionId,
       qrImageUrl: loginSession.qrImageUrl,
       accountId: '',
@@ -93,7 +120,14 @@ class GuangheTaskService {
       screenshots: { rawUrl: '', summaryUrl: '' },
       artifacts: { resultUrl: '', networkLogUrl: '' },
       sync: createIdleSyncState()
-    })
+    }
+
+    if (task.taskMode === 'SHEET_DEMAND') {
+      patch.contentId = ''
+      patch.sheetMatch = null
+    }
+
+    return this.taskStore.patch(taskId, patch)
   }
 
   async retryTaskQuery(taskId) {
@@ -103,6 +137,22 @@ class GuangheTaskService {
     }
     if (this.isTaskBusy(task)) {
       throw new AppError(409, 'TASK_BUSY', '任务正在执行查询或同步，请稍后再试')
+    }
+
+    if (task.taskMode === 'SHEET_DEMAND') {
+      if (!SHEET_DEMAND_RETRYABLE_STATUSES.has(task.sheetMatch?.status || 'NEEDS_FILL') && task.query.status !== 'FAILED') {
+        throw new AppError(409, 'TASK_RETRY_NOT_NEEDED', '当前交接表任务不需要重新匹配或查询')
+      }
+      this.taskStore.patch(taskId, {
+        error: null,
+        query: { status: 'IDLE' },
+        sync: createIdleSyncState()
+      })
+      return this.resolveSheetDemandTask(taskId, { rethrow: true })
+    }
+
+    if (!task.contentId) {
+      throw new AppError(400, 'TASK_CONTENT_ID_REQUIRED', '当前任务缺少内容 ID，无法重试查询')
     }
 
     const nextTask = this.taskStore.patch(taskId, {
@@ -159,6 +209,7 @@ class GuangheTaskService {
         if (!task.loginSessionId) continue
         if (!TRACKED_LOGIN_STATUSES.has(task.login.status)) continue
         if (TERMINAL_QUERY_STATUSES.has(task.query.status)) continue
+        if (TERMINAL_SHEET_STATUSES.has(task.sheetMatch?.status)) continue
         await this.syncTaskLogin(task)
       }
       this.drainQueryQueue()
@@ -181,7 +232,7 @@ class GuangheTaskService {
       const session = this.loginService.getLoginSession(task.loginSessionId)
       const patch = {
         qrImageUrl: session.qrImageUrl || task.qrImageUrl,
-        error: session.error ? { code: 'LOGIN_SESSION_FAILED', message: session.error, details: null } : null,
+        error: session.error ? { code: 'LOGIN_SESSION_FAILED', message: session.error.message || session.error, details: null } : null,
         login: { status: session.status }
       }
 
@@ -192,7 +243,11 @@ class GuangheTaskService {
 
       const nextTask = this.taskStore.patch(task.taskId, patch)
       if (session.status === 'LOGGED_IN' && nextTask?.query.status === 'IDLE') {
-        this.enqueueQuery(task.taskId)
+        if (nextTask.taskMode === 'SHEET_DEMAND') {
+          await this.resolveSheetDemandTask(task.taskId)
+        } else {
+          this.enqueueQuery(task.taskId)
+        }
       }
       if (session.status === 'EXPIRED') {
         this.taskStore.patch(task.taskId, {
@@ -222,6 +277,118 @@ class GuangheTaskService {
         login: { status: 'FAILED' },
         error: serializeError(error)
       })
+    }
+  }
+
+  async resolveSheetDemandTask(taskId, { rethrow = false } = {}) {
+    const task = this.getTaskOrThrow(taskId)
+    if (!this.tencentDocsSyncService?.matchDemandByNickname) {
+      const error = new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '腾讯文档交接表能力不可用')
+      if (rethrow) throw error
+      this.taskStore.patch(taskId, { error: serializeError(error) })
+      return this.getTaskOrThrow(taskId)
+    }
+
+    try {
+      const response = await this.tencentDocsSyncService.matchDemandByNickname({
+        nickname: task.accountNickname,
+        target: task.sheetTarget,
+        maxRows: 200
+      })
+      const match = response.match || {}
+      const basePatch = {
+        loginSessionId: '',
+        qrImageUrl: '',
+        error: null,
+        sync: createIdleSyncState(),
+        sheetTarget: response.target,
+        sheetMatch: {
+          status: match.status || '',
+          sheetRow: match.sheetRow || 0,
+          nickname: match.nickname || task.accountNickname,
+          contentId: match.contentId || '',
+          missingColumns: match.missingColumns || [],
+          matchedAt: new Date().toISOString(),
+          details: match.matches ? { matches: match.matches } : null
+        }
+      }
+
+      let nextTask
+      if (match.status === 'NEEDS_FILL') {
+        nextTask = this.taskStore.patch(taskId, {
+          ...basePatch,
+          contentId: match.contentId,
+          error: null,
+          query: { status: 'QUEUED' }
+        })
+      } else if (match.status === 'ALREADY_COMPLETE') {
+        nextTask = this.taskStore.patch(taskId, {
+          ...basePatch,
+          contentId: match.contentId,
+          error: {
+            code: 'ALREADY_COMPLETE',
+            message: '此达人在交接表中的目标数据已完整，无需重复查询。',
+            details: null
+          }
+        })
+      } else if (match.status === 'CONTENT_ID_MISSING') {
+        nextTask = this.taskStore.patch(taskId, {
+          ...basePatch,
+          contentId: '',
+          error: {
+            code: 'CONTENT_ID_MISSING',
+            message: '交接表已命中该达人，但内容 ID 为空，请先补齐内容 ID。',
+            details: null
+          }
+        })
+      } else if (match.status === 'DUPLICATE_NICKNAME') {
+        nextTask = this.taskStore.patch(taskId, {
+          ...basePatch,
+          contentId: match.contentId || '',
+          error: {
+            code: 'DUPLICATE_NICKNAME',
+            message: '交接表中存在同名达人，当前版本不自动决策，请先人工处理。',
+            details: basePatch.sheetMatch.details
+          }
+        })
+      } else {
+        nextTask = this.taskStore.patch(taskId, {
+          ...basePatch,
+          contentId: '',
+          error: {
+            code: 'NOT_IN_SHEET',
+            message: '当前扫码达人不在交接表中，未触发自动查询和回填。',
+            details: null
+          }
+        })
+      }
+
+      await this.safeDiscardSession(task.loginSessionId)
+      if (match.status === 'NEEDS_FILL') {
+        this.enqueueQuery(taskId)
+      }
+      return nextTask
+    } catch (error) {
+      const patch = {
+        loginSessionId: '',
+        qrImageUrl: '',
+        error: serializeError(error)
+      }
+      if (error.code === 'TENCENT_DOCS_ROW_CHANGED') {
+        patch.sheetMatch = {
+          status: 'ROW_CHANGED',
+          sheetRow: Number(error.details?.expected?.sheetRow || task.sheetMatch?.sheetRow || 0),
+          nickname: String(error.details?.expected?.nickname || task.accountNickname || ''),
+          contentId: String(error.details?.expected?.contentId || task.contentId || ''),
+          missingColumns: task.sheetMatch?.missingColumns || [],
+          matchedAt: new Date().toISOString(),
+          details: error.details || null
+        }
+      }
+      this.taskStore.patch(taskId, patch)
+      await this.safeDiscardSession(task.loginSessionId)
+      if (rethrow) throw error
+      return this.getTaskOrThrow(taskId)
     }
   }
 
@@ -262,6 +429,17 @@ class GuangheTaskService {
         error: {
           code: 'TASK_ACCOUNT_REQUIRED',
           message: '当前任务还没有已登录账号，无法执行查询',
+          details: null
+        }
+      })
+      return
+    }
+    if (!task.contentId) {
+      this.taskStore.patch(taskId, {
+        query: { status: 'FAILED' },
+        error: {
+          code: 'TASK_CONTENT_ID_REQUIRED',
+          message: '当前任务缺少内容 ID，无法执行查询',
           details: null
         }
       })
@@ -362,14 +540,25 @@ class GuangheTaskService {
       return this.runningSyncs.get(taskId) || null
     }
 
+    const task = this.getTaskOrThrow(taskId)
+    const syncTarget = target || (task.taskMode === 'SHEET_DEMAND' ? task.sheetTarget : undefined)
+    const syncMatch = task.taskMode === 'SHEET_DEMAND' && task.sheetMatch?.sheetRow
+      ? {
+          sheetRow: task.sheetMatch.sheetRow,
+          nickname: task.sheetMatch.nickname,
+          contentId: task.sheetMatch.contentId
+        }
+      : undefined
+
     this.taskStore.patch(taskId, {
       sync: createRunningSyncState()
     })
 
     const promise = this.tencentDocsSyncService.syncHandoffRow({
       source: { resultUrl },
-      target,
-      maxRows
+      target: syncTarget,
+      maxRows,
+      match: syncMatch
     })
       .then((syncResult) => {
         this.taskStore.patch(taskId, {
@@ -378,9 +567,21 @@ class GuangheTaskService {
         return syncResult
       })
       .catch((error) => {
-        this.taskStore.patch(taskId, {
+        const patch = {
           sync: createFailedSyncState(error)
-        })
+        }
+        if (error.code === 'TENCENT_DOCS_ROW_CHANGED') {
+          patch.sheetMatch = {
+            status: 'ROW_CHANGED',
+            sheetRow: Number(error.details?.expected?.sheetRow || task.sheetMatch?.sheetRow || 0),
+            nickname: String(error.details?.expected?.nickname || task.sheetMatch?.nickname || ''),
+            contentId: String(error.details?.expected?.contentId || task.sheetMatch?.contentId || ''),
+            missingColumns: task.sheetMatch?.missingColumns || [],
+            matchedAt: new Date().toISOString(),
+            details: error.details || null
+          }
+        }
+        this.taskStore.patch(taskId, patch)
         if (rethrow) throw error
         return null
       })
@@ -425,6 +626,7 @@ function createBaseTask(entry, loginSession) {
   const timestamp = new Date().toISOString()
   return {
     taskId: crypto.randomUUID(),
+    taskMode: entry.taskMode || 'MANUAL',
     remark: entry.remark,
     contentId: entry.contentId,
     loginSessionId: loginSession.loginSessionId,
@@ -450,7 +652,9 @@ function createBaseTask(entry, loginSession) {
       resultUrl: '',
       networkLogUrl: ''
     },
-    sync: createIdleSyncState()
+    sync: createIdleSyncState(),
+    sheetTarget: entry.sheetTarget || null,
+    sheetMatch: null
   }
 }
 
@@ -517,7 +721,7 @@ function validateBatchEntries(entries) {
       errors.push({ index, field: 'contentId', message: '内容 ID 只能包含数字' })
     }
 
-    return { remark, contentId }
+    return { remark, contentId, taskMode: 'MANUAL' }
   })
 
   if (errors.length > 0) {
@@ -526,6 +730,14 @@ function validateBatchEntries(entries) {
     })
   }
 
+  return normalized
+}
+
+function validateSheetDemandCount(count) {
+  const normalized = Number(count || 1)
+  if (!Number.isInteger(normalized) || normalized < 1 || normalized > 5) {
+    throw new AppError(400, 'TASK_BATCH_INVALID', '交接表扫码任务数量只支持 1 到 5 个')
+  }
   return normalized
 }
 

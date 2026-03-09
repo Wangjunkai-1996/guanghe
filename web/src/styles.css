@@ -1909,3 +1909,111 @@ select,
     grid-template-columns: 1fr;
   }
 }
+
+.handoff-hub-panel,
+.handoff-config-panel,
+.handoff-login-panel,
+.handoff-demand-panel {
+  padding-top: var(--space-4);
+}
+
+.handoff-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.handoff-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.handoff-login-qr-wrap {
+  min-height: 260px;
+}
+
+.handoff-demand-panel {
+  gap: var(--space-4);
+}
+
+.handoff-demand-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.handoff-demand-list {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #fff;
+}
+
+.handoff-demand-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(120px, 1fr) minmax(120px, 0.9fr) minmax(90px, 0.8fr) minmax(140px, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.handoff-demand-row:first-child {
+  border-top: none;
+}
+
+.handoff-demand-head {
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.handoff-demand-row strong,
+.handoff-demand-row .mono-cell {
+  min-width: 0;
+}
+
+.task-card-title-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-mode-pill {
+  color: var(--green-600);
+  border-color: rgba(21, 128, 61, 0.18);
+  background: rgba(220, 252, 231, 0.8);
+}
+
+@media (max-width: 1440px) {
+  .handoff-hub-grid,
+  .handoff-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .handoff-demand-toolbar {
+    align-items: stretch;
+  }
+
+  .handoff-demand-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .handoff-hub-grid,
+  .handoff-summary-grid,
+  .handoff-demand-row {
+    grid-template-columns: 1fr;
+  }
+}

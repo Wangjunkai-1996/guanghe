@@ -33,21 +33,31 @@ export const api = {
   deleteAccount: (accountId) => request(`/api/accounts/${accountId}`, { method: 'DELETE' }),
   listTasks: () => request('/api/tasks', { method: 'GET' }),
   createTaskBatch: (tasks) => request('/api/tasks/batch', { method: 'POST', body: JSON.stringify({ tasks }) }),
+  createSheetDemandTaskBatch: (count) => request('/api/tasks/sheet-demand/batch', { method: 'POST', body: JSON.stringify({ count }) }),
   refreshTaskLogin: (taskId) => request(`/api/tasks/${taskId}/refresh-login`, { method: 'POST' }),
   retryTaskQuery: (taskId) => request(`/api/tasks/${taskId}/retry-query`, { method: 'POST' }),
   deleteTask: (taskId) => request(`/api/tasks/${taskId}`, { method: 'DELETE' }),
   queryContent: ({ accountId, contentId }) => request('/api/queries', { method: 'POST', body: JSON.stringify({ accountId, contentId }) }),
   getTencentDocsConfig: () => request('/api/tencent-docs/config', { method: 'GET' }),
+  updateTencentDocsConfig: ({ docUrl, sheetName } = {}) => request('/api/tencent-docs/config', {
+    method: 'PUT',
+    body: JSON.stringify({ docUrl, sheetName })
+  }),
+  createTencentDocsLoginSession: ({ target } = {}) => request('/api/tencent-docs/login-sessions', {
+    method: 'POST',
+    body: JSON.stringify({ target })
+  }),
+  getTencentDocsLoginSession: (loginSessionId) => request(`/api/tencent-docs/login-sessions/${loginSessionId}`, { method: 'GET' }),
   inspectTencentDocsSheet: ({ target, maxRows } = {}) => request('/api/tencent-docs/sheet/inspect', {
     method: 'POST',
     body: JSON.stringify({ target, maxRows })
   }),
-  previewTencentDocsHandoff: ({ resultUrl, target, maxRows } = {}) => request('/api/tencent-docs/handoff/preview', {
+  previewTencentDocsHandoff: ({ resultUrl, target, maxRows, match } = {}) => request('/api/tencent-docs/handoff/preview', {
     method: 'POST',
-    body: JSON.stringify({ source: { resultUrl }, target, maxRows })
+    body: JSON.stringify({ source: { resultUrl }, target, maxRows, match })
   }),
-  syncTencentDocsHandoff: ({ taskId, resultUrl, target, maxRows } = {}) => request('/api/tencent-docs/handoff/sync', {
+  syncTencentDocsHandoff: ({ taskId, resultUrl, target, maxRows, match } = {}) => request('/api/tencent-docs/handoff/sync', {
     method: 'POST',
-    body: JSON.stringify({ taskId, source: { resultUrl }, target, maxRows })
+    body: JSON.stringify({ taskId, source: { resultUrl }, target, maxRows, match })
   })
 }

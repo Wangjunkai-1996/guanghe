@@ -1,6 +1,7 @@
 const { ensureDir, readJson, writeJson } = require('./files')
 
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
+const TERMINAL_SHEET_MATCH_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
 
 class TaskStore {
   constructor({ tasksFile }) {
@@ -43,7 +44,7 @@ class TaskStore {
     let changed = false
     const now = new Date().toISOString()
     const next = tasks.map((task) => {
-      if (TERMINAL_QUERY_STATUSES.has(task.query.status)) return task
+      if (isTerminalTask(task)) return task
       changed = true
       return normalizeTask({
         ...task,
@@ -75,6 +76,11 @@ class TaskStore {
   }
 }
 
+function isTerminalTask(task) {
+  if (TERMINAL_QUERY_STATUSES.has(task.query?.status)) return true
+  return TERMINAL_SHEET_MATCH_STATUSES.has(task.sheetMatch?.status)
+}
+
 function mergeTask(current, patch = {}) {
   const next = {
     ...current,
@@ -83,12 +89,16 @@ function mergeTask(current, patch = {}) {
     query: mergeNested(current.query, patch.query),
     screenshots: mergeNested(current.screenshots, patch.screenshots),
     artifacts: mergeNested(current.artifacts, patch.artifacts),
-    sync: mergeNested(current.sync, patch.sync)
+    sync: mergeNested(current.sync, patch.sync),
+    sheetTarget: mergeNested(current.sheetTarget, patch.sheetTarget),
+    sheetMatch: mergeNested(current.sheetMatch, patch.sheetMatch)
   }
 
   if (Object.prototype.hasOwnProperty.call(patch, 'error')) next.error = patch.error
   if (Object.prototype.hasOwnProperty.call(patch, 'metrics')) next.metrics = patch.metrics
   if (Object.prototype.hasOwnProperty.call(patch, 'fetchedAt')) next.fetchedAt = patch.fetchedAt
+  if (Object.prototype.hasOwnProperty.call(patch, 'contentId')) next.contentId = patch.contentId
+  if (Object.prototype.hasOwnProperty.call(patch, 'remark')) next.remark = patch.remark
 
   next.updatedAt = patch.updatedAt || new Date().toISOString()
   return next
@@ -104,6 +114,7 @@ function normalizeTask(task = {}) {
   const now = new Date().toISOString()
   return {
     taskId: String(task.taskId || ''),
+    taskMode: String(task.taskMode || 'MANUAL'),
     remark: String(task.remark || '').trim(),
     contentId: String(task.contentId || ''),
     loginSessionId: String(task.loginSessionId || ''),
@@ -129,7 +140,29 @@ function normalizeTask(task = {}) {
       resultUrl: String(task.artifacts?.resultUrl || ''),
       networkLogUrl: String(task.artifacts?.networkLogUrl || '')
     },
-    sync: normalizeSync(task.sync)
+    sync: normalizeSync(task.sync),
+    sheetTarget: normalizeSheetTarget(task.sheetTarget),
+    sheetMatch: normalizeSheetMatch(task.sheetMatch)
+  }
+}
+
+function normalizeSheetTarget(target) {
+  return {
+    docUrl: String(target?.docUrl || ''),
+    sheetName: String(target?.sheetName || '')
+  }
+}
+
+function normalizeSheetMatch(sheetMatch) {
+  if (!sheetMatch) return null
+  return {
+    status: String(sheetMatch.status || ''),
+    sheetRow: Number(sheetMatch.sheetRow || 0),
+    nickname: String(sheetMatch.nickname || ''),
+    contentId: String(sheetMatch.contentId || ''),
+    missingColumns: Array.isArray(sheetMatch.missingColumns) ? sheetMatch.missingColumns.map((item) => String(item || '')) : [],
+    matchedAt: String(sheetMatch.matchedAt || ''),
+    details: sheetMatch.details || null
   }
 }
 

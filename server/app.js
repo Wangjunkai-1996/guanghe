@@ -102,6 +102,15 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
       }
     })
 
+    app.post('/api/tasks/sheet-demand/batch', async (req, res, next) => {
+      try {
+        const payload = await taskService.createSheetDemandTasksBatch(req.body?.count)
+        res.status(201).json(payload)
+      } catch (error) {
+        next(error)
+      }
+    })
+
     app.post('/api/tasks/:taskId/refresh-login', async (req, res, next) => {
       try {
         const task = await taskService.refreshTaskLogin(req.params.taskId)
@@ -149,6 +158,31 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
   if (tencentDocsSyncService) {
     app.get('/api/tencent-docs/config', (_req, res) => {
       res.json(tencentDocsSyncService.getConfig())
+    })
+
+    app.put('/api/tencent-docs/config', (req, res, next) => {
+      try {
+        res.json(tencentDocsSyncService.setConfig(req.body || {}))
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tencent-docs/login-sessions', async (req, res, next) => {
+      try {
+        const payload = await tencentDocsSyncService.createLoginSession(req.body || {})
+        res.status(201).json(payload)
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.get('/api/tencent-docs/login-sessions/:loginSessionId', (req, res, next) => {
+      try {
+        res.json(tencentDocsSyncService.getLoginSession(req.params.loginSessionId))
+      } catch (error) {
+        next(error)
+      }
     })
 
     app.post('/api/tencent-docs/jobs/preview', (req, res, next) => {

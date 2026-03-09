@@ -23,6 +23,7 @@ module.exports = {
   tencentDocsHeadless: process.env.TENCENT_DOCS_HEADLESS !== 'false',
   tencentDocsTimezone: process.env.TENCENT_DOCS_TIMEZONE || 'Asia/Shanghai',
   tencentDocsJobsFile: path.resolve(paths.dataDir, 'tencent-docs-jobs.json'),
+  tencentDocsStateFile: path.resolve(paths.dataDir, 'tencent-docs-state.json'),
   tencentDocsProfileDir: path.resolve(paths.profileRootDir, 'tencent-docs'),
   ...paths
 }

@@ -14,11 +14,15 @@ vi.mock('../web/src/api', () => {
     deleteAccount: vi.fn(),
     listTasks: vi.fn(),
     createTaskBatch: vi.fn(),
+    createSheetDemandTaskBatch: vi.fn(),
     refreshTaskLogin: vi.fn(),
     retryTaskQuery: vi.fn(),
     deleteTask: vi.fn(),
     queryContent: vi.fn(),
     getTencentDocsConfig: vi.fn(),
+    updateTencentDocsConfig: vi.fn(),
+    createTencentDocsLoginSession: vi.fn(),
+    getTencentDocsLoginSession: vi.fn(),
     inspectTencentDocsSheet: vi.fn(),
     previewTencentDocsHandoff: vi.fn(),
     syncTencentDocsHandoff: vi.fn()
@@ -39,6 +43,7 @@ describe('batch task workspace ui', () => {
     Object.values(api).forEach((fn) => fn.mockReset())
     api.listTasks.mockResolvedValue({ tasks: [] })
     api.createTaskBatch.mockResolvedValue({ tasks: [] })
+    api.createSheetDemandTaskBatch.mockResolvedValue({ tasks: [createTask({ taskId: 'sheet-task-1', taskMode: 'SHEET_DEMAND' })] })
     api.refreshTaskLogin.mockResolvedValue({ ok: true })
     api.retryTaskQuery.mockResolvedValue({ ok: true })
     api.deleteTask.mockResolvedValue(undefined)
@@ -50,13 +55,75 @@ describe('batch task workspace ui', () => {
       mode: 'browser',
       defaultTargetConfigured: true,
       defaultSheetName: '1',
-      defaultWriteMode: 'upsert'
+      defaultWriteMode: 'upsert',
+      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      login: { status: 'LOGGED_IN', updatedAt: '2026-03-09T00:10:00.000Z', error: null }
+    })
+    api.updateTencentDocsConfig.mockResolvedValue({
+      enabled: true,
+      mode: 'browser',
+      defaultTargetConfigured: true,
+      defaultSheetName: '2',
+      defaultWriteMode: 'upsert',
+      target: { docUrl: 'https://docs.qq.com/sheet/next', sheetName: '2' },
+      login: { status: 'LOGGED_IN', updatedAt: '2026-03-09T00:10:00.000Z', error: null }
+    })
+    api.createTencentDocsLoginSession.mockResolvedValue({
+      loginSessionId: 'tdocs-session-1',
+      status: 'WAITING_QR',
+      qrImageUrl: '/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png',
+      updatedAt: '2026-03-09T00:12:00.000Z',
+      error: null
+    })
+    api.getTencentDocsLoginSession.mockResolvedValue({
+      loginSessionId: 'tdocs-session-1',
+      status: 'LOGGED_IN',
+      qrImageUrl: '/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png',
+      updatedAt: '2026-03-09T00:12:10.000Z',
+      error: null
     })
     api.inspectTencentDocsSheet.mockResolvedValue({
       target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      tabs: [
+        { name: '1', selected: true },
+        { name: '2', selected: false }
+      ],
       headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
-      rowCount: 2,
+      rowCount: 3,
       columnCount: 9,
+      summary: {
+        totalRows: 3,
+        completeRows: 1,
+        needsFillRows: 1,
+        missingContentIdRows: 1,
+        duplicateNicknameRows: 0
+      },
+      demands: [
+        {
+          sheetRow: 6,
+          nickname: '达人A',
+          contentId: '554608495125',
+          status: 'NEEDS_FILL',
+          missingColumns: ['查看次数截图', '查看次数'],
+          missingCount: 2
+        },
+        {
+          sheetRow: 7,
+          nickname: '达人B',
+          contentId: '',
+          status: 'CONTENT_ID_MISSING',
+          missingColumns: ['内容id', '查看次数'],
+          missingCount: 2
+        },
+        {
+          sheetRow: 8,
+          nickname: '达人C',
+          contentId: '537029503554',
+          status: 'COMPLETE',
+          missingColumns: [],
+          missingCount: 0
+        }
+      ],
       rows: [{ sheetRow: 6, contentId: '554608495125' }],
       artifacts: {
         beforeReadUrl: '/api/artifacts/tencent-docs/inspect/before-read.png',
@@ -141,29 +208,87 @@ describe('batch task workspace ui', () => {
     expect(within(drawer).getByText('腾讯文档同步')).toBeInTheDocument()
   })
 
-
   test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
     render(<BatchTasksWorkspace />)
 
     expect(await screen.findByRole('heading', { name: '同步诊断' })).toBeInTheDocument()
     expect(await screen.findByText('表头完整')).toBeInTheDocument()
-    expect(screen.getByText('已登录')).toBeInTheDocument()
+    expect(screen.getAllByText('已登录').length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: '打开诊断 JSON' })).toHaveAttribute('href', '/api/artifacts/tencent-docs/inspect/sheet-preview.json')
-    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({ target: undefined, maxRows: 20 })
+    expect(screen.getByRole('heading', { name: '缺数达人列表' })).toBeInTheDocument()
+    expect(screen.getByText('达人A')).toBeInTheDocument()
+    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({ target: undefined, maxRows: 200 })
   })
 
   test('shows live draft validation and counts in task builder', async () => {
     render(<BatchTasksWorkspace />)
 
+    await screen.findByRole('heading', { name: '批量任务工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '手工建任务' }))
     await screen.findByRole('heading', { name: '新建批量任务' })
+
     fireEvent.change(screen.getByLabelText('批量任务输入'), {
       target: { value: '达人A,554608495125\n无效任务' }
     })
 
     expect(screen.getByText('第 2 行：请按“备注,内容ID”或“备注<TAB>内容ID”填写')).toBeInTheDocument()
-    expect(screen.getByText('总行数')).toBeInTheDocument()
-    expect(screen.getByText('可创建')).toBeInTheDocument()
-    expect(screen.getByText('错误数')).toBeInTheDocument()
+    expect(screen.getAllByText('总行数').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('可创建').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('错误数').length).toBeGreaterThan(0)
+  })
+
+  test('saves handoff target and creates sheet-driven tasks', async () => {
+    render(<BatchTasksWorkspace />)
+
+    await screen.findByRole('heading', { name: '腾讯交接表驱动工作台' })
+    await screen.findByText('达人A')
+
+    fireEvent.change(screen.getByLabelText('腾讯文档链接'), {
+      target: { value: 'https://docs.qq.com/sheet/next' }
+    })
+    fireEvent.change(screen.getByLabelText('目标工作表'), {
+      target: { value: '2' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存交接表' }))
+
+    await waitFor(() => {
+      expect(api.updateTencentDocsConfig).toHaveBeenCalledWith({
+        docUrl: 'https://docs.qq.com/sheet/next',
+        sheetName: '2'
+      })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '生成 2 个光合二维码' }))
+    await waitFor(() => {
+      expect(api.createSheetDemandTaskBatch).toHaveBeenCalledWith(2)
+    })
+  })
+
+  test('starts tencent docs login and shows qr image', async () => {
+    api.getTencentDocsConfig.mockResolvedValueOnce({
+      enabled: true,
+      mode: 'browser',
+      defaultTargetConfigured: false,
+      defaultSheetName: '',
+      defaultWriteMode: 'upsert',
+      target: { docUrl: '', sheetName: '' },
+      login: { status: 'IDLE', updatedAt: '', error: null }
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    await screen.findByRole('heading', { name: '腾讯交接表驱动工作台' })
+    fireEvent.change(screen.getByLabelText('腾讯文档链接'), {
+      target: { value: 'https://docs.qq.com/sheet/mock' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: '腾讯文档扫码登录' }))
+
+    await waitFor(() => {
+      expect(api.createTencentDocsLoginSession).toHaveBeenCalledWith({
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '' }
+      })
+    })
+    expect(await screen.findByAltText('腾讯文档登录二维码')).toHaveAttribute('src', '/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png')
   })
 
   test('shows sync failure guidance and supports manual resync actions', async () => {
@@ -212,15 +337,17 @@ describe('batch task workspace ui', () => {
 
     fireEvent.click(within(drawer).getByRole('button', { name: '预览回填' }))
     await waitFor(() => {
-      expect(api.previewTencentDocsHandoff).toHaveBeenCalledWith({ resultUrl: '/api/artifacts/results.json' })
+      expect(api.previewTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        resultUrl: '/api/artifacts/results.json'
+      }))
     })
 
     fireEvent.click(within(drawer).getByRole('button', { name: '立即同步' }))
     await waitFor(() => {
-      expect(api.syncTencentDocsHandoff).toHaveBeenCalledWith({
+      expect(api.syncTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
         taskId: 'task-sync-failed',
         resultUrl: '/api/artifacts/results.json'
-      })
+      }))
     })
   })
 
@@ -244,6 +371,9 @@ function createTask(overrides = {}) {
     taskId: 'task-default',
     remark: '默认任务',
     contentId: '554608495125',
+    taskMode: 'MANUAL',
+    sheetTarget: null,
+    sheetMatch: null,
     loginSessionId: 'session-1',
     qrImageUrl: '/api/artifacts/login-sessions/session-1/qr.png',
     createdAt: '2026-03-09T00:00:00.000Z',

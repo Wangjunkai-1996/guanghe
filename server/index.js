@@ -39,6 +39,7 @@ const tencentDocsSyncService = new TencentDocsSyncService({
     headless: config.tencentDocsHeadless,
     timezone: config.tencentDocsTimezone,
     jobsFile: config.tencentDocsJobsFile,
+    stateFile: config.tencentDocsStateFile,
     profileDir: config.tencentDocsProfileDir,
     toolBaseUrl: config.toolBaseUrl,
     browserExecutablePath: config.browserExecutablePath,
