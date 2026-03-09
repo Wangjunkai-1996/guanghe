@@ -18,7 +18,6 @@ function parseClipboardTable(rawText) {
 
   const logicalRows = mergePhysicalRows(physicalRows, columnCount)
     .map((cells) => padCells(cells, columnCount))
-    .filter((cells) => cells.some((cell) => String(cell || '').trim() !== ''))
 
   if (logicalRows.length === 0) {
     return {
@@ -31,21 +30,24 @@ function parseClipboardTable(rawText) {
   }
 
   const headers = repairKnownHeaderPatterns(logicalRows[0].map(normalizeHeaderCell))
-  const rows = logicalRows.slice(1).map((values, index) => {
-    const cells = {}
-    headers.forEach((header, columnIndex) => {
-      if (!header) return
-      cells[header] = values[columnIndex] ?? ''
-    })
+  const rows = logicalRows
+    .slice(1)
+    .map((values, index) => {
+      const cells = {}
+      headers.forEach((header, columnIndex) => {
+        if (!header) return
+        cells[header] = values[columnIndex] ?? ''
+      })
 
-    return {
-      sheetRow: index + 2,
-      values,
-      cells,
-      nickname: pickCell(headers, values, ['逛逛昵称']),
-      contentId: pickCell(headers, values, ['内容id', '内容ID'])
-    }
-  })
+      return {
+        sheetRow: index + 2,
+        values,
+        cells,
+        nickname: pickCell(headers, values, ['逛逛昵称']),
+        contentId: pickCell(headers, values, ['内容id', '内容ID'])
+      }
+    })
+    .filter((row) => row.values.some((cell) => String(cell || '').trim() !== ''))
 
   return {
     columnCount,

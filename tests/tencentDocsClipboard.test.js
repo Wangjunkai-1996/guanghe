@@ -54,4 +54,23 @@ describe('tencent docs clipboard parser', () => {
     expect(result.rows[0].contentId).toBe('547982656829')
   })
 
+
+  test('preserves actual sheet row numbers when blank rows exist between records', () => {
+    const rawTsv = [
+      '逛逛昵称	内容id	查看次数',
+      '达人A	111	10',
+      '		',
+      '		',
+      '达人B	222	20'
+    ].join('\n')
+
+    const result = parseClipboardTable(rawTsv)
+
+    expect(result.rows).toHaveLength(2)
+    expect(result.rows[0].sheetRow).toBe(2)
+    expect(result.rows[1].sheetRow).toBe(5)
+    expect(result.rows[1].nickname).toBe('达人B')
+    expect(result.rows[1].contentId).toBe('222')
+  })
+
 })
