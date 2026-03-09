@@ -38,6 +38,10 @@ export const api = {
   deleteTask: (taskId) => request(`/api/tasks/${taskId}`, { method: 'DELETE' }),
   queryContent: ({ accountId, contentId }) => request('/api/queries', { method: 'POST', body: JSON.stringify({ accountId, contentId }) }),
   getTencentDocsConfig: () => request('/api/tencent-docs/config', { method: 'GET' }),
+  inspectTencentDocsSheet: ({ target, maxRows } = {}) => request('/api/tencent-docs/sheet/inspect', {
+    method: 'POST',
+    body: JSON.stringify({ target, maxRows })
+  }),
   previewTencentDocsHandoff: ({ resultUrl, target, maxRows } = {}) => request('/api/tencent-docs/handoff/preview', {
     method: 'POST',
     body: JSON.stringify({ source: { resultUrl }, target, maxRows })

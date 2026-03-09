@@ -28,6 +28,16 @@ const FILTER_OPTIONS = [
   { value: 'finished', label: '已完成', tone: 'success' }
 ]
 
+const TENCENT_DOCS_REQUIRED_HEADERS = [
+  '内容id',
+  '查看次数截图',
+  '查看次数',
+  '查看人数',
+  '种草成交金额',
+  '种草成交人数',
+  '商品点击次数'
+]
+
 export function BatchTasksWorkspace() {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -55,6 +65,7 @@ export function BatchTasksWorkspace() {
   })
   const [syncPreviewState, setSyncPreviewState] = useState({})
   const [syncActionLoading, setSyncActionLoading] = useState({})
+  const [docsDiagnostic, setDocsDiagnostic] = useState(createTencentDocsDiagnosticState())
 
   const textareaRef = useRef(null)
 
@@ -79,7 +90,7 @@ export function BatchTasksWorkspace() {
   const loadSyncConfig = useCallback(async () => {
     try {
       const payload = await api.getTencentDocsConfig()
-      setSyncConfig({
+      const nextConfig = {
         loading: false,
         available: true,
         enabled: Boolean(payload?.enabled),
@@ -88,10 +99,11 @@ export function BatchTasksWorkspace() {
         defaultWriteMode: payload?.defaultWriteMode || 'upsert',
         mode: payload?.mode || 'browser',
         error: ''
-      })
-      return payload
+      }
+      setSyncConfig(nextConfig)
+      return nextConfig
     } catch (nextError) {
-      setSyncConfig({
+      const nextConfig = {
         loading: false,
         available: false,
         enabled: false,
@@ -100,10 +112,12 @@ export function BatchTasksWorkspace() {
         defaultWriteMode: 'upsert',
         mode: 'browser',
         error: nextError.message || '腾讯文档配置读取失败'
-      })
-      return null
+      }
+      setSyncConfig(nextConfig)
+      return nextConfig
     }
   }, [])
+
 
   const pushToast = useCallback((message, tone = 'info') => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -112,6 +126,79 @@ export function BatchTasksWorkspace() {
       setToasts((current) => current.filter((item) => item.id !== id))
     }, 2200)
   }, [])
+
+  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 20, configOverride } = {}) => {
+    const effectiveConfig = configOverride || syncConfig
+    if (!effectiveConfig.available) {
+      setDocsDiagnostic(createTencentDocsDiagnosticState({
+        inspected: true,
+        error: {
+          code: 'TENCENT_DOCS_UNAVAILABLE',
+          message: effectiveConfig.error || '当前服务未接入腾讯文档配置读取',
+          details: null
+        }
+      }))
+      if (!silent) pushToast(effectiveConfig.error || '当前服务未接入腾讯文档配置读取', 'warning')
+      return null
+    }
+
+    if (!effectiveConfig.enabled) {
+      setDocsDiagnostic(createTencentDocsDiagnosticState({
+        inspected: true,
+        error: {
+          code: 'TENCENT_DOCS_NOT_CONFIGURED',
+          message: '腾讯文档同步未启用，请先设置 TENCENT_DOCS_ENABLED=true',
+          details: null
+        }
+      }))
+      if (!silent) pushToast('腾讯文档同步未启用', 'warning')
+      return null
+    }
+
+    if (!effectiveConfig.defaultTargetConfigured && !target) {
+      setDocsDiagnostic(createTencentDocsDiagnosticState({
+        inspected: true,
+        error: {
+          code: 'TENCENT_DOCS_TARGET_MISSING',
+          message: '腾讯文档默认目标未配置，请先设置 docUrl 和 sheetName',
+          details: null
+        }
+      }))
+      if (!silent) pushToast('腾讯文档默认目标未配置', 'warning')
+      return null
+    }
+
+    setDocsDiagnostic((current) => ({
+      ...current,
+      loading: true,
+      inspected: true,
+      error: null
+    }))
+
+    try {
+      const payload = await api.inspectTencentDocsSheet({ target, maxRows })
+      setDocsDiagnostic(createTencentDocsDiagnosticState({
+        inspected: true,
+        payload,
+        checkedAt: new Date().toISOString()
+      }))
+      if (!silent) pushToast('腾讯文档诊断完成', 'success')
+      return payload
+    } catch (nextError) {
+      const errorPayload = {
+        code: nextError.code || 'TENCENT_DOCS_INSPECT_FAILED',
+        message: nextError.message || '腾讯文档诊断失败',
+        details: nextError.details || null
+      }
+      setDocsDiagnostic(createTencentDocsDiagnosticState({
+        inspected: true,
+        error: errorPayload,
+        checkedAt: new Date().toISOString()
+      }))
+      if (!silent) pushToast(errorPayload.message, 'danger')
+      return null
+    }
+  }, [pushToast, syncConfig])
 
   useEffect(() => {
     let cancelled = false
@@ -134,6 +221,16 @@ export function BatchTasksWorkspace() {
       window.clearInterval(timer)
     }
   }, [loadSyncConfig, loadTasks])
+
+
+  useEffect(() => {
+    if (syncConfig.loading) return
+    if (!syncConfig.available || !syncConfig.enabled || !syncConfig.defaultTargetConfigured) {
+      setDocsDiagnostic(createTencentDocsDiagnosticState())
+      return
+    }
+    void runTencentDocsInspect({ silent: true })
+  }, [runTencentDocsInspect, syncConfig.available, syncConfig.defaultTargetConfigured, syncConfig.enabled, syncConfig.loading])
 
   useEffect(() => {
     if (builderTouched) return
@@ -206,7 +303,10 @@ export function BatchTasksWorkspace() {
   }, [filteredTasks, selectedTaskId])
 
   const handleRefreshList = async () => {
-    await Promise.all([loadTasks(), loadSyncConfig()])
+    const [, nextConfig] = await Promise.all([loadTasks(), loadSyncConfig()])
+    if (nextConfig?.enabled && nextConfig?.defaultTargetConfigured) {
+      await runTencentDocsInspect({ silent: true, configOverride: nextConfig })
+    }
     pushToast('任务列表已刷新', 'success')
   }
 
@@ -491,6 +591,12 @@ export function BatchTasksWorkspace() {
         </div>
       </section>
 
+      <TencentDocsDiagnosticPanel
+        syncConfig={syncConfig}
+        diagnostic={docsDiagnostic}
+        onInspect={() => runTencentDocsInspect()}
+      />
+
       <div className="task-board-layout">
         <section className="panel task-list-panel stack-md">
           <div className="panel-split-header">
@@ -589,6 +695,115 @@ function TaskStageCard({ label, value, tone, active, onClick }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </button>
+  )
+}
+
+
+function TencentDocsDiagnosticPanel({ syncConfig, diagnostic, onInspect }) {
+  const headers = diagnostic.payload?.headers || []
+  const missingHeaders = getMissingTencentDocsHeaders(headers)
+  const loginStatus = getTencentDocsLoginStatus(syncConfig, diagnostic)
+  const sheetStatus = getTencentDocsSheetStatus(syncConfig, diagnostic, missingHeaders)
+  const statusItems = [
+    {
+      label: '功能开关',
+      tone: syncConfig.available ? (syncConfig.enabled ? 'success' : 'warning') : 'danger',
+      value: syncConfig.available ? (syncConfig.enabled ? '已启用' : '未启用') : '未接入',
+      detail: syncConfig.available ? `模式：${syncConfig.mode || 'browser'}` : (syncConfig.error || '未暴露腾讯文档配置接口')
+    },
+    {
+      label: '默认目标',
+      tone: syncConfig.defaultTargetConfigured ? 'success' : 'warning',
+      value: syncConfig.defaultTargetConfigured ? (syncConfig.defaultSheetName || '已配置') : '待配置',
+      detail: syncConfig.defaultTargetConfigured ? '将优先使用默认 docUrl 和 sheetName' : '请先配置默认腾讯文档地址与工作表名'
+    },
+    {
+      label: '登录/读表',
+      tone: loginStatus.tone,
+      value: loginStatus.value,
+      detail: loginStatus.detail
+    },
+    {
+      label: '表头检查',
+      tone: sheetStatus.tone,
+      value: sheetStatus.value,
+      detail: sheetStatus.detail
+    }
+  ]
+
+  return (
+    <section className="panel tencent-diagnostic-panel stack-md">
+      <div className="panel-split-header">
+        <div className="compact-panel-header">
+          <span className="section-eyebrow">腾讯文档</span>
+          <h2>同步诊断</h2>
+          <p>先确认默认目标、登录态和表头是否正常，再去处理批量任务里的补同步，排障会省很多时间。</p>
+        </div>
+        <div className="tasks-toolbar-actions">
+          <button
+            className="secondary-btn"
+            type="button"
+            disabled={diagnostic.loading || !syncConfig.available}
+            onClick={onInspect}
+          >
+            {diagnostic.loading ? '诊断中...' : '立即诊断'}
+          </button>
+        </div>
+      </div>
+
+      <div className="task-summary-grid diagnostic-summary-grid">
+        {statusItems.map((item) => (
+          <div key={item.label} className={`meta-card compact-meta-card diagnostic-card tone-${item.tone}`}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.detail}</small>
+          </div>
+        ))}
+      </div>
+
+      {diagnostic.checkedAt ? (
+        <div className="task-sync-meta diagnostic-meta">
+          <strong>最近诊断时间</strong>
+          <small>{formatDateTime(diagnostic.checkedAt)}</small>
+        </div>
+      ) : null}
+
+      {diagnostic.error ? (
+        <div className={`task-state-banner tone-${loginStatus.tone}`}>
+          <strong>{diagnostic.error.message}</strong>
+          <small>{diagnostic.error.code || 'TENCENT_DOCS_INSPECT_FAILED'}</small>
+        </div>
+      ) : null}
+
+      {headers.length > 0 ? (
+        <div className="sync-preview-card stack-sm">
+          <strong>当前表头</strong>
+          <small>{`共 ${headers.length} 列，已读取 ${diagnostic.payload?.rowCount || 0} 行预览数据`}</small>
+          <div className="sync-columns-list">
+            {headers.map((header) => (
+              <span key={header} className="task-recommend-pill">{header}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {missingHeaders.length > 0 ? (
+        <div className="task-state-banner tone-warning">
+          <strong>模板列缺失</strong>
+          <small>{`当前缺少：${missingHeaders.join('、')}`}</small>
+        </div>
+      ) : null}
+
+      {diagnostic.payload?.artifacts ? (
+        <div className="result-actions-row sync-artifact-links">
+          {diagnostic.payload.artifacts.beforeReadUrl ? <a className="secondary-btn inline-link-btn" href={diagnostic.payload.artifacts.beforeReadUrl} target="_blank" rel="noreferrer">读表前截图</a> : null}
+          {diagnostic.payload.artifacts.afterReadUrl ? <a className="secondary-btn inline-link-btn" href={diagnostic.payload.artifacts.afterReadUrl} target="_blank" rel="noreferrer">读表后截图</a> : null}
+          {diagnostic.payload.artifacts.selectionTsvUrl ? <a className="secondary-btn inline-link-btn" href={diagnostic.payload.artifacts.selectionTsvUrl} target="_blank" rel="noreferrer">打开选区 TSV</a> : null}
+          {diagnostic.payload.artifacts.previewJsonUrl ? <a className="secondary-btn inline-link-btn" href={diagnostic.payload.artifacts.previewJsonUrl} target="_blank" rel="noreferrer">打开诊断 JSON</a> : null}
+          {diagnostic.payload.artifacts.errorUrl ? <a className="secondary-btn inline-link-btn" href={diagnostic.payload.artifacts.errorUrl} target="_blank" rel="noreferrer">打开错误截图</a> : null}
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -1276,6 +1491,148 @@ function getTaskSyncDescription(task, syncConfig) {
   if (syncState === 'NOT_CONFIGURED') return '腾讯文档默认目标未配置；请先设置 docUrl 和 sheetName。'
   if (syncState === 'UNAVAILABLE') return syncConfig?.error || '当前服务未提供腾讯文档同步配置。'
   return '查询结果已准备好，可先预览命中行和列，再决定是否立即同步。'
+}
+
+
+function createTencentDocsDiagnosticState(overrides = {}) {
+  return {
+    loading: false,
+    inspected: false,
+    payload: null,
+    error: null,
+    checkedAt: '',
+    ...overrides
+  }
+}
+
+function getMissingTencentDocsHeaders(headers = []) {
+  const normalizedHeaders = new Set(headers.map(normalizeTencentDocsHeader))
+  return TENCENT_DOCS_REQUIRED_HEADERS.filter((header) => !normalizedHeaders.has(normalizeTencentDocsHeader(header)))
+}
+
+function normalizeTencentDocsHeader(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function getTencentDocsLoginStatus(syncConfig, diagnostic) {
+  if (!syncConfig.available) {
+    return {
+      tone: 'danger',
+      value: '未接入',
+      detail: syncConfig.error || '当前服务未暴露腾讯文档配置接口'
+    }
+  }
+  if (!syncConfig.enabled) {
+    return {
+      tone: 'warning',
+      value: '未启用',
+      detail: '当前未开启腾讯文档同步，不会尝试读表或回填'
+    }
+  }
+  if (!syncConfig.defaultTargetConfigured) {
+    return {
+      tone: 'warning',
+      value: '待配置',
+      detail: '默认目标未配置，暂时无法检查登录态和工作表'
+    }
+  }
+  if (diagnostic.loading) {
+    return {
+      tone: 'info',
+      value: '检查中',
+      detail: '正在读取默认工作表并确认登录态'
+    }
+  }
+  if (diagnostic.error?.code === 'TENCENT_DOCS_LOGIN_REQUIRED') {
+    return {
+      tone: 'danger',
+      value: '需登录',
+      detail: '腾讯文档当前未登录，请先在持久化 profile 中完成登录'
+    }
+  }
+  if (diagnostic.payload) {
+    return {
+      tone: 'success',
+      value: '已登录',
+      detail: `已读到 ${diagnostic.payload.rowCount || 0} 行预览数据`
+    }
+  }
+  if (diagnostic.error) {
+    return {
+      tone: 'danger',
+      value: '检查失败',
+      detail: diagnostic.error.message || '腾讯文档读表失败'
+    }
+  }
+  return {
+    tone: 'warning',
+    value: '待检查',
+    detail: '建议先点“立即诊断”确认登录态和工作表状态'
+  }
+}
+
+function getTencentDocsSheetStatus(syncConfig, diagnostic, missingHeaders) {
+  if (!syncConfig.available) {
+    return {
+      tone: 'danger',
+      value: '未接入',
+      detail: syncConfig.error || '当前服务未暴露腾讯文档配置接口'
+    }
+  }
+  if (!syncConfig.enabled) {
+    return {
+      tone: 'warning',
+      value: '未启用',
+      detail: '启用后才会检查工作表和模板列'
+    }
+  }
+  if (!syncConfig.defaultTargetConfigured) {
+    return {
+      tone: 'warning',
+      value: '待配置',
+      detail: '请先设置默认工作表名和文档地址'
+    }
+  }
+  if (diagnostic.loading) {
+    return {
+      tone: 'info',
+      value: '检查中',
+      detail: '正在拉取表头和选区预览'
+    }
+  }
+  if (diagnostic.error?.code === 'TENCENT_DOCS_SHEET_NOT_FOUND') {
+    return {
+      tone: 'danger',
+      value: '表不存在',
+      detail: diagnostic.error.message
+    }
+  }
+  if (diagnostic.error?.code === 'TENCENT_DOCS_READ_FAILED') {
+    return {
+      tone: 'danger',
+      value: '读表失败',
+      detail: diagnostic.error.message
+    }
+  }
+  if (diagnostic.payload && missingHeaders.length === 0) {
+    return {
+      tone: 'success',
+      value: '表头完整',
+      detail: `关键列已就绪：${TENCENT_DOCS_REQUIRED_HEADERS.length} 项`
+    }
+  }
+  if (diagnostic.payload && missingHeaders.length > 0) {
+    return {
+      tone: 'warning',
+      value: '缺少列',
+      detail: `缺少 ${missingHeaders.length} 个关键列，补齐后再同步更稳妥`
+    }
+  }
+  return {
+    tone: 'warning',
+    value: '待检查',
+    detail: '建议先点“立即诊断”读取真实表头'
+  }
 }
 
 function normalizeStatusTone(tone) {

@@ -19,6 +19,7 @@ vi.mock('../web/src/api', () => {
     deleteTask: vi.fn(),
     queryContent: vi.fn(),
     getTencentDocsConfig: vi.fn(),
+    inspectTencentDocsSheet: vi.fn(),
     previewTencentDocsHandoff: vi.fn(),
     syncTencentDocsHandoff: vi.fn()
   }
@@ -50,6 +51,18 @@ describe('batch task workspace ui', () => {
       defaultTargetConfigured: true,
       defaultSheetName: '1',
       defaultWriteMode: 'upsert'
+    })
+    api.inspectTencentDocsSheet.mockResolvedValue({
+      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+      rowCount: 2,
+      columnCount: 9,
+      rows: [{ sheetRow: 6, contentId: '554608495125' }],
+      artifacts: {
+        beforeReadUrl: '/api/artifacts/tencent-docs/inspect/before-read.png',
+        afterReadUrl: '/api/artifacts/tencent-docs/inspect/after-read.png',
+        previewJsonUrl: '/api/artifacts/tencent-docs/inspect/sheet-preview.json'
+      }
     })
     api.previewTencentDocsHandoff.mockResolvedValue({
       operationId: 'preview-1',
@@ -126,6 +139,17 @@ describe('batch task workspace ui', () => {
     expect(within(drawer).getByRole('link', { name: '查看汇总图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
     expect(within(drawer).getByText('自然卷儿')).toBeInTheDocument()
     expect(within(drawer).getByText('腾讯文档同步')).toBeInTheDocument()
+  })
+
+
+  test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
+    render(<BatchTasksWorkspace />)
+
+    expect(await screen.findByRole('heading', { name: '同步诊断' })).toBeInTheDocument()
+    expect(await screen.findByText('表头完整')).toBeInTheDocument()
+    expect(screen.getByText('已登录')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '打开诊断 JSON' })).toHaveAttribute('href', '/api/artifacts/tencent-docs/inspect/sheet-preview.json')
+    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({ target: undefined, maxRows: 20 })
   })
 
   test('shows live draft validation and counts in task builder', async () => {

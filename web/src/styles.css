@@ -1308,6 +1308,43 @@ select,
 }
 
 
+
+.tencent-diagnostic-panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.diagnostic-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.diagnostic-card {
+  border-width: 1px;
+}
+
+.diagnostic-card.tone-success {
+  border-color: rgba(21, 128, 61, 0.18);
+  background: rgba(220, 252, 231, 0.46);
+}
+
+.diagnostic-card.tone-warning {
+  border-color: rgba(180, 83, 9, 0.18);
+  background: rgba(254, 243, 199, 0.46);
+}
+
+.diagnostic-card.tone-danger {
+  border-color: rgba(220, 38, 38, 0.16);
+  background: rgba(254, 226, 226, 0.46);
+}
+
+.diagnostic-card.tone-info {
+  border-color: rgba(37, 99, 235, 0.16);
+  background: rgba(219, 234, 254, 0.46);
+}
+
+.diagnostic-meta {
+  align-items: baseline;
+}
 .task-recommend-list {
   display: flex;
   flex-wrap: wrap;
@@ -1838,7 +1875,8 @@ select,
   .task-stage-grid,
   .task-meta-grid,
   .task-summary-grid,
-  .task-detail-metrics-grid {
+  .task-detail-metrics-grid,
+  .diagnostic-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1866,7 +1904,8 @@ select,
   .task-stage-grid,
   .task-meta-grid,
   .task-summary-grid,
-  .task-detail-metrics-grid {
+  .task-detail-metrics-grid,
+  .diagnostic-summary-grid {
     grid-template-columns: 1fr;
   }
 }
