@@ -66,6 +66,43 @@ describe('taskService', () => {
     expect(harness.queryService.calls).toEqual([{ accountId: '1001', contentId: '554608495125' }])
   })
 
+  test('auto-syncs tencent docs after query succeeds when sync service is configured', async () => {
+    const syncCalls = []
+    const harness = createHarness({
+      tencentDocsSyncService: {
+        async syncHandoffRow(payload) {
+          syncCalls.push(payload)
+          return {
+            operationId: 'handoff-1',
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            match: { sheetRow: 8, contentId: '554608495125', matchedBy: ['内容id'] },
+            writeSummary: { action: 'UPDATED', columnsUpdated: ['查看次数', '查看人数'] }
+          }
+        }
+      }
+    })
+    const { tasks } = await harness.service.createTasksBatch([{ remark: '达人A', contentId: '554608495125' }])
+    const task = tasks[0]
+
+    harness.loginService.setSession(task.loginSessionId, {
+      status: 'LOGGED_IN',
+      account: {
+        accountId: '1001',
+        nickname: '自然卷儿'
+      }
+    })
+
+    await harness.service.pollOnce()
+    await harness.service.waitForIdle()
+
+    const saved = harness.taskStore.get(task.taskId)
+    expect(syncCalls).toEqual([{ source: { resultUrl: '/api/artifacts/results.json' } }])
+    expect(saved.sync.status).toBe('SUCCEEDED')
+    expect(saved.sync.operationId).toBe('handoff-1')
+    expect(saved.sync.match.sheetRow).toBe(8)
+    expect(saved.sync.writeSummary.action).toBe('UPDATED')
+  })
+
   test('stores no-data result and artifact links', async () => {
     const harness = createHarness({
       queryImpl: async ({ accountId, contentId }) => {
@@ -133,7 +170,7 @@ describe('taskService', () => {
   })
 })
 
-function createHarness({ queryImpl } = {}) {
+function createHarness({ queryImpl, tencentDocsSyncService = null } = {}) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guanghe-task-service-'))
   const tasksFile = path.join(tmpDir, 'tasks.json')
   const taskStore = new TaskStore({ tasksFile })
@@ -143,6 +180,7 @@ function createHarness({ queryImpl } = {}) {
     taskStore,
     loginService,
     queryService,
+    tencentDocsSyncService,
     maxActiveLoginSessions: 5,
     maxConcurrentQueries: 2,
     pollIntervalMs: 5

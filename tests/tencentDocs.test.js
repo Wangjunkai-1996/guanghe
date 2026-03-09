@@ -59,6 +59,154 @@ describe('tencent docs integration', () => {
     expect(response.body.row.结果JSON).toBe('https://tool.example.com/api/artifacts/query-1/results.json')
   })
 
+  test('sheet inspect proxies parsed sheet snapshot from adapter', async () => {
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [
+          { name: '1', selected: true },
+          { name: '1.08', selected: false }
+        ],
+        columnCount: 3,
+        headers: ['逛逛昵称', '逛逛ID', '内容id'],
+        rowCount: 1,
+        rows: [
+          {
+            sheetRow: 2,
+            nickname: '测试达人',
+            contentId: '547982656829',
+            values: ['测试达人', '331427156', '547982656829'],
+            cells: {
+              逛逛昵称: '测试达人',
+              逛逛ID: '331427156',
+              内容id: '547982656829'
+            }
+          }
+        ]
+      })
+    }
+
+    const { app } = createTestContext({ adapter, sheetName: '' })
+    const agent = await loginAgent(app)
+    const response = await agent
+      .post('/api/tencent-docs/sheet/inspect')
+      .send({
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        maxRows: 5
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.target.sheetName).toBe('1')
+    expect(response.body.maxRows).toBe(5)
+    expect(response.body.headers).toEqual(['逛逛昵称', '逛逛ID', '内容id'])
+    expect(response.body.rows[0].contentId).toBe('547982656829')
+    expect(response.body.artifacts.previewJsonUrl).toMatch(/sheet-preview\.json$/)
+  })
+
+  test('handoff preview backfills screenshot urls from artifact directory when results json lacks screenshots', async () => {
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 15,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        rows: [{ sheetRow: 6, nickname: '测试达人', contentId: '554608495125', values: [], cells: { 内容id: '554608495125' } }]
+      }),
+      updateRowCells: async () => ({ action: 'UPDATED', matchedBy: ['内容id'] })
+    }
+
+    const { app, artifactsRootDir } = createTestContext({ adapter, toolBaseUrl: 'https://tool.example.com' })
+    ensureDir(path.join(artifactsRootDir, 'query-no-screens'))
+    fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', '04-results.png'), 'raw-image')
+    fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', '05-summary-strip.png'), 'summary-image')
+    fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', 'network-log.json'), '{}')
+    writeJson(path.join(artifactsRootDir, 'query-no-screens', 'results.json'), {
+      accountId: '1001',
+      nickname: '测试达人',
+      contentId: '554608495125',
+      fetchedAt: '2026-03-09T03:00:00.000Z',
+      metrics: {
+        内容查看次数: { value: '83611', field: 'consumePv' },
+        内容查看人数: { value: '18033', field: 'consumeUv' },
+        种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
+        种草成交人数: { value: '1', field: 'payBuyerCntZc' },
+        商品点击次数: { value: '3', field: 'ipvPv' }
+      }
+    })
+
+    const agent = await loginAgent(app)
+    const response = await agent
+      .post('/api/tencent-docs/handoff/preview')
+      .send({
+        source: { resultUrl: '/api/artifacts/query-no-screens/results.json' },
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        maxRows: 20
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.patch['查看次数截图']).toBe('https://tool.example.com/api/artifacts/query-no-screens/05-summary-strip.png')
+  })
+
+  test('handoff sync resolves row by 内容id and writes J~O patch columns', async () => {
+    const calls = []
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 15,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        rows: [{
+          sheetRow: 6,
+          nickname: '测试达人',
+          contentId: '554608495125',
+          values: [],
+          cells: { 内容id: '554608495125' }
+        }]
+      }),
+      updateRowCells: async (payload) => {
+        calls.push(payload)
+        return {
+          action: 'UPDATED',
+          sheetRow: payload.sheetRow,
+          matchedBy: ['内容id'],
+          columnsUpdated: payload.cells.map((cell) => cell.columnName)
+        }
+      }
+    }
+
+    const { app, artifactsRootDir } = createTestContext({ adapter, toolBaseUrl: 'https://tool.example.com' })
+    const agent = await loginAgent(app)
+    const resultUrl = writeResultPayload(artifactsRootDir)
+
+    const response = await agent
+      .post('/api/tencent-docs/handoff/sync')
+      .send({
+        source: { resultUrl },
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        maxRows: 20
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.match.sheetRow).toBe(6)
+    expect(response.body.match.contentId).toBe('554608495125')
+    expect(response.body.columns.map((column) => column.columnLetter)).toEqual(['J', 'K', 'L', 'M', 'N', 'O'])
+    expect(response.body.patch['查看次数']).toBe('83611')
+    expect(response.body.patch['查看次数截图']).toBe('https://tool.example.com/api/artifacts/query-1/05-summary-strip.png')
+    expect(response.body.writeSummary.action).toBe('UPDATED')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].sheetRow).toBe(6)
+    expect(calls[0].cells[0].columnName).toBe('查看次数截图')
+    expect(calls[0].cells[5].columnName).toBe('商品点击次数')
+  })
+
   test('jobs fail fast when sync is not enabled', async () => {
     const { app, artifactsRootDir } = createTestContext({ enabled: false })
     const agent = await loginAgent(app)

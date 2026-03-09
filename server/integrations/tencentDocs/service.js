@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const { readJson, writeJson, ensureDir, toArtifactUrl } = require('../../lib/files')
 const { TencentDocsJobStore } = require('./jobStore')
-const { buildTencentDocsRow } = require('./mapping')
+const { buildTencentDocsRow, buildTencentDocsHandoffPatch } = require('./mapping')
 const { TencentDocsBrowserAdapter } = require('./browserAdapter')
 const { createTencentDocsError, ERROR_CODES, serializeSyncError } = require('./errors')
 
@@ -36,6 +36,58 @@ class TencentDocsSyncService {
       toolBaseUrl: this.config.toolBaseUrl,
       timezone: this.config.timezone
     })
+  }
+
+  async inspectSheet({ target, maxRows }) {
+    this.ensureEnabled()
+    const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
+    const normalizedMaxRows = this.normalizeInspectMaxRows(maxRows)
+    const artifactDir = this.getInspectArtifactDir()
+    ensureDir(artifactDir)
+
+    const snapshot = await this.adapter.readSheet({
+      target: resolvedTarget,
+      maxRows: normalizedMaxRows,
+      artifactDir
+    })
+
+    return {
+      ...snapshot,
+      maxRows: normalizedMaxRows,
+      artifacts: this.buildInspectArtifactUrls()
+    }
+  }
+
+  async previewHandoffSync({ source, target, maxRows }) {
+    const prepared = await this.prepareHandoffSync({ source, target, maxRows })
+    return this.serializeHandoffOperation(prepared)
+  }
+
+  async syncHandoffRow({ source, target, maxRows }) {
+    const prepared = await this.prepareHandoffSync({ source, target, maxRows })
+
+    const writeSummary = await this.adapter.updateRowCells({
+      target: prepared.target,
+      sheetRow: prepared.match.sheetRow,
+      cells: prepared.columns,
+      artifactDir: prepared.artifactDir
+    })
+
+    writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
+      operationId: prepared.operationId,
+      source: prepared.source,
+      target: prepared.target,
+      match: prepared.match,
+      patch: prepared.patch,
+      columns: prepared.columns,
+      writeSummary,
+      completedAt: new Date().toISOString()
+    })
+
+    return {
+      ...this.serializeHandoffOperation(prepared),
+      writeSummary
+    }
   }
 
   createJob({ source, target, mode }) {
@@ -181,13 +233,36 @@ class TencentDocsSyncService {
     if (!payload) {
       throw createTencentDocsError(400, ERROR_CODES.RESULT_NOT_FOUND, '结果文件无法解析')
     }
-    return payload
+    return this.enrichResultPayloadArtifacts(payload, resultFile)
   }
 
-  resolveTarget(target) {
+  enrichResultPayloadArtifacts(payload, resultFile) {
+    const relativeDir = path.relative(this.config.artifactsRootDir, path.dirname(resultFile))
+    const screenshotRawPath = path.join(path.dirname(resultFile), '04-results.png')
+    const screenshotSummaryPath = path.join(path.dirname(resultFile), '05-summary-strip.png')
+    const networkLogPath = path.join(path.dirname(resultFile), 'network-log.json')
+
+    const screenshots = {
+      rawUrl: payload?.screenshots?.rawUrl || (fs.existsSync(screenshotRawPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : ''),
+      summaryUrl: payload?.screenshots?.summaryUrl || (fs.existsSync(screenshotSummaryPath) ? toArtifactUrl(path.join(relativeDir, '05-summary-strip.png')) : '')
+    }
+
+    const artifacts = {
+      resultUrl: payload?.artifacts?.resultUrl || toArtifactUrl(path.join(relativeDir, 'results.json')),
+      networkLogUrl: payload?.artifacts?.networkLogUrl || (fs.existsSync(networkLogPath) ? toArtifactUrl(path.join(relativeDir, 'network-log.json')) : '')
+    }
+
+    return {
+      ...payload,
+      screenshots,
+      artifacts
+    }
+  }
+
+  resolveTarget(target, { allowMissingSheetName = false } = {}) {
     const docUrl = target?.docUrl || this.config.docUrl
-    const sheetName = target?.sheetName || this.config.sheetName
-    if (!docUrl || !sheetName) {
+    const sheetName = target?.sheetName ?? this.config.sheetName ?? ''
+    if (!docUrl || (!allowMissingSheetName && !sheetName)) {
       throw createTencentDocsError(400, ERROR_CODES.NOT_CONFIGURED, '腾讯文档默认目标未配置，请提供 docUrl 和 sheetName')
     }
 
@@ -197,6 +272,12 @@ class TencentDocsSyncService {
   normalizeMode(mode) {
     const candidate = String(mode || this.config.writeMode || 'upsert').toLowerCase()
     return candidate === 'append' ? 'append' : 'upsert'
+  }
+
+  normalizeInspectMaxRows(maxRows) {
+    const value = Number(maxRows || 20)
+    if (!Number.isFinite(value)) return 20
+    return Math.max(1, Math.min(200, Math.floor(value)))
   }
 
   resolveArtifactFile(resultUrl) {
@@ -226,6 +307,10 @@ class TencentDocsSyncService {
     return path.join(this.config.artifactsRootDir, 'tencent-docs', jobId)
   }
 
+  getInspectArtifactDir() {
+    return path.join(this.config.artifactsRootDir, 'tencent-docs', 'inspect')
+  }
+
   buildArtifactUrls(jobId) {
     const base = path.join('tencent-docs', jobId)
     return {
@@ -233,6 +318,140 @@ class TencentDocsSyncService {
       afterWriteUrl: toArtifactUrl(path.join(base, 'after-write.png')),
       errorUrl: toArtifactUrl(path.join(base, 'error.png')),
       writeLogUrl: toArtifactUrl(path.join(base, 'write-log.json'))
+    }
+  }
+
+  buildInspectArtifactUrls() {
+    const base = path.join('tencent-docs', 'inspect')
+    return {
+      beforeReadUrl: toArtifactUrl(path.join(base, 'before-read.png')),
+      afterReadUrl: toArtifactUrl(path.join(base, 'after-read.png')),
+      errorUrl: toArtifactUrl(path.join(base, 'error.png')),
+      selectionTsvUrl: toArtifactUrl(path.join(base, 'sheet-selection.tsv')),
+      previewJsonUrl: toArtifactUrl(path.join(base, 'sheet-preview.json'))
+    }
+  }
+
+  async prepareHandoffSync({ source, target, maxRows }) {
+    this.ensureEnabled()
+    const resultPayload = this.loadResultPayload(source)
+    const targetConfig = this.resolveTarget(target)
+    const normalizedMaxRows = this.normalizeInspectMaxRows(maxRows || 200)
+    const operationId = crypto.randomUUID()
+    const artifactDir = this.getHandoffArtifactDir(operationId)
+    ensureDir(artifactDir)
+
+    const sheet = await this.adapter.readSheet({
+      target: targetConfig,
+      maxRows: normalizedMaxRows,
+      artifactDir
+    })
+
+    const patchPreview = buildTencentDocsHandoffPatch(resultPayload, {
+      toolBaseUrl: this.config.toolBaseUrl
+    })
+
+    const match = this.matchHandoffRow(sheet.rows, resultPayload)
+    const columns = this.resolveHandoffColumns(sheet.headers, patchPreview.row, patchPreview.columns)
+
+    return {
+      operationId,
+      artifactDir,
+      source: {
+        resultUrl: source.resultUrl,
+        accountId: String(resultPayload.accountId),
+        nickname: resultPayload.nickname || '',
+        contentId: String(resultPayload.contentId)
+      },
+      target: sheet.target,
+      sheet,
+      maxRows: normalizedMaxRows,
+      match,
+      patch: patchPreview.row,
+      warnings: patchPreview.warnings,
+      columns,
+      artifacts: this.buildHandoffArtifactUrls(operationId)
+    }
+  }
+
+  matchHandoffRow(rows, resultPayload) {
+    const contentId = String(resultPayload.contentId || '')
+    const nickname = String(resultPayload.nickname || '')
+    const matchedRow = rows.find((row) => String(row.contentId || '').trim() === contentId)
+
+    if (!matchedRow) {
+      throw createTencentDocsError(404, ERROR_CODES.ROW_NOT_FOUND, `未在腾讯文档中找到内容id=${contentId} 对应的行`, {
+        contentId,
+        nickname
+      })
+    }
+
+    return {
+      sheetRow: matchedRow.sheetRow,
+      nickname: matchedRow.nickname || '',
+      contentId: matchedRow.contentId || '',
+      matchedBy: ['内容id']
+    }
+  }
+
+  resolveHandoffColumns(headers, patchRow, orderedColumns) {
+    return orderedColumns.map((columnName) => {
+      const columnIndex = headers.findIndex((header) => header === columnName) + 1
+      if (columnIndex <= 0) {
+        throw createTencentDocsError(400, ERROR_CODES.COLUMN_NOT_FOUND, `腾讯文档中缺少列：${columnName}`, {
+          columnName
+        })
+      }
+
+      return {
+        columnName,
+        columnIndex,
+        columnLetter: this.toColumnLetter(columnIndex),
+        value: String(patchRow[columnName] ?? '')
+      }
+    })
+  }
+
+  toColumnLetter(columnIndex) {
+    let value = Number(columnIndex)
+    let result = ''
+    while (value > 0) {
+      const remainder = (value - 1) % 26
+      result = String.fromCharCode(65 + remainder) + result
+      value = Math.floor((value - 1) / 26)
+    }
+    return result
+  }
+
+  getHandoffArtifactDir(operationId) {
+    return path.join(this.config.artifactsRootDir, 'tencent-docs', 'handoff', operationId)
+  }
+
+  buildHandoffArtifactUrls(operationId) {
+    const base = path.join('tencent-docs', 'handoff', operationId)
+    return {
+      beforeReadUrl: toArtifactUrl(path.join(base, 'before-read.png')),
+      afterReadUrl: toArtifactUrl(path.join(base, 'after-read.png')),
+      beforeFillUrl: toArtifactUrl(path.join(base, 'before-fill.png')),
+      afterFillUrl: toArtifactUrl(path.join(base, 'after-fill.png')),
+      errorUrl: toArtifactUrl(path.join(base, 'error.png')),
+      selectionTsvUrl: toArtifactUrl(path.join(base, 'sheet-selection.tsv')),
+      previewJsonUrl: toArtifactUrl(path.join(base, 'sheet-preview.json')),
+      writeLogUrl: toArtifactUrl(path.join(base, 'handoff-write-log.json'))
+    }
+  }
+
+  serializeHandoffOperation(operation) {
+    return {
+      operationId: operation.operationId,
+      source: operation.source,
+      target: operation.target,
+      maxRows: operation.maxRows,
+      match: operation.match,
+      patch: operation.patch,
+      columns: operation.columns,
+      warnings: operation.warnings,
+      artifacts: operation.artifacts
     }
   }
 

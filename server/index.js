@@ -29,13 +29,6 @@ const queryService = new GuangheQueryService({
   accountStore,
   artifactsRootDir: config.artifactsRootDir
 })
-const taskService = new GuangheTaskService({
-  taskStore,
-  loginService,
-  queryService,
-  maxActiveLoginSessions: config.maxActiveLoginSessions,
-  maxConcurrentQueries: config.maxConcurrentQueries
-})
 const tencentDocsSyncService = new TencentDocsSyncService({
   config: {
     enabled: config.tencentDocsEnabled,
@@ -51,6 +44,14 @@ const tencentDocsSyncService = new TencentDocsSyncService({
     browserExecutablePath: config.browserExecutablePath,
     artifactsRootDir: config.artifactsRootDir
   }
+})
+const taskService = new GuangheTaskService({
+  taskStore,
+  loginService,
+  queryService,
+  tencentDocsSyncService,
+  maxActiveLoginSessions: config.maxActiveLoginSessions,
+  maxConcurrentQueries: config.maxConcurrentQueries
 })
 
 taskService.start()

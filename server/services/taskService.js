@@ -6,10 +6,11 @@ const TRACKED_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'LOGGED
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
 
 class GuangheTaskService {
-  constructor({ taskStore, loginService, queryService, maxActiveLoginSessions = 5, maxConcurrentQueries = 2, pollIntervalMs = 2000 }) {
+  constructor({ taskStore, loginService, queryService, tencentDocsSyncService = null, maxActiveLoginSessions = 5, maxConcurrentQueries = 2, pollIntervalMs = 2000 }) {
     this.taskStore = taskStore
     this.loginService = loginService
     this.queryService = queryService
+    this.tencentDocsSyncService = tencentDocsSyncService
     this.maxActiveLoginSessions = maxActiveLoginSessions
     this.maxConcurrentQueries = maxConcurrentQueries
     this.pollIntervalMs = pollIntervalMs
@@ -88,7 +89,8 @@ class GuangheTaskService {
       query: { status: 'IDLE' },
       metrics: null,
       screenshots: { rawUrl: '', summaryUrl: '' },
-      artifacts: { resultUrl: '', networkLogUrl: '' }
+      artifacts: { resultUrl: '', networkLogUrl: '' },
+      sync: { status: 'IDLE', operationId: '', target: null, match: null, writeSummary: null, error: null }
     })
   }
 
@@ -103,7 +105,8 @@ class GuangheTaskService {
 
     const nextTask = this.taskStore.patch(taskId, {
       error: null,
-      query: { status: 'QUEUED' }
+      query: { status: 'QUEUED' },
+      sync: { status: 'IDLE', operationId: '', target: null, match: null, writeSummary: null, error: null }
     })
     this.enqueueQuery(taskId)
     return nextTask
@@ -260,8 +263,11 @@ class GuangheTaskService {
         query: { status: 'SUCCEEDED' },
         metrics: result.metrics,
         screenshots: result.screenshots,
-        artifacts: result.artifacts
+        artifacts: result.artifacts,
+        sync: { status: 'IDLE', operationId: '', target: null, match: null, writeSummary: null, error: null }
       })
+
+      await this.syncTaskToTencentDocs(taskId, result)
     } catch (error) {
       const patch = {
         error: serializeError(error)
@@ -288,6 +294,44 @@ class GuangheTaskService {
       }
 
       this.taskStore.patch(taskId, patch)
+    }
+  }
+
+  async syncTaskToTencentDocs(taskId, result) {
+    if (!this.tencentDocsSyncService?.syncHandoffRow) return
+    if (this.tencentDocsSyncService.getConfig && !this.tencentDocsSyncService.getConfig().enabled) return
+    if (!result?.artifacts?.resultUrl) return
+
+    this.taskStore.patch(taskId, {
+      sync: { status: 'RUNNING', operationId: '', target: null, match: null, writeSummary: null, error: null }
+    })
+
+    try {
+      const syncResult = await this.tencentDocsSyncService.syncHandoffRow({
+        source: { resultUrl: result.artifacts.resultUrl }
+      })
+
+      this.taskStore.patch(taskId, {
+        sync: {
+          status: 'SUCCEEDED',
+          operationId: syncResult.operationId || '',
+          target: syncResult.target || null,
+          match: syncResult.match || null,
+          writeSummary: syncResult.writeSummary || null,
+          error: null
+        }
+      })
+    } catch (error) {
+      this.taskStore.patch(taskId, {
+        sync: {
+          status: 'FAILED',
+          operationId: '',
+          target: null,
+          match: null,
+          writeSummary: null,
+          error: serializeError(error)
+        }
+      })
     }
   }
 
@@ -344,6 +388,14 @@ function createBaseTask(entry, loginSession) {
     artifacts: {
       resultUrl: '',
       networkLogUrl: ''
+    },
+    sync: {
+      status: 'IDLE',
+      operationId: '',
+      target: null,
+      match: null,
+      writeSummary: null,
+      error: null
     }
   }
 }

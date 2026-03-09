@@ -83,6 +83,19 @@ class GuangheQueryService {
           metrics[metric] = extractMetricFromApiRecord(metric, apiRecord)
         }
 
+        const resultPath = path.join(artifactDir, 'results.json')
+        const summaryPath = path.join(artifactDir, '05-summary-strip.png')
+        const screenshots = {
+          rawUrl: toArtifactUrl(path.relative(this.artifactsRootDir, rawScreenshotPath)),
+          summaryUrl: toArtifactUrl(path.relative(this.artifactsRootDir, summaryPath))
+        }
+        const artifacts = {
+          resultUrl: toArtifactUrl(path.relative(this.artifactsRootDir, resultPath)),
+          networkLogUrl: toArtifactUrl(path.relative(this.artifactsRootDir, networkPath))
+        }
+
+        await createSummaryStripScreenshot(context, apiRecord, metrics, summaryPath)
+
         const resultsPayload = {
           accountId,
           nickname: account.nickname,
@@ -90,15 +103,13 @@ class GuangheQueryService {
           fetchedAt: new Date().toISOString(),
           pageUrl: page.url(),
           metrics,
+          screenshots,
+          artifacts,
           apiRecord
         }
 
-        const resultPath = path.join(artifactDir, 'results.json')
-        const summaryPath = path.join(artifactDir, '05-summary-strip.png')
-
         writeJson(resultPath, resultsPayload)
         writeJson(networkPath, networkLog)
-        await createSummaryStripScreenshot(context, apiRecord, metrics, summaryPath)
 
         return {
           accountId,
@@ -106,14 +117,8 @@ class GuangheQueryService {
           contentId,
           fetchedAt: resultsPayload.fetchedAt,
           metrics,
-          screenshots: {
-            rawUrl: toArtifactUrl(path.relative(this.artifactsRootDir, rawScreenshotPath)),
-            summaryUrl: toArtifactUrl(path.relative(this.artifactsRootDir, summaryPath))
-          },
-          artifacts: {
-            resultUrl: toArtifactUrl(path.relative(this.artifactsRootDir, resultPath)),
-            networkLogUrl: toArtifactUrl(path.relative(this.artifactsRootDir, networkPath))
-          }
+          screenshots,
+          artifacts
         }
       } finally {
         await page.close().catch(() => {})

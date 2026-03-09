@@ -82,22 +82,22 @@ describe('batch task workspace ui', () => {
 
     render(<BatchTasksWorkspace />)
 
-    await screen.findByRole('heading', { name: '任务列表' })
-    expect(screen.getByText('达人A')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: '任务队列' })
+    expect(screen.getAllByText('达人A').length).toBeGreaterThan(0)
     expect(screen.getByText('达人B')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /仅看待扫码/ }))
-    expect(screen.getByText('达人A')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: /待扫码/ })[0])
+    expect(screen.getAllByText('达人A').length).toBeGreaterThan(0)
     expect(screen.queryByText('达人B')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '查看全部' }))
+    fireEvent.click(screen.getByRole('button', { name: /全部任务/ }))
     fireEvent.click(screen.getByText('达人B'))
 
     const closeButton = await screen.findByRole('button', { name: '关闭任务详情' })
     const drawer = closeButton.closest('aside')
 
     expect(drawer).not.toBeNull()
-    expect(within(drawer).getByText('二维码和结果都只在这里查看，减少主列表滚动和视觉干扰。')).toBeInTheDocument()
+    expect(within(drawer).getByText('二维码和结果都只在这里查看，主列表只负责排队和筛选。')).toBeInTheDocument()
     expect(within(drawer).getByRole('link', { name: '查看汇总图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
     expect(within(drawer).getByText('自然卷儿')).toBeInTheDocument()
   })

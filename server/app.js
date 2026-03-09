@@ -159,6 +159,30 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
       }
     })
 
+    app.post('/api/tencent-docs/sheet/inspect', async (req, res, next) => {
+      try {
+        res.json(await tencentDocsSyncService.inspectSheet(req.body || {}))
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tencent-docs/handoff/preview', async (req, res, next) => {
+      try {
+        res.json(await tencentDocsSyncService.previewHandoffSync(req.body || {}))
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tencent-docs/handoff/sync', async (req, res, next) => {
+      try {
+        res.json(await tencentDocsSyncService.syncHandoffRow(req.body || {}))
+      } catch (error) {
+        next(error)
+      }
+    })
+
     app.post('/api/tencent-docs/jobs', (req, res, next) => {
       try {
         const payload = tencentDocsSyncService.createJob(req.body || {})

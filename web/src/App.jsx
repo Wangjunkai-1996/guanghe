@@ -229,30 +229,36 @@ export default function App() {
 
   return (
     <div className="workspace-page">
-      <header className="workspace-header panel">
-        <div className="workspace-header-copy">
+      <header className="panel workspace-hero">
+        <div className="workspace-hero-copy">
+          <span className="section-eyebrow">主流程优先</span>
           <h1>光合平台查询工作台</h1>
-          <p>优先围绕批量发码和任务跟进设计；手动账号查询保留为次级入口，用于补查和校对。</p>
+          <p>首页只保留批量发码和任务跟进主路径；账号补查下沉为次级入口，用于临时校对、补查和新增账号。</p>
         </div>
-        <div className="workspace-header-stats">
-          <div className="header-stat-card">
-            <span>当前账号</span>
-            <strong>{activeAccount?.nickname || '未选择'}</strong>
-            <small>{activeAccount?.accountId || '批量任务模式无需先选账号'}</small>
-          </div>
-          <div className="header-stat-card">
+
+        <div className="workspace-hero-actions">
+          <div className="workspace-summary-chip">
             <span>已保存账号</span>
             <strong>{accounts.length}</strong>
-            <small>支持多账号长期保存登录态</small>
           </div>
+          <div className="workspace-summary-chip wide">
+            <span>手动补查当前账号</span>
+            <strong>{activeAccount?.nickname || '未选择'}</strong>
+            <small>{activeAccount?.accountId || '需要时再展开次级入口'}</small>
+          </div>
+          <button className="secondary-btn" type="button" onClick={() => setIsManualWorkspaceOpen((current) => !current)}>
+            {isManualWorkspaceOpen ? '收起账号补查' : '打开账号补查'}
+          </button>
         </div>
       </header>
 
-      <section className="panel manual-entry-strip">
+      <BatchTasksWorkspace />
+
+      <section className={`panel manual-entry-strip ${isManualWorkspaceOpen ? 'open' : ''}`}>
         <div className="manual-entry-bar">
           <div className="compact-panel-header">
             <h2>账号查询（次级入口）</h2>
-            <p>用于临时补查单个账号、手动扫码登录或校对批量任务结果，不作为默认主工作区。</p>
+            <p>仅在需要补查单个账号、手动扫码新增账号或校对批量任务结果时使用，不干扰主工作台。</p>
           </div>
           <div className="manual-entry-actions">
             {manualEntryStatus ? <span className="status-pill status-info">{manualEntryStatus}</span> : null}
@@ -261,53 +267,51 @@ export default function App() {
             </button>
           </div>
         </div>
-      </section>
 
-      {isManualWorkspaceOpen ? (
-        <section className="panel manual-query-shell stack-lg">
-          {activeLoginBanner ? (
-            <div className={`status-banner tone-${activeLoginBanner.tone}`}>
-              <div>
-                <strong>{activeLoginBanner.title}</strong>
+        {isManualWorkspaceOpen ? (
+          <div className="manual-query-shell stack-lg">
+            {activeLoginBanner ? (
+              <div className={`status-banner tone-${activeLoginBanner.tone}`}>
+                <div>
+                  <strong>{activeLoginBanner.title}</strong>
+                </div>
+                <button className="secondary-btn" type="button" onClick={activeLoginBanner.action}>
+                  {activeLoginBanner.actionLabel}
+                </button>
               </div>
-              <button className="secondary-btn" type="button" onClick={activeLoginBanner.action}>
-                {activeLoginBanner.actionLabel}
-              </button>
+            ) : null}
+
+            <div className="workspace-layout manual-workspace-layout">
+              <aside className="workspace-sidebar">
+                <AccountList
+                  accounts={accounts}
+                  selectedAccountId={selectedAccountId}
+                  loading={accountsLoading}
+                  onSelect={setSelectedAccountId}
+                  onCreate={handleCreateLoginSession}
+                  onDelete={handleDeleteAccount}
+                />
+              </aside>
+
+              <main className="workspace-main stack-lg">
+                <QueryForm
+                  activeAccount={activeAccount}
+                  loading={queryLoading}
+                  onSubmit={handleQuery}
+                />
+
+                <ResultPanel
+                  result={queryResult}
+                  error={queryError}
+                  loading={queryLoading}
+                  activeAccount={activeAccount}
+                  onRetryLogin={handleCreateLoginSession}
+                />
+              </main>
             </div>
-          ) : null}
-
-          <div className="workspace-layout manual-workspace-layout">
-            <aside className="workspace-sidebar">
-              <AccountList
-                accounts={accounts}
-                selectedAccountId={selectedAccountId}
-                loading={accountsLoading}
-                onSelect={setSelectedAccountId}
-                onCreate={handleCreateLoginSession}
-                onDelete={handleDeleteAccount}
-              />
-            </aside>
-
-            <main className="workspace-main stack-lg">
-              <QueryForm
-                activeAccount={activeAccount}
-                loading={queryLoading}
-                onSubmit={handleQuery}
-              />
-
-              <ResultPanel
-                result={queryResult}
-                error={queryError}
-                loading={queryLoading}
-                activeAccount={activeAccount}
-                onRetryLogin={handleCreateLoginSession}
-              />
-            </main>
           </div>
-        </section>
-      ) : null}
-
-      <BatchTasksWorkspace />
+        ) : null}
+      </section>
 
       <LoginSessionPanel
         loginSession={loginSession}

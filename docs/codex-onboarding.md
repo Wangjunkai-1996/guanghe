@@ -251,6 +251,11 @@ Express API（server/app.js）
 - 当前落地方案是 **Browser Adapter**，不是官方 API Adapter。
 - 先读取已有 `results.json`，再映射为一行腾讯文档数据。
 - 默认按 `accountId:contentId` 生成 `同步键`，用于 `upsert`。
+- 已支持通过复制选区 TSV 直接读取腾讯文档可见表格内容，`sheetClipboard.js` 负责解析与表头纠偏。
+- 已支持按目标 `sheetRow + columnIndex` 局部回填指定单元格，不必只走整行 append / upsert。
+- 文本列回填优先走顶部坐标框 `input.bar-label` 精确跳格，再按连续区间走剪贴板粘贴。
+- 图片列回填支持：粘贴截图 -> 自动右键 -> 点击 **“转为单元格图片”**。
+- `queryService` 现在会把 `screenshots` / `artifacts` 写进结果文件；`service.js` 也会对旧结果做兜底补齐。
 
 同步支持两种模式：
 
@@ -267,6 +272,43 @@ Express API（server/app.js）
 6. 再执行追加或按同步键覆盖。
 
 这个模块是典型“可选集成层”，不影响主查询链路。
+
+### 5.5.1 2026-03-09 实战后最可靠的写表路径
+
+如果下次继续接腾讯文档交接表，优先按下面这条路径，不要先走大范围重构：
+
+1. 用腾讯文档专用 profile 打开真实交接表，并确认已经登录且具备编辑权限；
+2. 优先使用顶部坐标框 `input.bar-label` 直接跳到目标单元格；
+3. J 列截图：先把图片写入系统剪贴板，再粘贴到目标单元格，然后自动选择 **“转为单元格图片”**；
+4. K~O 这类连续数字列：把一整段 TSV 写入剪贴板后一次性粘贴；
+5. 写入前后都保留截图 artifacts，用真实页面结果做校验。
+
+### 5.5.2 这次已经确认的事实
+
+- 当前交接表场景里，**C 列是内容 id**；J 列是截图；K~O 是这次要回填的 5 个指标。
+- `insertText` 对腾讯文档逐格覆盖并不稳定；对连续文本列，剪贴板整段粘贴明显更可靠。
+- 用方向键从 `A1` 逐行逐列走到目标行，容易在真实文档里发生严重偏移；优先使用坐标框跳格。
+- 截图默认会先以浮动图片形式进入表格，必须补一步 **“转为单元格图片”** 才符合当前交接要求。
+- 整表预读仍然会受到冻结行 / 当前视口 / 滚动位置影响；`readSheet` 适合做预览和排查，不适合单独作为高精度行定位依据。
+
+### 5.5.3 这次新增 / 重点涉及的文件
+
+- `server/integrations/tencentDocs/browserAdapter.js`
+  - 读表、跳格、局部单元格回填、图片转单元格图片。
+- `server/integrations/tencentDocs/sheetClipboard.js`
+  - 腾讯文档选区 TSV 解析、表头归一化与纠偏。
+- `server/integrations/tencentDocs/service.js`
+  - 结果文件补齐、回填调度与错误兜底。
+- `server/services/queryService.js`
+  - 查询结果文件写入 `screenshots` / `artifacts`。
+- `server/services/taskService.js`、`server/lib/taskStore.js`
+  - 批量任务与腾讯文档联动的状态收口。
+
+### 5.5.4 真实验证建议
+
+- 先在远端空白区域或低风险测试行做一次单列验证，例如只写 J 列截图。
+- 验证图是否表现为 **单元格内图片**，而不是跨列悬浮图。
+- 再回到真实任务行执行完整回填。
 
 ## 6. 前端产品结构
 
@@ -290,6 +332,7 @@ Express API（server/app.js）
 
 - `BatchTasksWorkspace` 会每 2 秒刷新任务列表。
 - `App` 会每 10 秒静默刷新账号列表。
+- `BatchTasksWorkspace` 最近做过一轮 UI / 交互重排；后续继续优化时优先在现有信息层级上微调，不要轻易推翻整个布局。
 - `ResultPanel` 默认优先显示汇总截图，原图用于校对。
 - 登录抽屉 `LoginSessionPanel` 是手动账号工作区里扫码登录的核心交互。
 

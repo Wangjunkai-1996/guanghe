@@ -14,6 +14,7 @@ const BASE_TEMPLATE_COLUMNS = [
 ]
 
 const LINK_TEMPLATE_COLUMNS = ['原图链接', '汇总图链接', '结果JSON']
+const HANDOFF_TEMPLATE_COLUMNS = ['查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数']
 
 function buildSyncKey({ accountId, contentId }) {
   return `${accountId}:${contentId}`
@@ -47,7 +48,7 @@ function buildTencentDocsRow(resultPayload, { toolBaseUrl = '', timezone = 'Asia
     row.结果JSON = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.artifacts?.resultUrl)
 
     for (const column of LINK_TEMPLATE_COLUMNS) {
-      if (!row[column]) warnings.push(`${column} 缺少可写入地址`) 
+      if (!row[column]) warnings.push(`${column} 缺少可写入地址`)
     }
   } else {
     omittedColumns.push(...LINK_TEMPLATE_COLUMNS)
@@ -58,6 +59,40 @@ function buildTencentDocsRow(resultPayload, { toolBaseUrl = '', timezone = 'Asia
     row,
     columns: Object.keys(row),
     omittedColumns,
+    warnings
+  }
+}
+
+function buildTencentDocsHandoffPatch(resultPayload, { toolBaseUrl = '' } = {}) {
+  if (!resultPayload?.contentId) {
+    throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, '结果文件缺少内容 ID，无法匹配交接表行')
+  }
+
+  const row = {
+    查看次数截图: '',
+    查看次数: getMetricValue(resultPayload, '内容查看次数'),
+    查看人数: getMetricValue(resultPayload, '内容查看人数'),
+    种草成交金额: getMetricValue(resultPayload, '种草成交金额'),
+    种草成交人数: getMetricValue(resultPayload, '种草成交人数'),
+    商品点击次数: getMetricValue(resultPayload, '商品点击次数')
+  }
+
+  const warnings = []
+  const normalizedBaseUrl = String(toolBaseUrl || '').trim()
+  if (normalizedBaseUrl) {
+    row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl || resultPayload?.screenshots?.rawUrl)
+    if (!row.查看次数截图) {
+      warnings.push('查看次数截图 缺少可写入地址')
+    }
+  } else {
+    warnings.push('TOOL_BASE_URL 未配置，查看次数截图将保持为空')
+  }
+
+  return {
+    matchValue: String(resultPayload.contentId),
+    matchBy: ['内容id'],
+    row,
+    columns: HANDOFF_TEMPLATE_COLUMNS,
     warnings
   }
 }
@@ -106,6 +141,8 @@ function ensureTrailingSlash(value) {
 module.exports = {
   BASE_TEMPLATE_COLUMNS,
   LINK_TEMPLATE_COLUMNS,
+  HANDOFF_TEMPLATE_COLUMNS,
   buildSyncKey,
-  buildTencentDocsRow
+  buildTencentDocsRow,
+  buildTencentDocsHandoffPatch
 }

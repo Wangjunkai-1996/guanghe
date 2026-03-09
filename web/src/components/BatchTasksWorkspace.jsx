@@ -18,11 +18,11 @@ const METRIC_ORDER = [
 ]
 
 const FILTER_OPTIONS = [
-  { value: 'all', label: '全部' },
-  { value: 'waiting', label: '待扫码' },
-  { value: 'in-progress', label: '进行中' },
-  { value: 'exception', label: '异常' },
-  { value: 'finished', label: '已完成' }
+  { value: 'all', label: '全部任务', tone: 'neutral' },
+  { value: 'waiting', label: '待扫码', tone: 'info' },
+  { value: 'in-progress', label: '进行中', tone: 'warning' },
+  { value: 'exception', label: '异常', tone: 'danger' },
+  { value: 'finished', label: '已完成', tone: 'success' }
 ]
 
 export function BatchTasksWorkspace() {
@@ -41,6 +41,7 @@ export function BatchTasksWorkspace() {
   const [isBuilderOpen, setIsBuilderOpen] = useState(true)
   const [builderTouched, setBuilderTouched] = useState(false)
   const [toasts, setToasts] = useState([])
+  const [lastSyncedAt, setLastSyncedAt] = useState('')
 
   const textareaRef = useRef(null)
 
@@ -48,9 +49,11 @@ export function BatchTasksWorkspace() {
     if (!silent) setLoading(true)
     try {
       const payload = await api.listTasks()
-      setTasks(payload.tasks || [])
+      const nextTasks = payload.tasks || []
+      setTasks(nextTasks)
       setError('')
-      return payload.tasks || []
+      setLastSyncedAt(new Date().toISOString())
+      return nextTasks
     } catch (nextError) {
       setError(nextError.message)
       return []
@@ -94,9 +97,32 @@ export function BatchTasksWorkspace() {
     setIsBuilderOpen(tasks.length === 0)
   }, [builderTouched, tasks.length])
 
+  useEffect(() => {
+    if (!isBuilderOpen) return undefined
+    const rafId = window.requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+    })
+    return () => window.cancelAnimationFrame?.(rafId)
+  }, [isBuilderOpen])
+
+  useEffect(() => {
+    if (!isBuilderOpen) return undefined
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsBuilderOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isBuilderOpen])
+
   const draftValidation = useMemo(() => parseTaskBatchInput(batchInput), [batchInput])
   const draftLines = useMemo(() => countNonEmptyLines(batchInput), [batchInput])
-  const displayBatchErrors = serverBatchErrors.length > 0 ? serverBatchErrors : draftValidation.errors
+  const displayBatchErrors = serverBatchErrors.length > 0
+    ? serverBatchErrors
+    : batchInput.trim()
+      ? draftValidation.errors
+      : []
 
   const filteredTasks = useMemo(() => {
     const keyword = searchValue.trim().toLowerCase()
@@ -104,7 +130,7 @@ export function BatchTasksWorkspace() {
       .filter((task) => matchesFilter(task, filterKey))
       .filter((task) => {
         if (!keyword) return true
-        return [task.remark, task.contentId, task.accountNickname]
+        return [task.remark, task.contentId, task.accountNickname, task.accountId]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(keyword))
       })
@@ -116,25 +142,39 @@ export function BatchTasksWorkspace() {
     [filteredTasks, selectedTaskId]
   )
 
+  const selectedTaskIndex = useMemo(
+    () => filteredTasks.findIndex((task) => task.taskId === selectedTaskId),
+    [filteredTasks, selectedTaskId]
+  )
+
   useEffect(() => {
-    if (!selectedTaskId) return
-    if (!selectedTask) {
+    if (filteredTasks.length === 0) {
       setSelectedTaskId('')
       setIsDetailOpen(false)
+      return
     }
-  }, [selectedTask, selectedTaskId])
+
+    if (selectedTaskId && filteredTasks.some((task) => task.taskId === selectedTaskId)) {
+      return
+    }
+
+    setSelectedTaskId(filteredTasks[0].taskId)
+    setIsDetailOpen(true)
+  }, [filteredTasks, selectedTaskId])
 
   const handleRefreshList = async () => {
     await loadTasks()
     pushToast('任务列表已刷新', 'success')
   }
 
-  const handleBuilderToggle = () => {
+  const handleBuilderOpen = () => {
     setBuilderTouched(true)
-    setIsBuilderOpen((current) => !current)
-    if (!isBuilderOpen) {
-      window.requestAnimationFrame(() => textareaRef.current?.focus())
-    }
+    setIsBuilderOpen(true)
+  }
+
+  const handleBuilderClose = () => {
+    setBuilderTouched(true)
+    setIsBuilderOpen(false)
   }
 
   const handleSubmit = async (event) => {
@@ -192,10 +232,6 @@ export function BatchTasksWorkspace() {
     const confirmed = window.confirm(`确认删除任务 ${taskId} 吗？`)
     if (!confirmed) return
     await runTaskAction(taskId, () => api.deleteTask(taskId), '任务已删除')
-    if (selectedTaskId === taskId) {
-      setSelectedTaskId('')
-      setIsDetailOpen(false)
-    }
   }
 
   const handleCopyQr = async (task) => {
@@ -219,31 +255,86 @@ export function BatchTasksWorkspace() {
     setIsDetailOpen(true)
   }
 
+  const moveTaskSelection = (step) => {
+    if (filteredTasks.length === 0) return
+    const baseIndex = selectedTaskIndex >= 0 ? selectedTaskIndex : 0
+    const nextIndex = Math.min(filteredTasks.length - 1, Math.max(0, baseIndex + step))
+    setSelectedTaskId(filteredTasks[nextIndex].taskId)
+    setIsDetailOpen(true)
+  }
+
   const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
+  const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
   const exceptionCount = tasks.filter((task) => isExceptionalTask(task)).length
+  const finishedCount = tasks.filter((task) => task.query?.status === 'SUCCEEDED').length
 
   return (
     <section className="tasks-workspace stack-lg">
-      <div className="tasks-toolbar-shell stack-md">
-        <section className="panel tasks-toolbar-panel stack-md">
-          <div className="tasks-toolbar-top">
-            <div className="compact-panel-header">
-              <h2>批量任务工作台</h2>
-              <p>先筛出待扫码任务，再从右侧详情抽屉下载/复制二维码发到微信群，扫码成功后系统会自动查询。</p>
-            </div>
-            <div className="tasks-toolbar-actions">
-              <button className="primary-btn" type="button" onClick={handleBuilderToggle}>
-                {isBuilderOpen ? '收起新建任务' : '新建任务'}
-              </button>
-              <button className="secondary-btn" type="button" onClick={handleRefreshList}>
-                刷新列表
-              </button>
-            </div>
+      <section className="panel tasks-overview-panel stack-lg">
+        <div className="task-overview-header">
+          <div className="compact-panel-header">
+            <span className="section-eyebrow">主工作区</span>
+            <h2>批量任务工作台</h2>
+            <p>先发码，再跟状态；异常处理和结果复核都收进右侧焦点区，减少来回滚动和误点。</p>
           </div>
 
-          <div className="tasks-toolbar-filters">
+          <div className="tasks-toolbar-actions">
+            <button className="primary-btn" type="button" onClick={isBuilderOpen ? handleBuilderClose : handleBuilderOpen}>
+              {isBuilderOpen ? '关闭新建任务' : '新建任务'}
+            </button>
+            <button className="secondary-btn" type="button" onClick={handleRefreshList}>
+              {loading ? '同步中...' : '立即同步'}
+            </button>
+          </div>
+        </div>
+
+        <div className="task-stage-grid">
+          <TaskStageCard
+            label="全部任务"
+            value={tasks.length}
+            tone="neutral"
+            active={filterKey === 'all'}
+            onClick={() => setFilterKey('all')}
+          />
+          <TaskStageCard
+            label="待扫码"
+            value={waitingCount}
+            tone="info"
+            active={filterKey === 'waiting'}
+            onClick={() => setFilterKey('waiting')}
+          />
+          <TaskStageCard
+            label="进行中"
+            value={inProgressCount}
+            tone="warning"
+            active={filterKey === 'in-progress'}
+            onClick={() => setFilterKey('in-progress')}
+          />
+          <TaskStageCard
+            label="异常"
+            value={exceptionCount}
+            tone="danger"
+            active={filterKey === 'exception'}
+            onClick={() => setFilterKey('exception')}
+          />
+          <TaskStageCard
+            label="已完成"
+            value={finishedCount}
+            tone="success"
+            active={filterKey === 'finished'}
+            onClick={() => setFilterKey('finished')}
+          />
+        </div>
+
+        <div className="tasks-overview-footer">
+          <div className="task-sync-meta">
+            <strong>{getWorkspaceHeadline(tasks, filteredTasks)}</strong>
+            <small>{lastSyncedAt ? `自动同步中 · 上次更新 ${formatDateTime(lastSyncedAt)}` : '正在连接任务队列…'}</small>
+          </div>
+
+          <div className="tasks-toolbar-filters compact-filters">
             <label className="toolbar-search-field">
-              <span>搜索</span>
+              <span>搜索任务</span>
               <input
                 type="search"
                 placeholder="搜索备注、内容 ID、账号昵称"
@@ -252,101 +343,28 @@ export function BatchTasksWorkspace() {
               />
             </label>
 
-            <label className="toolbar-select-field">
-              <span>状态筛选</span>
-              <select value={filterKey} onChange={(event) => setFilterKey(event.target.value)}>
-                {FILTER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-
-            <div className="toolbar-chip-group" role="group" aria-label="快捷筛选">
+            {(filterKey !== 'all' || searchValue) ? (
               <button
-                className={`toolbar-chip-btn ${filterKey === 'waiting' ? 'active' : ''}`}
+                className="secondary-btn"
                 type="button"
-                onClick={() => setFilterKey('waiting')}
+                onClick={() => {
+                  setFilterKey('all')
+                  setSearchValue('')
+                }}
               >
-                仅看待扫码 ({waitingCount})
-              </button>
-              <button
-                className={`toolbar-chip-btn ${filterKey === 'exception' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setFilterKey('exception')}
-              >
-                仅看异常 ({exceptionCount})
-              </button>
-              <button className="toolbar-chip-btn" type="button" onClick={() => setFilterKey('all')}>
                 查看全部
               </button>
-            </div>
+            ) : null}
           </div>
-        </section>
-
-        {isBuilderOpen ? (
-          <section className="panel task-builder-panel stack-md">
-            <div className="panel-split-header">
-              <div className="compact-panel-header">
-                <h2>新建批量任务</h2>
-                <p>每行一条，支持“备注,内容ID”或“备注&lt;TAB&gt;内容ID”，创建后会立即生成二维码。</p>
-              </div>
-              <div className="task-builder-stats">
-                <div className="task-builder-stat">
-                  <span>总行数</span>
-                  <strong>{draftLines}</strong>
-                </div>
-                <div className="task-builder-stat">
-                  <span>可创建</span>
-                  <strong>{draftValidation.tasks.length}</strong>
-                </div>
-                <div className="task-builder-stat danger">
-                  <span>错误数</span>
-                  <strong>{displayBatchErrors.length}</strong>
-                </div>
-              </div>
-            </div>
-
-            <form className="stack-md" onSubmit={handleSubmit}>
-              <label className="field">
-                <span>批量任务输入</span>
-                <textarea
-                  ref={textareaRef}
-                  className="batch-textarea"
-                  placeholder={'达人A,554608495125\n达人B\t537029503554'}
-                  value={batchInput}
-                  onChange={(event) => {
-                    setBatchInput(event.target.value)
-                    if (serverBatchErrors.length > 0) setServerBatchErrors([])
-                  }}
-                />
-              </label>
-              {displayBatchErrors.length > 0 ? (
-                <div className="inline-error stack-sm">
-                  {displayBatchErrors.map((item, index) => (
-                    <div key={`${item.line}-${index}`}>
-                      {item.line > 0 ? `第 ${item.line} 行：` : ''}
-                      {item.message}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <div className="task-composer-actions">
-                <button className="primary-btn" type="submit" disabled={submitting}>
-                  {submitting ? '创建中...' : '批量创建二维码任务'}
-                </button>
-                <small>建议一次控制在 1–5 个任务内，便于稳定扫码和自动查询。</small>
-              </div>
-            </form>
-          </section>
-        ) : null}
-      </div>
+        </div>
+      </section>
 
       <div className="task-board-layout">
-        <section className="panel task-table-panel stack-md">
+        <section className="panel task-list-panel stack-md">
           <div className="panel-split-header">
             <div className="compact-panel-header">
-              <h2>任务列表</h2>
-              <p>默认按待扫码、进行中、异常、已完成排序。点击任一任务行，在右侧查看二维码和结果详情。</p>
+              <h2>任务队列</h2>
+              <p>{getFilterDescription(filterKey)}</p>
             </div>
             <span className="section-counter">{filteredTasks.length}/{tasks.length}</span>
           </div>
@@ -356,50 +374,36 @@ export function BatchTasksWorkspace() {
           {!loading && !error && tasks.length === 0 ? (
             <div className="result-empty-state">
               <strong>还没有任务</strong>
-              <p>点击上方“新建任务”后粘贴多行任务，即可批量生成二维码。</p>
+              <p>先点“新建任务”，粘贴多行内容 ID，即可批量生成二维码并开始跟进。</p>
             </div>
           ) : null}
           {!loading && !error && tasks.length > 0 && filteredTasks.length === 0 ? (
             <div className="result-empty-state">
               <strong>没有匹配当前筛选条件的任务</strong>
-              <p>可以切回“全部”，或者清空搜索关键字后再查看。</p>
+              <p>可以切回“查看全部”，或清空搜索关键字后继续查看。</p>
             </div>
           ) : null}
 
           {!loading && !error && filteredTasks.length > 0 ? (
-            <>
-              <div className="task-table-header" role="presentation">
-                <span>备注</span>
-                <span>内容 ID</span>
-                <span>登录状态</span>
-                <span>查询状态</span>
-                <span>账号</span>
-                <span>更新时间</span>
-                <span>快捷操作</span>
-              </div>
-              <div className="task-table-body">
-                {filteredTasks.map((task) => (
-                  <TaskRow
-                    key={task.taskId}
-                    task={task}
-                    selected={isDetailOpen && selectedTaskId === task.taskId}
-                    busy={Boolean(actionLoading[task.taskId])}
-                    copying={copyingTaskId === task.taskId}
-                    onSelect={openTaskDetail}
-                    onCopyQr={handleCopyQr}
-                    onRefreshLogin={handleRefreshLogin}
-                    onRetryQuery={handleRetryQuery}
-                    onDeleteTask={handleDeleteTask}
-                  />
-                ))}
-              </div>
-            </>
+            <div className="task-queue-list">
+              {filteredTasks.map((task, index) => (
+                <TaskCard
+                  key={task.taskId}
+                  task={task}
+                  selected={isDetailOpen && selectedTaskId === task.taskId}
+                  recommended={index === 0}
+                  onSelect={openTaskDetail}
+                />
+              ))}
+            </div>
           ) : null}
         </section>
 
         <TaskDetailDrawer
           task={selectedTask}
           open={isDetailOpen}
+          taskIndex={selectedTaskIndex}
+          taskCount={filteredTasks.length}
           busy={selectedTask ? Boolean(actionLoading[selectedTask.taskId]) : false}
           copying={selectedTask ? copyingTaskId === selectedTask.taskId : false}
           onClose={() => setIsDetailOpen(false)}
@@ -407,8 +411,28 @@ export function BatchTasksWorkspace() {
           onRefreshLogin={handleRefreshLogin}
           onRetryQuery={handleRetryQuery}
           onDeleteTask={handleDeleteTask}
+          onPrevious={() => moveTaskSelection(-1)}
+          onNext={() => moveTaskSelection(1)}
         />
       </div>
+
+      {isBuilderOpen ? (
+        <TaskBuilderModal
+          draftLines={draftLines}
+          draftValidation={draftValidation}
+          displayBatchErrors={displayBatchErrors}
+          batchInput={batchInput}
+          submitting={submitting}
+          textareaRef={textareaRef}
+          serverBatchErrors={serverBatchErrors}
+          onClose={handleBuilderClose}
+          onChange={(value) => {
+            setBatchInput(value)
+            if (serverBatchErrors.length > 0) setServerBatchErrors([])
+          }}
+          onSubmit={handleSubmit}
+        />
+      ) : null}
 
       <div className="toast-stack" aria-live="polite" aria-atomic="true">
         {toasts.map((toast) => (
@@ -421,14 +445,102 @@ export function BatchTasksWorkspace() {
   )
 }
 
-function TaskRow({ task, selected, busy, copying, onSelect, onCopyQr, onRefreshLogin, onRetryQuery, onDeleteTask }) {
-  const canCopyQr = Boolean(task.qrImageUrl && supportsClipboardImage())
-  const canRefresh = !['QUEUED', 'RUNNING'].includes(task.query.status)
-  const canRetry = Boolean(task.accountId) && !['QUEUED', 'RUNNING', 'SUCCEEDED'].includes(task.query.status)
+function TaskStageCard({ label, value, tone, active, onClick }) {
+  return (
+    <button className={`task-stage-card tone-${tone} ${active ? 'active' : ''}`} type="button" onClick={onClick}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </button>
+  )
+}
+
+function TaskBuilderModal({
+  draftLines,
+  draftValidation,
+  displayBatchErrors,
+  batchInput,
+  submitting,
+  textareaRef,
+  onClose,
+  onChange,
+  onSubmit
+}) {
+  return (
+    <div className="builder-modal-root" role="dialog" aria-modal="true" aria-labelledby="batch-builder-title">
+      <div className="builder-modal-backdrop" onClick={onClose} />
+
+      <section className="panel builder-modal-panel stack-md">
+        <div className="task-detail-header">
+          <div className="compact-panel-header">
+            <span className="section-eyebrow">批量导入</span>
+            <h2 id="batch-builder-title">新建批量任务</h2>
+            <p>先看可创建数量和错误，再一次性发出二维码任务，避免一边粘贴一边来回切页面。</p>
+          </div>
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="关闭新建任务">×</button>
+        </div>
+
+        <div className="task-builder-stats">
+          <div className="task-builder-stat">
+            <span>总行数</span>
+            <strong>{draftLines}</strong>
+          </div>
+          <div className="task-builder-stat">
+            <span>可创建</span>
+            <strong>{draftValidation.tasks.length}</strong>
+          </div>
+          <div className="task-builder-stat danger">
+            <span>错误数</span>
+            <strong>{displayBatchErrors.length}</strong>
+          </div>
+        </div>
+
+        <form className="stack-md" onSubmit={onSubmit}>
+          <label className="field">
+            <span>批量任务输入</span>
+            <textarea
+              ref={textareaRef}
+              className="batch-textarea"
+              placeholder={'达人A,554608495125\n达人B\t537029503554'}
+              value={batchInput}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          </label>
+
+          <div className="builder-helper-list">
+            <span>格式 1：备注,内容ID</span>
+            <span>格式 2：备注&lt;TAB&gt;内容ID</span>
+            <span>建议一次控制在 1–5 条</span>
+          </div>
+
+          {displayBatchErrors.length > 0 ? (
+            <div className="inline-error stack-sm">
+              {displayBatchErrors.map((item, index) => (
+                <div key={`${item.line}-${index}`}>
+                  {item.line > 0 ? `第 ${item.line} 行：` : ''}
+                  {item.message}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="task-composer-actions">
+            <button className="primary-btn" type="submit" disabled={submitting}>
+              {submitting ? '创建中...' : '批量创建二维码任务'}
+            </button>
+            <small>创建后系统会自动进入扫码跟进流程。</small>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function TaskCard({ task, selected, recommended, onSelect }) {
+  const tone = getTaskOverallTone(task)
 
   return (
     <article
-      className={`task-table-row ${selected ? 'selected' : ''} ${isWaitingTask(task) ? 'highlighted' : ''}`}
+      className={`task-queue-card tone-${tone} ${selected ? 'selected' : ''}`}
       role="button"
       tabIndex={0}
       onClick={() => onSelect(task.taskId)}
@@ -439,54 +551,61 @@ function TaskRow({ task, selected, busy, copying, onSelect, onCopyQr, onRefreshL
         }
       }}
     >
-      <div className="task-row-main">
-        <strong>{task.remark || '未命名任务'}</strong>
-        <small>{task.error?.message || '点击查看二维码、截图和处理建议'}</small>
+      <div className="task-queue-top">
+        <div className="task-row-main">
+          <div className="task-card-title-row">
+            <strong>{task.remark || '未命名任务'}</strong>
+            {recommended ? <span className="task-priority-pill">建议先看</span> : null}
+          </div>
+          <small>{getTaskSummary(task)}</small>
+        </div>
+        <span className="row-focus-pill">{getTaskPrimaryActionLabel(task)}</span>
       </div>
-      <div className="task-row-cell mono-cell">{task.contentId}</div>
-      <div className="task-row-cell">
+
+      <div className="task-status-pills">
         <span className={`status-pill status-${getTaskLoginTone(task.login.status)}`}>
-          {formatTaskLoginStatus(task.login.status)}
+          登录：{formatTaskLoginStatus(task.login.status)}
         </span>
-      </div>
-      <div className="task-row-cell">
         <span className={`status-pill status-${getTaskQueryTone(task.query.status)}`}>
-          {formatTaskQueryStatus(task.query.status)}
+          查询：{formatTaskQueryStatus(task.query.status)}
         </span>
       </div>
-      <div className="task-row-cell">
-        <strong>{task.accountNickname || '待扫码'}</strong>
-        <small>{task.accountId || '-'}</small>
+
+      <div className="task-meta-grid">
+        <div className="task-meta-item">
+          <span>内容 ID</span>
+          <strong className="mono-cell">{task.contentId}</strong>
+        </div>
+        <div className="task-meta-item">
+          <span>账号</span>
+          <strong>{task.accountNickname || '待扫码'}</strong>
+        </div>
+        <div className="task-meta-item">
+          <span>更新时间</span>
+          <strong>{formatDateTime(task.updatedAt)}</strong>
+        </div>
       </div>
-      <div className="task-row-cell">
-        <strong>{formatDateTime(task.updatedAt)}</strong>
-        <small>{task.taskId}</small>
-      </div>
-      <div className="task-row-actions" onClick={stopPropagation}>
-        <button className="row-action-btn" type="button" onClick={() => onSelect(task.taskId)}>查看详情</button>
-        <a
-          className={`row-action-btn ${!task.qrImageUrl ? 'disabled' : ''}`}
-          href={task.qrImageUrl || '#'}
-          download={`task-${task.taskId}-qr.png`}
-          onClick={(event) => {
-            stopPropagation(event)
-            if (!task.qrImageUrl) event.preventDefault()
-          }}
-        >
-          下载二维码
-        </a>
-        <button className="row-action-btn" type="button" disabled={!canCopyQr || busy} onClick={() => onCopyQr(task)}>
-          {copying ? '已复制' : '复制二维码'}
-        </button>
-        <button className="row-action-btn" type="button" disabled={!canRefresh || busy} onClick={() => onRefreshLogin(task.taskId)}>刷新</button>
-        <button className="row-action-btn" type="button" disabled={!canRetry || busy} onClick={() => onRetryQuery(task.taskId)}>重试</button>
-        <button className="row-action-btn danger" type="button" disabled={task.query.status === 'RUNNING' || busy} onClick={() => onDeleteTask(task.taskId)}>删除</button>
-      </div>
+
+      {task.error?.message ? <div className="task-inline-hint">{task.error.message}</div> : null}
     </article>
   )
 }
 
-function TaskDetailDrawer({ task, open, busy, copying, onClose, onCopyQr, onRefreshLogin, onRetryQuery, onDeleteTask }) {
+function TaskDetailDrawer({
+  task,
+  open,
+  taskIndex,
+  taskCount,
+  busy,
+  copying,
+  onClose,
+  onCopyQr,
+  onRefreshLogin,
+  onRetryQuery,
+  onDeleteTask,
+  onPrevious,
+  onNext
+}) {
   const [activeTab, setActiveTab] = useState('summary')
 
   useEffect(() => {
@@ -497,12 +616,14 @@ function TaskDetailDrawer({ task, open, busy, copying, onClose, onCopyQr, onRefr
     return (
       <aside className="panel task-detail-drawer placeholder stack-md">
         <div className="compact-panel-header">
+          <span className="section-eyebrow">焦点区</span>
           <h2>任务详情</h2>
-          <p>从左侧任务列表选择一条任务，这里会集中展示二维码、指标结果和下一步操作。</p>
+          <p>从左侧选择一条任务，这里会集中展示二维码、结果和下一步建议。</p>
         </div>
+
         <div className="result-empty-state compact-empty-state">
           <strong>尚未选择任务</strong>
-          <p>建议先筛选“待扫码”并点击任务行，这样发码和后续跟进都会更顺手。</p>
+          <p>建议优先点击待扫码或异常任务，这样发码和异常处理都会更顺手。</p>
         </div>
       </aside>
     )
@@ -518,10 +639,26 @@ function TaskDetailDrawer({ task, open, busy, copying, onClose, onCopyQr, onRefr
     <aside className="panel task-detail-drawer stack-md">
       <div className="task-detail-header">
         <div className="compact-panel-header">
+          <span className="section-eyebrow">焦点区</span>
           <h2>任务详情</h2>
-          <p>二维码和结果都只在这里查看，减少主列表滚动和视觉干扰。</p>
+          <p>二维码和结果都只在这里查看，主列表只负责排队和筛选。</p>
         </div>
-        <button className="icon-btn" type="button" onClick={onClose} aria-label="关闭任务详情">×</button>
+
+        <div className="task-detail-nav">
+          <button className="secondary-btn compact-btn" type="button" onClick={onPrevious} disabled={taskIndex <= 0}>
+            上一条
+          </button>
+          <span>{taskCount > 0 ? `${taskIndex + 1}/${taskCount}` : '0/0'}</span>
+          <button className="secondary-btn compact-btn" type="button" onClick={onNext} disabled={taskIndex >= taskCount - 1}>
+            下一条
+          </button>
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="关闭任务详情">×</button>
+        </div>
+      </div>
+
+      <div className={`task-focus-banner tone-${getTaskOverallTone(task)}`}>
+        <strong>当前建议</strong>
+        <small>{getTaskSummary(task)}</small>
       </div>
 
       <div className="task-detail-section stack-md">
@@ -532,6 +669,7 @@ function TaskDetailDrawer({ task, open, busy, copying, onClose, onCopyQr, onRefr
             <span className={`status-pill status-${getTaskQueryTone(task.query.status)}`}>查询：{formatTaskQueryStatus(task.query.status)}</span>
           </div>
         </div>
+
         <div className="task-summary-grid">
           <div className="meta-card compact-meta-card"><span>内容 ID</span><strong>{task.contentId}</strong><small>任务 ID：{task.taskId}</small></div>
           <div className="meta-card compact-meta-card"><span>登录账号</span><strong>{task.accountNickname || '待扫码'}</strong><small>{task.accountId || '扫码成功后自动回填'}</small></div>
@@ -742,6 +880,54 @@ function getTaskLoginTone(status) {
   if (status === 'WAITING_QR' || status === 'WAITING_CONFIRM') return 'info'
   if (status === 'EXPIRED') return 'warning'
   return 'danger'
+}
+
+function getTaskOverallTone(task) {
+  if (isExceptionalTask(task)) return 'danger'
+  if (task.query?.status === 'SUCCEEDED') return 'success'
+  if (isWaitingTask(task)) return 'info'
+  return 'warning'
+}
+
+function getTaskSummary(task) {
+  if (task.error?.message) return task.error.message
+  if (task.query?.status === 'SUCCEEDED') return '5 项指标、截图和结果文件都已生成，可直接复核。'
+  if (task.query?.status === 'NO_DATA') return '接口未返回目标内容，建议查看原图和网络日志。'
+  if (task.query?.status === 'FAILED') return '查询流程异常结束，建议先看原图和错误信息。'
+  if (task.query?.status === 'QUEUED') return '任务已进入查询队列，系统会自动执行。'
+  if (task.query?.status === 'RUNNING') return '正在自动查询中，可先继续处理下一条二维码任务。'
+  if (task.login?.status === 'WAITING_CONFIRM') return '已扫码，等待手机确认，确认后会自动开始查询。'
+  if (task.login?.status === 'WAITING_QR') return '先把二维码发出去，扫码成功后会自动进入查询流程。'
+  if (task.login?.status === 'LOGGED_IN') return '登录成功，等待自动查询或可手动重试。'
+  return '点击查看二维码、结果和下一步建议。'
+}
+
+function getTaskPrimaryActionLabel(task) {
+  if (isWaitingTask(task)) return '去发码'
+  if (isExceptionalTask(task)) return '处理异常'
+  if (task.query?.status === 'SUCCEEDED') return '查看结果'
+  return '查看进度'
+}
+
+function getWorkspaceHeadline(tasks, filteredTasks) {
+  if (tasks.length === 0) return '先新建第一批任务，工作台会自动接管后续扫码和查询跟进。'
+  if (filteredTasks.length === 0) return '当前筛选下没有任务，切回全部即可继续处理。'
+
+  const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
+  const exceptionCount = tasks.filter((task) => isExceptionalTask(task)).length
+  const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
+
+  if (waitingCount > 0) return `当前有 ${waitingCount} 条待扫码任务，建议优先发码。`
+  if (exceptionCount > 0) return `当前有 ${exceptionCount} 条异常任务，建议先处理失败和无数据情况。`
+  if (inProgressCount > 0) return `当前有 ${inProgressCount} 条任务正在推进，可继续观察自动查询结果。`
+  return '所有任务都已进入完成状态，可按需抽查结果和截图。'
+}
+
+function getFilterDescription(filterKey) {
+  const current = FILTER_OPTIONS.find((option) => option.value === filterKey)
+  if (!current) return '按优先级展示任务，点击任一任务即可进入右侧焦点区。'
+  if (filterKey === 'all') return '按优先级展示任务，优先把注意力放在待扫码和异常项。'
+  return `当前聚焦：${current.label}。点击任一任务即可在右侧集中处理。`
 }
 
 function stopPropagation(event) {

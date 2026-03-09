@@ -82,7 +82,8 @@ function mergeTask(current, patch = {}) {
     login: mergeNested(current.login, patch.login),
     query: mergeNested(current.query, patch.query),
     screenshots: mergeNested(current.screenshots, patch.screenshots),
-    artifacts: mergeNested(current.artifacts, patch.artifacts)
+    artifacts: mergeNested(current.artifacts, patch.artifacts),
+    sync: mergeNested(current.sync, patch.sync)
   }
 
   if (Object.prototype.hasOwnProperty.call(patch, 'error')) next.error = patch.error
@@ -127,7 +128,19 @@ function normalizeTask(task = {}) {
     artifacts: {
       resultUrl: String(task.artifacts?.resultUrl || ''),
       networkLogUrl: String(task.artifacts?.networkLogUrl || '')
-    }
+    },
+    sync: normalizeSync(task.sync)
+  }
+}
+
+function normalizeSync(sync) {
+  return {
+    status: String(sync?.status || 'IDLE'),
+    operationId: String(sync?.operationId || ''),
+    target: sync?.target || null,
+    match: sync?.match || null,
+    writeSummary: sync?.writeSummary || null,
+    error: normalizeError(sync?.error)
   }
 }
 
