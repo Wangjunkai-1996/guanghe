@@ -127,8 +127,8 @@ export function TencentDocsHandoffHub({
               <img className="qr-image" src={docsLoginSession.qrImageUrl} alt="腾讯文档登录二维码" />
             ) : (
               <div className="task-qr-placeholder">
-                <strong>{loginStatus === 'LOGGED_IN' ? '已登录腾讯文档' : '等待生成登录二维码'}</strong>
-                <small>{loginStatus === 'LOGGED_IN' ? '现在可以检查工作表、识别缺数达人并执行自动回填。' : '先保存腾讯文档链接，再点击上方按钮生成登录二维码。'}</small>
+                <strong>{loginStatus === 'LOGGED_IN' ? '已登录腾讯文档' : (loginStatus === 'WAITING_QR' || loginStatus === 'WAITING_CONFIRM' ? '二维码恢复中' : '等待生成登录二维码')}</strong>
+                <small>{loginStatus === 'LOGGED_IN' ? '现在可以检查工作表、识别缺数达人并执行自动回填。' : ((loginStatus === 'WAITING_QR' || loginStatus === 'WAITING_CONFIRM') ? '当前已有登录会话在等待扫码，若图片未出现可再点一次上方按钮恢复。' : '先保存腾讯文档链接，再点击上方按钮生成登录二维码。')}</small>
               </div>
             )}
           </div>

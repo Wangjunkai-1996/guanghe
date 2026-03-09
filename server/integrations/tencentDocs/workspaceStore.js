@@ -63,7 +63,10 @@ class TencentDocsWorkspaceStore {
     if (ACTIVE_LOGIN_STATUSES.has(state.login.status)) {
       state.login = normalizeLoginState({
         status: 'EXPIRED',
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        loginSessionId: '',
+        qrImageUrl: '',
+        error: null
       })
     }
     this.write(state)
@@ -89,6 +92,8 @@ function normalizeWorkspaceState(value) {
 function normalizeLoginState(login) {
   return {
     status: String(login?.status || 'IDLE'),
+    loginSessionId: String(login?.loginSessionId || ''),
+    qrImageUrl: String(login?.qrImageUrl || ''),
     updatedAt: String(login?.updatedAt || ''),
     error: login?.error
       ? {

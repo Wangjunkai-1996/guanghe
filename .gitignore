@@ -4,3 +4,4 @@ artifacts/
 .cache/
 data/*.json
 output/
+midscene_run/

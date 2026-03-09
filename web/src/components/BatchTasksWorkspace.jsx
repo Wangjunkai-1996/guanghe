@@ -146,12 +146,30 @@ export function BatchTasksWorkspace() {
       },
       login: {
         status: payload?.login?.status || 'IDLE',
+        loginSessionId: payload?.login?.loginSessionId || '',
+        qrImageUrl: payload?.login?.qrImageUrl || '',
         updatedAt: payload?.login?.updatedAt || '',
         error: payload?.login?.error || null
       },
       error: ''
     }
     setSyncConfig(nextConfig)
+    setDocsLoginSession((current) => {
+      const nextSessionId = String(nextConfig.login?.loginSessionId || '')
+      if (nextSessionId && ['WAITING_QR', 'WAITING_CONFIRM'].includes(nextConfig.login.status)) {
+        return {
+          loginSessionId: nextSessionId,
+          status: nextConfig.login.status,
+          qrImageUrl: nextConfig.login.qrImageUrl || '',
+          updatedAt: nextConfig.login.updatedAt || '',
+          error: nextConfig.login.error || null
+        }
+      }
+      if (current?.loginSessionId && current.loginSessionId === nextSessionId && nextConfig.login.status === 'LOGGED_IN') {
+        return null
+      }
+      return current && ['WAITING_QR', 'WAITING_CONFIRM'].includes(current.status) ? current : null
+    })
     return nextConfig
   }, [])
 
@@ -320,6 +338,14 @@ export function BatchTasksWorkspace() {
       window.clearInterval(timer)
     }
   }, [loadSyncConfig, loadTasks, stopDocsLoginPolling])
+
+
+  useEffect(() => {
+    if (!docsLoginSession?.loginSessionId) return undefined
+    if (!['WAITING_QR', 'WAITING_CONFIRM'].includes(docsLoginSession.status)) return undefined
+    startDocsLoginPolling(docsLoginSession.loginSessionId)
+    return undefined
+  }, [docsLoginSession?.loginSessionId, docsLoginSession?.status, startDocsLoginPolling])
 
   useEffect(() => {
     if (syncConfig.loading) return

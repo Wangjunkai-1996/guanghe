@@ -27,7 +27,7 @@ class TencentDocsLoginService {
   async createLoginSession({ docUrl } = {}) {
     const activeSession = Array.from(this.sessions.values()).find((session) => ['WAITING_QR', 'WAITING_CONFIRM'].includes(session.status))
     if (activeSession) {
-      throw createTencentDocsError(409, ERROR_CODES.LOGIN_SESSION_ACTIVE, '已有腾讯文档登录二维码在等待扫码，请先完成当前登录')
+      return this.getLoginSession(activeSession.loginSessionId)
     }
 
     const loginSessionId = crypto.randomUUID()
@@ -99,7 +99,7 @@ class TencentDocsLoginService {
     return {
       loginSessionId: session.loginSessionId,
       status: session.status,
-      qrImageUrl: session.qrImageUrl,
+      qrImageUrl: withCacheBust(session.qrImageUrl, session.updatedAt),
       error: session.error,
       updatedAt: session.updatedAt
     }
@@ -166,12 +166,19 @@ class TencentDocsLoginService {
   emitState(session) {
     this.onStateChange({
       status: session.status,
+      loginSessionId: session.loginSessionId,
+      qrImageUrl: withCacheBust(session.qrImageUrl, session.updatedAt),
       updatedAt: session.updatedAt,
       error: session.error
     })
   }
 }
 
+function withCacheBust(url, updatedAt) {
+  if (!url) return ''
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}t=${encodeURIComponent(updatedAt || '')}`
+}
 
 function mapTencentDocsBrowserError(error) {
   const message = String(error?.message || '')
@@ -202,8 +209,8 @@ async function detectTencentDocsLoginStatus(page) {
 async function openTencentDocsLoginPrompt(page) {
   const candidates = [
     page.locator('text=登录腾讯文档').first(),
-    page.locator('text=立即登录').first(),
-    page.getByRole('button', { name: /登录腾讯文档|立即登录/ }).first()
+    page.getByRole('button', { name: /登录腾讯文档/ }).first(),
+    page.locator('text=立即登录').first()
   ]
 
   for (const locator of candidates) {
@@ -211,6 +218,58 @@ async function openTencentDocsLoginPrompt(page) {
     if (!visible) continue
     await locator.click({ timeout: 3000 }).catch(() => {})
     await page.waitForTimeout(1200)
+    break
+  }
+
+  await prepareTencentDocsQrLogin(page)
+}
+
+async function prepareTencentDocsQrLogin(page) {
+  const agreementCheckbox = page.locator('input[type="checkbox"]').last()
+  const checkboxVisible = await agreementCheckbox.isVisible().catch(() => false)
+  if (checkboxVisible) {
+    const checked = await agreementCheckbox.isChecked().catch(() => false)
+    if (!checked) {
+      await agreementCheckbox.check().catch(async () => {
+        await agreementCheckbox.click({ force: true }).catch(() => {})
+      })
+      await page.waitForTimeout(300)
+    }
+  }
+
+  const wechatTabCandidates = [
+    page.getByRole('button', { name: /微信登录/ }).first(),
+    page.locator('text=微信登录').first()
+  ]
+  for (const locator of wechatTabCandidates) {
+    const visible = await locator.isVisible().catch(() => false)
+    if (!visible) continue
+    await locator.click({ timeout: 3000 }).catch(() => {})
+    await page.waitForTimeout(400)
+    break
+  }
+
+  const immediateCandidates = [
+    page.getByRole('button', { name: /^立即登录$/ }).first(),
+    page.locator('text=立即登录').first()
+  ]
+  for (const locator of immediateCandidates) {
+    const visible = await locator.isVisible().catch(() => false)
+    if (!visible) continue
+    await locator.click({ timeout: 3000 }).catch(() => {})
+    await page.waitForTimeout(1200)
+    break
+  }
+
+  const quickLoginCandidates = [
+    page.getByRole('button', { name: /微信快捷登录/ }).first(),
+    page.locator('text=微信快捷登录').first()
+  ]
+  for (const locator of quickLoginCandidates) {
+    const visible = await locator.isVisible().catch(() => false)
+    if (!visible) continue
+    await locator.click({ timeout: 3000 }).catch(() => {})
+    await page.waitForTimeout(1500)
     break
   }
 }
