@@ -42,6 +42,7 @@ export function TencentDocsHandoffHub({
   const loginStatus = docsLoginSession?.status || syncConfig.login?.status || 'IDLE'
   const showLoginQr = Boolean(docsLoginSession?.qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(docsLoginSession.status))
   const canCreateSheetTasks = Boolean(syncConfig.enabled && docsConfigDraft.docUrl && docsConfigDraft.sheetName && loginStatus === 'LOGGED_IN')
+  const urlTabToken = readTencentDocsTabToken(docsConfigDraft.docUrl)
 
   return (
     <section className="panel handoff-hub-panel stack-lg">
@@ -72,6 +73,11 @@ export function TencentDocsHandoffHub({
               onChange={(event) => onDraftChange({ docUrl: event.target.value })}
             />
           </label>
+          {urlTabToken ? (
+            <div className="task-inline-hint">
+              已检测到链接里包含工作表定位参数，保存或检查后会自动识别当前工作表。
+            </div>
+          ) : null}
           <label className="field">
             <span>目标工作表</span>
             <select value={docsConfigDraft.sheetName} onChange={(event) => onDraftChange({ sheetName: event.target.value })}>
@@ -228,6 +234,16 @@ function formatDemandStatus(status) {
   if (status === 'CONTENT_ID_MISSING') return '缺内容ID'
   if (status === 'DUPLICATE_NICKNAME') return '重名异常'
   return status || '未知'
+}
+
+
+function readTencentDocsTabToken(value) {
+  try {
+    const url = new URL(String(value || '').trim())
+    return String(url.searchParams.get('tab') || '').trim()
+  } catch (_error) {
+    return ''
+  }
 }
 
 function formatLoginStatus(status) {

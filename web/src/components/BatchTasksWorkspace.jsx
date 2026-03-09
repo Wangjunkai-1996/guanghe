@@ -107,26 +107,7 @@ export function BatchTasksWorkspace() {
   const loadSyncConfig = useCallback(async () => {
     try {
       const payload = await api.getTencentDocsConfig()
-      const nextConfig = {
-        loading: false,
-        available: true,
-        enabled: Boolean(payload?.enabled),
-        defaultTargetConfigured: Boolean(payload?.defaultTargetConfigured),
-        defaultSheetName: payload?.defaultSheetName || '',
-        defaultWriteMode: payload?.defaultWriteMode || 'upsert',
-        mode: payload?.mode || 'browser',
-        target: {
-          docUrl: payload?.target?.docUrl || '',
-          sheetName: payload?.target?.sheetName || ''
-        },
-        login: {
-          status: payload?.login?.status || 'IDLE',
-          updatedAt: payload?.login?.updatedAt || '',
-          error: payload?.login?.error || null
-        },
-        error: ''
-      }
-      setSyncConfig(nextConfig)
+      const nextConfig = applyTencentDocsConfigPayload(payload)
       setDocsConfigDraft((current) => ({
         docUrl: current.docUrl || nextConfig.target.docUrl || '',
         sheetName: current.sheetName || nextConfig.target.sheetName || ''
@@ -150,6 +131,30 @@ export function BatchTasksWorkspace() {
     }
   }, [])
 
+  const applyTencentDocsConfigPayload = useCallback((payload) => {
+    const nextConfig = {
+      loading: false,
+      available: true,
+      enabled: Boolean(payload?.enabled),
+      defaultTargetConfigured: Boolean(payload?.defaultTargetConfigured),
+      defaultSheetName: payload?.defaultSheetName || '',
+      defaultWriteMode: payload?.defaultWriteMode || 'upsert',
+      mode: payload?.mode || 'browser',
+      target: {
+        docUrl: payload?.target?.docUrl || '',
+        sheetName: payload?.target?.sheetName || ''
+      },
+      login: {
+        status: payload?.login?.status || 'IDLE',
+        updatedAt: payload?.login?.updatedAt || '',
+        error: payload?.login?.error || null
+      },
+      error: ''
+    }
+    setSyncConfig(nextConfig)
+    return nextConfig
+  }, [])
+
   const pushToast = useCallback((message, tone = 'info') => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setToasts((current) => [...current, { id, message, tone }])
@@ -158,7 +163,24 @@ export function BatchTasksWorkspace() {
     }, 2200)
   }, [])
 
-  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 200, configOverride } = {}) => {
+  const persistTencentDocsTarget = useCallback(async (target, { silent = false } = {}) => {
+    if (!target?.docUrl || !target?.sheetName) return null
+    try {
+      const payload = await api.updateTencentDocsConfig(target)
+      const nextConfig = applyTencentDocsConfigPayload(payload)
+      setDocsConfigDraft({
+        docUrl: target.docUrl,
+        sheetName: target.sheetName
+      })
+      if (!silent) pushToast(`已自动锁定工作表：${target.sheetName}`, 'success')
+      return nextConfig
+    } catch (nextError) {
+      if (!silent) pushToast(nextError.message || '自动保存工作表失败', 'warning')
+      return null
+    }
+  }, [applyTencentDocsConfigPayload, pushToast])
+
+  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 200, configOverride, persistResolvedTarget = false } = {}) => {
     const effectiveConfig = configOverride || syncConfig
     const effectiveTarget = target && target.docUrl ? target : undefined
     if (!effectiveConfig.available) {
@@ -209,18 +231,36 @@ export function BatchTasksWorkspace() {
 
     try {
       const payload = await api.inspectTencentDocsSheet({ target: effectiveTarget, maxRows })
+      const resolvedTarget = {
+        docUrl: effectiveTarget?.docUrl || payload?.target?.docUrl || '',
+        sheetName: payload?.target?.sheetName || ''
+      }
       setDocsDiagnostic(createTencentDocsDiagnosticState({
         inspected: true,
         payload,
         checkedAt: new Date().toISOString()
       }))
-      if (payload?.target?.sheetName) {
+      if (resolvedTarget.sheetName) {
         setDocsConfigDraft((current) => ({
-          docUrl: current.docUrl || payload.target.docUrl || '',
-          sheetName: current.sheetName || payload.target.sheetName || ''
+          docUrl: current.docUrl || resolvedTarget.docUrl || '',
+          sheetName: current.sheetName || resolvedTarget.sheetName || ''
         }))
       }
-      if (!silent) pushToast('腾讯文档检查完成', 'success')
+      const shouldPersistResolvedTarget = persistResolvedTarget
+        && resolvedTarget.docUrl
+        && resolvedTarget.sheetName
+        && (!effectiveTarget?.sheetName || effectiveTarget.sheetName !== resolvedTarget.sheetName)
+      if (shouldPersistResolvedTarget) {
+        await persistTencentDocsTarget(resolvedTarget, { silent: true })
+      }
+      if (!silent) {
+        pushToast(
+          resolvedTarget.sheetName && !effectiveTarget?.sheetName
+            ? `已识别当前工作表：${resolvedTarget.sheetName}`
+            : '腾讯文档检查完成',
+          'success'
+        )
+      }
       return payload
     } catch (nextError) {
       const errorPayload = {
@@ -236,7 +276,7 @@ export function BatchTasksWorkspace() {
       if (!silent) pushToast(errorPayload.message, 'danger')
       return null
     }
-  }, [pushToast, syncConfig])
+  }, [persistTencentDocsTarget, pushToast, syncConfig])
 
   const startDocsLoginPolling = useCallback((loginSessionId) => {
     stopDocsLoginPolling()
@@ -283,12 +323,22 @@ export function BatchTasksWorkspace() {
 
   useEffect(() => {
     if (syncConfig.loading) return
-    if (!syncConfig.available || !syncConfig.enabled || !syncConfig.defaultTargetConfigured) {
+    if (!syncConfig.available || !syncConfig.enabled) {
       setDocsDiagnostic(createTencentDocsDiagnosticState())
       return
     }
-    void runTencentDocsInspect({ silent: true })
-  }, [runTencentDocsInspect, syncConfig.available, syncConfig.defaultTargetConfigured, syncConfig.enabled, syncConfig.loading])
+
+    if (!syncConfig.target?.docUrl && !syncConfig.defaultTargetConfigured) {
+      setDocsDiagnostic(createTencentDocsDiagnosticState())
+      return
+    }
+
+    void runTencentDocsInspect({
+      silent: true,
+      target: syncConfig.target?.docUrl ? syncConfig.target : undefined,
+      persistResolvedTarget: Boolean(syncConfig.target?.docUrl && !syncConfig.target?.sheetName)
+    })
+  }, [runTencentDocsInspect, syncConfig.available, syncConfig.defaultTargetConfigured, syncConfig.enabled, syncConfig.loading, syncConfig.target])
 
   useEffect(() => {
     if (builderTouched) return
@@ -373,25 +423,25 @@ export function BatchTasksWorkspace() {
   }
 
   const handleSaveTencentDocsConfig = async () => {
+    const draftTarget = {
+      docUrl: String(docsConfigDraft.docUrl || '').trim(),
+      sheetName: String(docsConfigDraft.sheetName || '').trim()
+    }
+
     try {
-      const payload = await api.updateTencentDocsConfig(docsConfigDraft)
-      const nextConfig = {
-        loading: false,
-        available: true,
-        enabled: Boolean(payload?.enabled),
-        defaultTargetConfigured: Boolean(payload?.defaultTargetConfigured),
-        defaultSheetName: payload?.defaultSheetName || '',
-        defaultWriteMode: payload?.defaultWriteMode || 'upsert',
-        mode: payload?.mode || 'browser',
-        target: payload?.target || { docUrl: '', sheetName: '' },
-        login: payload?.login || { status: 'IDLE', updatedAt: '', error: null },
-        error: ''
-      }
-      setSyncConfig(nextConfig)
-      setDocsConfigDraft(nextConfig.target)
+      const payload = await api.updateTencentDocsConfig(draftTarget)
+      const nextConfig = applyTencentDocsConfigPayload(payload)
+      setDocsConfigDraft({
+        docUrl: draftTarget.docUrl || nextConfig.target.docUrl || '',
+        sheetName: draftTarget.sheetName || nextConfig.target.sheetName || ''
+      })
       pushToast('腾讯文档目标已保存', 'success')
-      if (docsConfigDraft.docUrl) {
-        await runTencentDocsInspect({ target: docsConfigDraft })
+      if (draftTarget.docUrl) {
+        await runTencentDocsInspect({
+          target: draftTarget,
+          configOverride: nextConfig,
+          persistResolvedTarget: !draftTarget.sheetName
+        })
       }
     } catch (nextError) {
       pushToast(nextError.message || '保存腾讯文档目标失败', 'danger')

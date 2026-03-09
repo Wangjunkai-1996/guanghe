@@ -217,7 +217,10 @@ describe('batch task workspace ui', () => {
     expect(screen.getByRole('link', { name: '打开诊断 JSON' })).toHaveAttribute('href', '/api/artifacts/tencent-docs/inspect/sheet-preview.json')
     expect(screen.getByRole('heading', { name: '缺数达人列表' })).toBeInTheDocument()
     expect(screen.getByText('达人A')).toBeInTheDocument()
-    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({ target: undefined, maxRows: 200 })
+    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({
+      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      maxRows: 200
+    })
   })
 
   test('shows live draft validation and counts in task builder', async () => {
@@ -235,6 +238,73 @@ describe('batch task workspace ui', () => {
     expect(screen.getAllByText('总行数').length).toBeGreaterThan(0)
     expect(screen.getAllByText('可创建').length).toBeGreaterThan(0)
     expect(screen.getAllByText('错误数').length).toBeGreaterThan(0)
+  })
+
+  test('auto-detects current sheet from doc url and persists it after inspect', async () => {
+    api.getTencentDocsConfig.mockResolvedValueOnce({
+      enabled: true,
+      mode: 'browser',
+      defaultTargetConfigured: false,
+      defaultSheetName: '',
+      defaultWriteMode: 'upsert',
+      target: { docUrl: 'https://docs.qq.com/sheet/DUmtNbkJQdkV0QVF4?tab=BB08J2', sheetName: '' },
+      login: { status: 'LOGGED_IN', updatedAt: '2026-03-09T00:10:00.000Z', error: null }
+    })
+    api.inspectTencentDocsSheet.mockResolvedValueOnce({
+      target: { docUrl: 'https://docs.qq.com/sheet/DUmtNbkJQdkV0QVF4?tab=BB08J2', sheetName: '1' },
+      tabs: [
+        { name: '1', selected: true },
+        { name: '1.08', selected: false }
+      ],
+      headers: ['逛逛昵称', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+      rowCount: 1,
+      columnCount: 8,
+      summary: {
+        totalRows: 1,
+        completeRows: 0,
+        needsFillRows: 1,
+        missingContentIdRows: 0,
+        duplicateNicknameRows: 0
+      },
+      demands: [{
+        sheetRow: 2,
+        nickname: '达人A',
+        contentId: '554608495125',
+        status: 'NEEDS_FILL',
+        missingColumns: ['查看次数截图'],
+        missingCount: 1
+      }],
+      rows: [{ sheetRow: 2, contentId: '554608495125' }],
+      artifacts: { previewJsonUrl: '/api/artifacts/tencent-docs/inspect/sheet-preview.json' }
+    })
+    api.updateTencentDocsConfig
+      .mockResolvedValueOnce({
+        enabled: true,
+        mode: 'browser',
+        defaultTargetConfigured: true,
+        defaultSheetName: '1',
+        defaultWriteMode: 'upsert',
+        target: { docUrl: 'https://docs.qq.com/sheet/DUmtNbkJQdkV0QVF4?tab=BB08J2', sheetName: '1' },
+        login: { status: 'LOGGED_IN', updatedAt: '2026-03-09T00:10:00.000Z', error: null }
+      })
+
+    render(<BatchTasksWorkspace />)
+
+    await screen.findByRole('heading', { name: '腾讯交接表驱动工作台' })
+    await waitFor(() => {
+      expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({
+        target: { docUrl: 'https://docs.qq.com/sheet/DUmtNbkJQdkV0QVF4?tab=BB08J2', sheetName: '' },
+        maxRows: 200
+      })
+    })
+    await waitFor(() => {
+      expect(api.updateTencentDocsConfig).toHaveBeenCalledWith({
+        docUrl: 'https://docs.qq.com/sheet/DUmtNbkJQdkV0QVF4?tab=BB08J2',
+        sheetName: '1'
+      })
+    })
+    expect(screen.getByLabelText('目标工作表')).toHaveValue('1')
+    expect(screen.getByText('已检测到链接里包含工作表定位参数，保存或检查后会自动识别当前工作表。')).toBeInTheDocument()
   })
 
   test('saves handoff target and creates sheet-driven tasks', async () => {

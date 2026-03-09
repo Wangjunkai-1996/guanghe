@@ -15,9 +15,16 @@ class TencentDocsWorkspaceStore {
 
   getTarget(defaultTarget = {}) {
     const state = this.getState()
+    if (state.target.docUrl || state.target.sheetName) {
+      return {
+        docUrl: state.target.docUrl,
+        sheetName: state.target.sheetName
+      }
+    }
+
     return {
-      docUrl: state.target.docUrl || String(defaultTarget.docUrl || '').trim(),
-      sheetName: state.target.sheetName || String(defaultTarget.sheetName || '').trim()
+      docUrl: String(defaultTarget.docUrl || '').trim(),
+      sheetName: String(defaultTarget.sheetName || '').trim()
     }
   }
 
