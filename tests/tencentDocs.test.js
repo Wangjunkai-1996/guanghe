@@ -152,6 +152,70 @@ describe('tencent docs integration', () => {
     expect(response.body.demands[0].missingColumns).toEqual([])
   })
 
+  test('sheet inspect ignores tail rows without nickname and content id', async () => {
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 8,
+        headers: ['逛逛昵称', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 2,
+        rows: [
+          {
+            sheetRow: 2,
+            nickname: '测试达人',
+            contentId: '547982656829',
+            values: ['测试达人', '547982656829', '', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '测试达人',
+              内容id: '547982656829',
+              查看次数截图: '',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          },
+          {
+            sheetRow: 3,
+            nickname: '',
+            contentId: '',
+            values: ['', '', '', '1183', '439', '0', '0', '25'],
+            cells: {
+              逛逛昵称: '',
+              内容id: '',
+              查看次数截图: '',
+              查看次数: '1183',
+              查看人数: '439',
+              种草成交金额: '0',
+              种草成交人数: '0',
+              商品点击次数: '25'
+            }
+          }
+        ]
+      })
+    }
+
+    const { app } = createTestContext({ adapter, sheetName: '' })
+    const agent = await loginAgent(app)
+    const response = await agent
+      .post('/api/tencent-docs/sheet/inspect')
+      .send({
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        maxRows: 5
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.summary.totalRows).toBe(1)
+    expect(response.body.summary.needsFillRows).toBe(1)
+    expect(response.body.summary.missingContentIdRows).toBe(0)
+    expect(response.body.demands).toHaveLength(1)
+    expect(response.body.demands[0].sheetRow).toBe(2)
+  })
+
   test('handoff preview backfills screenshot urls from artifact directory when results json lacks screenshots', async () => {
     const adapter = {
       writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),

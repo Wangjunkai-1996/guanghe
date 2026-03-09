@@ -674,14 +674,15 @@ class TencentDocsSyncService {
 }
 
 function buildSheetDemands(rows = []) {
+  const demandRows = rows.filter(isDemandCandidateRow)
   const nicknameCounts = new Map()
-  for (const row of rows) {
+  for (const row of demandRows) {
     const key = normalizeNickname(row.nickname)
     if (!key) continue
     nicknameCounts.set(key, (nicknameCounts.get(key) || 0) + 1)
   }
 
-  return rows.map((row) => {
+  return demandRows.map((row) => {
     const nickname = String(row.nickname || '').trim()
     const normalizedNickname = normalizeNickname(nickname)
     const contentId = String(row.contentId || '').trim()
@@ -707,6 +708,12 @@ function buildSheetDemands(rows = []) {
       status
     }
   })
+}
+
+function isDemandCandidateRow(row = {}) {
+  const nickname = String(row.nickname || '').trim()
+  const contentId = String(row.contentId || '').trim()
+  return Boolean(nickname || contentId)
 }
 
 function buildSheetSummary(demands = []) {
