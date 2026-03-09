@@ -105,6 +105,53 @@ describe('tencent docs integration', () => {
     expect(response.body.artifacts.previewJsonUrl).toMatch(/sheet-preview\.json$/)
   })
 
+  test('sheet inspect treats screenshot-only gaps as complete when five metrics are filled', async () => {
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 8,
+        headers: ['逛逛昵称', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        rows: [
+          {
+            sheetRow: 2,
+            nickname: '测试达人',
+            contentId: '547982656829',
+            values: ['测试达人', '547982656829', '', '35750', '10951', '255', '2', '4554'],
+            cells: {
+              逛逛昵称: '测试达人',
+              内容id: '547982656829',
+              查看次数截图: '',
+              查看次数: '35750',
+              查看人数: '10951',
+              种草成交金额: '255',
+              种草成交人数: '2',
+              商品点击次数: '4554'
+            }
+          }
+        ]
+      })
+    }
+
+    const { app } = createTestContext({ adapter, sheetName: '' })
+    const agent = await loginAgent(app)
+    const response = await agent
+      .post('/api/tencent-docs/sheet/inspect')
+      .send({
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        maxRows: 5
+      })
+
+    expect(response.status).toBe(200)
+    expect(response.body.summary.needsFillRows).toBe(0)
+    expect(response.body.summary.completeRows).toBe(1)
+    expect(response.body.demands[0].status).toBe('COMPLETE')
+    expect(response.body.demands[0].missingColumns).toEqual([])
+  })
+
   test('handoff preview backfills screenshot urls from artifact directory when results json lacks screenshots', async () => {
     const adapter = {
       writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),

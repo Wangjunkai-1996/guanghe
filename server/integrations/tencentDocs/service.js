@@ -10,6 +10,7 @@ const { TencentDocsBrowserAdapter } = require('./browserAdapter')
 const { createTencentDocsError, ERROR_CODES, serializeSyncError } = require('./errors')
 
 const REQUIRED_HANDOFF_COLUMNS = ['查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数']
+const REQUIRED_DEMAND_COLUMNS = ['查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数']
 const EMPTY_CELL_VALUES = new Set(['', '-', '--'])
 
 class TencentDocsSyncService {
@@ -684,7 +685,7 @@ function buildSheetDemands(rows = []) {
     const nickname = String(row.nickname || '').trim()
     const normalizedNickname = normalizeNickname(nickname)
     const contentId = String(row.contentId || '').trim()
-    const missingColumns = REQUIRED_HANDOFF_COLUMNS.filter((columnName) => !hasCellValue(row.cells?.[columnName]))
+    const missingColumns = REQUIRED_DEMAND_COLUMNS.filter((columnName) => !hasCellValue(row.cells?.[columnName]))
     const duplicate = normalizedNickname && nicknameCounts.get(normalizedNickname) > 1
 
     let status = 'NEEDS_FILL'
