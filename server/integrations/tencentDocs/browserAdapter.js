@@ -226,8 +226,10 @@ async function openDocumentPage(page, docUrl) {
 
 async function assertLoggedIn(page) {
   const bodyText = await readBodyText(page)
-  if (/login|signin/i.test(page.url()) || hasAnyText(bodyText, ['扫码登录', '微信登录', 'QQ登录', '登录后继续'])) {
-    throw createTencentDocsError(401, ERROR_CODES.LOGIN_REQUIRED, '腾讯文档当前未登录，请先在持久化 profile 中完成登录')
+  const hasLoginPrompt = hasAnyText(bodyText, ['扫码登录', '微信登录', 'QQ登录', '登录后继续', '登录腾讯文档', '立即登录', '只能查看', '若要编辑文档，请登录后编辑', '请选择登录方式', '微信快捷登录'])
+    || page.frames().some((frame) => /open\.weixin\.qq\.com\/connect\/qrconnect|bind-wx-quick-login/i.test(frame.url()))
+  if (/login|signin/i.test(page.url()) || hasLoginPrompt) {
+    throw createTencentDocsError(401, ERROR_CODES.LOGIN_REQUIRED, '腾讯文档当前未登录或已退回只读态，请先重新扫码登录腾讯文档')
   }
 }
 

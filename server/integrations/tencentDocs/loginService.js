@@ -7,6 +7,7 @@ const { createTencentDocsError, ERROR_CODES } = require('./errors')
 const WAITING_TEXT_CANDIDATES = ['扫码登录', '微信登录', 'QQ登录', '登录后继续', '登录后可继续']
 const CONFIRM_TEXT_CANDIDATES = ['请在手机上确认', '已扫码', '确认登录', '请在微信中确认']
 const EXPIRED_TEXT_CANDIDATES = ['二维码已失效', '二维码已过期', '请刷新二维码', '刷新二维码']
+const LOGIN_PROMPT_TEXT_CANDIDATES = ['登录腾讯文档', '立即登录', '只能查看', '若要编辑文档，请登录后编辑', '请选择登录方式', '微信快捷登录']
 
 class TencentDocsLoginService {
   constructor({ browserExecutablePath, profileDir, artifactsRootDir, headless = true, defaultDocUrl = '', onStateChange = () => {} }) {
@@ -50,6 +51,7 @@ class TencentDocsLoginService {
     const page = context.pages()[0] || await context.newPage()
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(1500)
+    await openTencentDocsLoginPrompt(page)
 
     const session = {
       loginSessionId,
@@ -190,11 +192,32 @@ async function closeSessionContext(session) {
 async function detectTencentDocsLoginStatus(page) {
   const bodyText = await readBodyText(page)
   if (hasAnyText(bodyText, EXPIRED_TEXT_CANDIDATES)) return 'EXPIRED'
-  if (/login|signin/i.test(page.url()) || hasAnyText(bodyText, WAITING_TEXT_CANDIDATES)) {
+  if (await hasTencentDocsLoginPrompt(page, bodyText) || /login|signin/i.test(page.url()) || hasAnyText(bodyText, WAITING_TEXT_CANDIDATES)) {
     if (hasAnyText(bodyText, CONFIRM_TEXT_CANDIDATES)) return 'WAITING_CONFIRM'
     return 'WAITING_QR'
   }
   return 'LOGGED_IN'
+}
+
+async function openTencentDocsLoginPrompt(page) {
+  const candidates = [
+    page.locator('text=登录腾讯文档').first(),
+    page.locator('text=立即登录').first(),
+    page.getByRole('button', { name: /登录腾讯文档|立即登录/ }).first()
+  ]
+
+  for (const locator of candidates) {
+    const visible = await locator.isVisible().catch(() => false)
+    if (!visible) continue
+    await locator.click({ timeout: 3000 }).catch(() => {})
+    await page.waitForTimeout(1200)
+    break
+  }
+}
+
+async function hasTencentDocsLoginPrompt(page, bodyText = '') {
+  if (hasAnyText(bodyText, LOGIN_PROMPT_TEXT_CANDIDATES)) return true
+  return page.frames().some((frame) => /open\.weixin\.qq\.com\/connect\/qrconnect|bind-wx-quick-login/i.test(frame.url()))
 }
 
 async function captureTencentDocsLoginScreenshot({ artifactsRootDir, loginSessionId, page }) {
