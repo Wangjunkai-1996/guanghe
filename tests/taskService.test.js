@@ -103,6 +103,88 @@ describe('taskService', () => {
     expect(saved.sync.writeSummary.action).toBe('UPDATED')
   })
 
+
+  test('keeps query succeeded when tencent docs sync fails', async () => {
+    const harness = createHarness({
+      tencentDocsSyncService: {
+        getConfig() {
+          return { enabled: true }
+        },
+        async syncHandoffRow() {
+          throw new AppError(401, 'TENCENT_DOCS_LOGIN_REQUIRED', '腾讯文档当前未登录，请先完成登录', {
+            operationId: 'handoff-failed',
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            artifacts: { errorUrl: '/api/artifacts/tencent-docs/handoff/error.png' }
+          })
+        }
+      }
+    })
+    const { tasks } = await harness.service.createTasksBatch([{ remark: '达人A', contentId: '554608495125' }])
+    const task = tasks[0]
+
+    harness.loginService.setSession(task.loginSessionId, {
+      status: 'LOGGED_IN',
+      account: {
+        accountId: '1001',
+        nickname: '自然卷儿'
+      }
+    })
+
+    await harness.service.pollOnce()
+    await harness.service.waitForIdle()
+
+    const saved = harness.taskStore.get(task.taskId)
+    expect(saved.query.status).toBe('SUCCEEDED')
+    expect(saved.error).toBeNull()
+    expect(saved.sync.status).toBe('FAILED')
+    expect(saved.sync.error.code).toBe('TENCENT_DOCS_LOGIN_REQUIRED')
+    expect(saved.sync.artifacts.errorUrl).toBe('/api/artifacts/tencent-docs/handoff/error.png')
+  })
+
+  test('allows manual tencent docs handoff sync for succeeded task', async () => {
+    let syncCallCount = 0
+    const harness = createHarness({
+      tencentDocsSyncService: {
+        getConfig() {
+          return { enabled: true }
+        },
+        async syncHandoffRow(payload) {
+          syncCallCount += 1
+          return {
+            operationId: `handoff-${syncCallCount}`,
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            match: { sheetRow: 9, contentId: '554608495125', matchedBy: ['内容id'] },
+            writeSummary: { action: 'UPDATED', columnsUpdated: ['查看次数', '查看人数'] },
+            artifacts: { writeLogUrl: '/api/artifacts/tencent-docs/handoff/write-log.json' },
+            source: payload.source
+          }
+        }
+      }
+    })
+    const { tasks } = await harness.service.createTasksBatch([{ remark: '达人A', contentId: '554608495125' }])
+    const task = tasks[0]
+
+    harness.loginService.setSession(task.loginSessionId, {
+      status: 'LOGGED_IN',
+      account: {
+        accountId: '1001',
+        nickname: '自然卷儿'
+      }
+    })
+
+    await harness.service.pollOnce()
+    await harness.service.waitForIdle()
+    const syncResult = await harness.service.syncTaskTencentDocsHandoff(task.taskId)
+
+    const saved = harness.taskStore.get(task.taskId)
+    expect(syncCallCount).toBe(2)
+    expect(syncResult.operationId).toBe('handoff-2')
+    expect(saved.query.status).toBe('SUCCEEDED')
+    expect(saved.sync.status).toBe('SUCCEEDED')
+    expect(saved.sync.operationId).toBe('handoff-2')
+    expect(saved.sync.writeSummary.action).toBe('UPDATED')
+    expect(saved.sync.artifacts.writeLogUrl).toBe('/api/artifacts/tencent-docs/handoff/write-log.json')
+  })
   test('stores no-data result and artifact links', async () => {
     const harness = createHarness({
       queryImpl: async ({ accountId, contentId }) => {

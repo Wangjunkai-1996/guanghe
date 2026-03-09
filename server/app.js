@@ -177,6 +177,10 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
 
     app.post('/api/tencent-docs/handoff/sync', async (req, res, next) => {
       try {
+        if (req.body?.taskId) {
+          res.json(await taskService.syncTaskTencentDocsHandoff(req.body.taskId, req.body || {}))
+          return
+        }
         res.json(await tencentDocsSyncService.syncHandoffRow(req.body || {}))
       } catch (error) {
         next(error)

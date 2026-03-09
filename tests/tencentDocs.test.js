@@ -207,6 +207,43 @@ describe('tencent docs integration', () => {
     expect(calls[0].cells[5].columnName).toBe('商品点击次数')
   })
 
+
+  test('handoff sync failure returns operation context and artifact links', async () => {
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 15,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        rows: [{ sheetRow: 6, nickname: '测试达人', contentId: '554608495125', values: [], cells: { 内容id: '554608495125' } }]
+      }),
+      updateRowCells: async () => {
+        throw new Error('写表失败')
+      }
+    }
+
+    const { app, artifactsRootDir } = createTestContext({ adapter, toolBaseUrl: 'https://tool.example.com' })
+    const agent = await loginAgent(app)
+    const resultUrl = writeResultPayload(artifactsRootDir)
+
+    const response = await agent
+      .post('/api/tencent-docs/handoff/sync')
+      .send({
+        source: { resultUrl },
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        maxRows: 20
+      })
+
+    expect(response.status).toBe(500)
+    expect(response.body.error.code).toBe('TENCENT_DOCS_WRITE_FAILED')
+    expect(response.body.error.details.operationId).toBeTruthy()
+    expect(response.body.error.details.target.sheetName).toBe('1')
+    expect(response.body.error.details.match.sheetRow).toBe(6)
+    expect(response.body.error.details.artifacts.writeLogUrl).toMatch(/handoff-write-log\.json$/)
+  })
   test('jobs fail fast when sync is not enabled', async () => {
     const { app, artifactsRootDir } = createTestContext({ enabled: false })
     const agent = await loginAgent(app)

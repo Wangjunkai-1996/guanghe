@@ -36,5 +36,14 @@ export const api = {
   refreshTaskLogin: (taskId) => request(`/api/tasks/${taskId}/refresh-login`, { method: 'POST' }),
   retryTaskQuery: (taskId) => request(`/api/tasks/${taskId}/retry-query`, { method: 'POST' }),
   deleteTask: (taskId) => request(`/api/tasks/${taskId}`, { method: 'DELETE' }),
-  queryContent: ({ accountId, contentId }) => request('/api/queries', { method: 'POST', body: JSON.stringify({ accountId, contentId }) })
+  queryContent: ({ accountId, contentId }) => request('/api/queries', { method: 'POST', body: JSON.stringify({ accountId, contentId }) }),
+  getTencentDocsConfig: () => request('/api/tencent-docs/config', { method: 'GET' }),
+  previewTencentDocsHandoff: ({ resultUrl, target, maxRows } = {}) => request('/api/tencent-docs/handoff/preview', {
+    method: 'POST',
+    body: JSON.stringify({ source: { resultUrl }, target, maxRows })
+  }),
+  syncTencentDocsHandoff: ({ taskId, resultUrl, target, maxRows } = {}) => request('/api/tencent-docs/handoff/sync', {
+    method: 'POST',
+    body: JSON.stringify({ taskId, source: { resultUrl }, target, maxRows })
+  })
 }

@@ -66,27 +66,42 @@ class TencentDocsSyncService {
   async syncHandoffRow({ source, target, maxRows }) {
     const prepared = await this.prepareHandoffSync({ source, target, maxRows })
 
-    const writeSummary = await this.adapter.updateRowCells({
-      target: prepared.target,
-      sheetRow: prepared.match.sheetRow,
-      cells: prepared.columns,
-      artifactDir: prepared.artifactDir
-    })
+    try {
+      const writeSummary = await this.adapter.updateRowCells({
+        target: prepared.target,
+        sheetRow: prepared.match.sheetRow,
+        cells: prepared.columns,
+        artifactDir: prepared.artifactDir
+      })
 
-    writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
-      operationId: prepared.operationId,
-      source: prepared.source,
-      target: prepared.target,
-      match: prepared.match,
-      patch: prepared.patch,
-      columns: prepared.columns,
-      writeSummary,
-      completedAt: new Date().toISOString()
-    })
+      writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
+        operationId: prepared.operationId,
+        source: prepared.source,
+        target: prepared.target,
+        match: prepared.match,
+        patch: prepared.patch,
+        columns: prepared.columns,
+        writeSummary,
+        completedAt: new Date().toISOString()
+      })
 
-    return {
-      ...this.serializeHandoffOperation(prepared),
-      writeSummary
+      return {
+        ...this.serializeHandoffOperation(prepared),
+        writeSummary
+      }
+    } catch (error) {
+      const wrappedError = enrichHandoffError(error, prepared)
+      writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
+        operationId: prepared.operationId,
+        source: prepared.source,
+        target: prepared.target,
+        match: prepared.match,
+        patch: prepared.patch,
+        columns: prepared.columns,
+        error: serializeSyncError(wrappedError),
+        failedAt: new Date().toISOString()
+      })
+      throw wrappedError
     }
   }
 
@@ -339,6 +354,7 @@ class TencentDocsSyncService {
     const normalizedMaxRows = this.normalizeInspectMaxRows(maxRows || 200)
     const operationId = crypto.randomUUID()
     const artifactDir = this.getHandoffArtifactDir(operationId)
+    const artifacts = this.buildHandoffArtifactUrls(operationId)
     ensureDir(artifactDir)
 
     const sheet = await this.adapter.readSheet({
@@ -347,30 +363,38 @@ class TencentDocsSyncService {
       artifactDir
     })
 
-    const patchPreview = buildTencentDocsHandoffPatch(resultPayload, {
-      toolBaseUrl: this.config.toolBaseUrl
-    })
+    try {
+      const patchPreview = buildTencentDocsHandoffPatch(resultPayload, {
+        toolBaseUrl: this.config.toolBaseUrl
+      })
 
-    const match = this.matchHandoffRow(sheet.rows, resultPayload)
-    const columns = this.resolveHandoffColumns(sheet.headers, patchPreview.row, patchPreview.columns)
+      const match = this.matchHandoffRow(sheet.rows, resultPayload)
+      const columns = this.resolveHandoffColumns(sheet.headers, patchPreview.row, patchPreview.columns)
 
-    return {
-      operationId,
-      artifactDir,
-      source: {
-        resultUrl: source.resultUrl,
-        accountId: String(resultPayload.accountId),
-        nickname: resultPayload.nickname || '',
-        contentId: String(resultPayload.contentId)
-      },
-      target: sheet.target,
-      sheet,
-      maxRows: normalizedMaxRows,
-      match,
-      patch: patchPreview.row,
-      warnings: patchPreview.warnings,
-      columns,
-      artifacts: this.buildHandoffArtifactUrls(operationId)
+      return {
+        operationId,
+        artifactDir,
+        source: {
+          resultUrl: source.resultUrl,
+          accountId: String(resultPayload.accountId),
+          nickname: resultPayload.nickname || '',
+          contentId: String(resultPayload.contentId)
+        },
+        target: sheet.target,
+        sheet,
+        maxRows: normalizedMaxRows,
+        match,
+        patch: patchPreview.row,
+        warnings: patchPreview.warnings,
+        columns,
+        artifacts
+      }
+    } catch (error) {
+      throw enrichHandoffError(error, {
+        operationId,
+        target: sheet.target,
+        artifacts
+      })
     }
   }
 
@@ -476,6 +500,25 @@ class TencentDocsSyncService {
       updatedAt: job.updatedAt
     }
   }
+}
+
+
+function enrichHandoffError(error, operation = {}) {
+  const statusCode = error?.statusCode || 500
+  const code = error?.code || ERROR_CODES.WRITE_FAILED
+  const message = error?.message || '腾讯文档回填失败'
+  const details = {
+    ...(error?.details || {})
+  }
+
+  if (operation.operationId) details.operationId = operation.operationId
+  if (operation.target) details.target = operation.target
+  if (operation.match) details.match = operation.match
+  if (operation.patch) details.patch = operation.patch
+  if (operation.columns) details.columns = operation.columns
+  if (operation.artifacts) details.artifacts = operation.artifacts
+
+  return createTencentDocsError(statusCode, code, message, details)
 }
 
 module.exports = { TencentDocsSyncService }

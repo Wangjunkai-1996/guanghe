@@ -140,7 +140,24 @@ function normalizeSync(sync) {
     target: sync?.target || null,
     match: sync?.match || null,
     writeSummary: sync?.writeSummary || null,
+    artifacts: normalizeSyncArtifacts(sync?.artifacts),
     error: normalizeError(sync?.error)
+  }
+}
+
+function normalizeSyncArtifacts(artifacts) {
+  if (!artifacts) return null
+  return {
+    beforeReadUrl: String(artifacts.beforeReadUrl || ''),
+    afterReadUrl: String(artifacts.afterReadUrl || ''),
+    beforeFillUrl: String(artifacts.beforeFillUrl || ''),
+    afterFillUrl: String(artifacts.afterFillUrl || ''),
+    beforeWriteUrl: String(artifacts.beforeWriteUrl || ''),
+    afterWriteUrl: String(artifacts.afterWriteUrl || ''),
+    errorUrl: String(artifacts.errorUrl || ''),
+    selectionTsvUrl: String(artifacts.selectionTsvUrl || ''),
+    previewJsonUrl: String(artifacts.previewJsonUrl || ''),
+    writeLogUrl: String(artifacts.writeLogUrl || '')
   }
 }
 

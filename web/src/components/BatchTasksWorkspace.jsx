@@ -6,7 +6,10 @@ import {
   formatMetricValue,
   formatTaskLoginStatus,
   formatTaskQueryStatus,
-  getTaskQueryTone
+  formatTaskSyncStatus,
+  getTaskQueryTone,
+  getTaskSyncTone,
+  resolveTaskSyncState
 } from '../lib/ui'
 
 const METRIC_ORDER = [
@@ -42,6 +45,16 @@ export function BatchTasksWorkspace() {
   const [builderTouched, setBuilderTouched] = useState(false)
   const [toasts, setToasts] = useState([])
   const [lastSyncedAt, setLastSyncedAt] = useState('')
+  const [syncConfig, setSyncConfig] = useState({
+    loading: true,
+    available: true,
+    enabled: false,
+    defaultTargetConfigured: false,
+    defaultSheetName: '',
+    defaultWriteMode: 'upsert'
+  })
+  const [syncPreviewState, setSyncPreviewState] = useState({})
+  const [syncActionLoading, setSyncActionLoading] = useState({})
 
   const textareaRef = useRef(null)
 
@@ -62,6 +75,36 @@ export function BatchTasksWorkspace() {
     }
   }, [])
 
+
+  const loadSyncConfig = useCallback(async () => {
+    try {
+      const payload = await api.getTencentDocsConfig()
+      setSyncConfig({
+        loading: false,
+        available: true,
+        enabled: Boolean(payload?.enabled),
+        defaultTargetConfigured: Boolean(payload?.defaultTargetConfigured),
+        defaultSheetName: payload?.defaultSheetName || '',
+        defaultWriteMode: payload?.defaultWriteMode || 'upsert',
+        mode: payload?.mode || 'browser',
+        error: ''
+      })
+      return payload
+    } catch (nextError) {
+      setSyncConfig({
+        loading: false,
+        available: false,
+        enabled: false,
+        defaultTargetConfigured: false,
+        defaultSheetName: '',
+        defaultWriteMode: 'upsert',
+        mode: 'browser',
+        error: nextError.message || '腾讯文档配置读取失败'
+      })
+      return null
+    }
+  }, [])
+
   const pushToast = useCallback((message, tone = 'info') => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setToasts((current) => [...current, { id, message, tone }])
@@ -75,7 +118,7 @@ export function BatchTasksWorkspace() {
 
     const boot = async () => {
       if (!cancelled) {
-        await loadTasks()
+        await Promise.all([loadTasks(), loadSyncConfig()])
       }
     }
 
@@ -90,7 +133,7 @@ export function BatchTasksWorkspace() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [loadTasks])
+  }, [loadSyncConfig, loadTasks])
 
   useEffect(() => {
     if (builderTouched) return
@@ -163,7 +206,7 @@ export function BatchTasksWorkspace() {
   }, [filteredTasks, selectedTaskId])
 
   const handleRefreshList = async () => {
-    await loadTasks()
+    await Promise.all([loadTasks(), loadSyncConfig()])
     pushToast('任务列表已刷新', 'success')
   }
 
@@ -250,6 +293,95 @@ export function BatchTasksWorkspace() {
     }
   }
 
+
+  const handlePreviewTaskSync = async (task) => {
+    if (!task?.artifacts?.resultUrl) {
+      pushToast('当前任务缺少结果文件，无法预览回填', 'warning')
+      return
+    }
+
+    setSyncActionLoading((current) => ({ ...current, [task.taskId]: 'preview' }))
+    setSyncPreviewState((current) => ({
+      ...current,
+      [task.taskId]: {
+        ...(current[task.taskId] || {}),
+        loading: true,
+        error: null
+      }
+    }))
+
+    try {
+      const payload = await api.previewTencentDocsHandoff({ resultUrl: task.artifacts.resultUrl })
+      setSyncPreviewState((current) => ({
+        ...current,
+        [task.taskId]: {
+          loading: false,
+          error: null,
+          data: payload
+        }
+      }))
+      pushToast('已生成腾讯文档回填预览', 'success')
+    } catch (nextError) {
+      setSyncPreviewState((current) => ({
+        ...current,
+        [task.taskId]: {
+          loading: false,
+          data: current[task.taskId]?.data || null,
+          error: {
+            code: nextError.code || 'TENCENT_DOCS_PREVIEW_FAILED',
+            message: nextError.message || '腾讯文档预览失败',
+            details: nextError.details || null
+          }
+        }
+      }))
+      pushToast(nextError.message || '腾讯文档预览失败', 'danger')
+    } finally {
+      setSyncActionLoading((current) => ({ ...current, [task.taskId]: '' }))
+    }
+  }
+
+  const handleSyncTask = async (task) => {
+    if (!task?.artifacts?.resultUrl) {
+      pushToast('当前任务缺少结果文件，无法同步腾讯文档', 'warning')
+      return
+    }
+
+    setSyncActionLoading((current) => ({ ...current, [task.taskId]: 'sync' }))
+    try {
+      const payload = await api.syncTencentDocsHandoff({
+        taskId: task.taskId,
+        resultUrl: task.artifacts.resultUrl
+      })
+      setSyncPreviewState((current) => ({
+        ...current,
+        [task.taskId]: {
+          loading: false,
+          error: null,
+          data: payload
+        }
+      }))
+      await loadTasks({ silent: true })
+      pushToast('腾讯文档已完成回填', 'success')
+    } catch (nextError) {
+      setSyncPreviewState((current) => ({
+        ...current,
+        [task.taskId]: {
+          loading: false,
+          data: current[task.taskId]?.data || null,
+          error: {
+            code: nextError.code || 'TENCENT_DOCS_SYNC_FAILED',
+            message: nextError.message || '腾讯文档同步失败',
+            details: nextError.details || null
+          }
+        }
+      }))
+      await loadTasks({ silent: true })
+      pushToast(nextError.message || '腾讯文档同步失败', 'danger')
+    } finally {
+      setSyncActionLoading((current) => ({ ...current, [task.taskId]: '' }))
+    }
+  }
+
   const openTaskDetail = (taskId) => {
     setSelectedTaskId(taskId)
     setIsDetailOpen(true)
@@ -266,7 +398,7 @@ export function BatchTasksWorkspace() {
   const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
   const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
   const exceptionCount = tasks.filter((task) => isExceptionalTask(task)).length
-  const finishedCount = tasks.filter((task) => task.query?.status === 'SUCCEEDED').length
+  const finishedCount = tasks.filter((task) => task.query?.status === 'SUCCEEDED' && task.sync?.status !== 'FAILED').length
 
   return (
     <section className="tasks-workspace stack-lg">
@@ -390,6 +522,7 @@ export function BatchTasksWorkspace() {
                 <TaskCard
                   key={task.taskId}
                   task={task}
+                  syncConfig={syncConfig}
                   selected={isDetailOpen && selectedTaskId === task.taskId}
                   recommended={index === 0}
                   onSelect={openTaskDetail}
@@ -406,11 +539,16 @@ export function BatchTasksWorkspace() {
           taskCount={filteredTasks.length}
           busy={selectedTask ? Boolean(actionLoading[selectedTask.taskId]) : false}
           copying={selectedTask ? copyingTaskId === selectedTask.taskId : false}
+          syncConfig={syncConfig}
+          syncPreview={selectedTask ? (syncPreviewState[selectedTask.taskId] || null) : null}
+          syncAction={selectedTask ? (syncActionLoading[selectedTask.taskId] || '') : ''}
           onClose={() => setIsDetailOpen(false)}
           onCopyQr={handleCopyQr}
           onRefreshLogin={handleRefreshLogin}
           onRetryQuery={handleRetryQuery}
           onDeleteTask={handleDeleteTask}
+          onPreviewSync={handlePreviewTaskSync}
+          onSyncTask={handleSyncTask}
           onPrevious={() => moveTaskSelection(-1)}
           onNext={() => moveTaskSelection(1)}
         />
@@ -535,7 +673,7 @@ function TaskBuilderModal({
   )
 }
 
-function TaskCard({ task, selected, recommended, onSelect }) {
+function TaskCard({ task, syncConfig, selected, recommended, onSelect }) {
   const tone = getTaskOverallTone(task)
 
   return (
@@ -569,6 +707,9 @@ function TaskCard({ task, selected, recommended, onSelect }) {
         <span className={`status-pill status-${getTaskQueryTone(task.query.status)}`}>
           查询：{formatTaskQueryStatus(task.query.status)}
         </span>
+        <span className={`status-pill status-${normalizeStatusTone(getTaskSyncTone(task, syncConfig))}`}>
+          同步：{formatTaskSyncStatus(task, syncConfig)}
+        </span>
       </div>
 
       <div className="task-meta-grid">
@@ -586,7 +727,8 @@ function TaskCard({ task, selected, recommended, onSelect }) {
         </div>
       </div>
 
-      {task.error?.message ? <div className="task-inline-hint">{task.error.message}</div> : null}
+      {task.sync?.status === 'FAILED' ? <div className="task-inline-hint">{task.sync.error?.message || '腾讯文档同步失败，请进入详情补同步。'}</div> : null}
+      {!task.sync?.error?.message && task.error?.message ? <div className="task-inline-hint">{task.error.message}</div> : null}
     </article>
   )
 }
@@ -598,11 +740,16 @@ function TaskDetailDrawer({
   taskCount,
   busy,
   copying,
+  syncConfig,
+  syncPreview,
+  syncAction,
   onClose,
   onCopyQr,
   onRefreshLogin,
   onRetryQuery,
   onDeleteTask,
+  onPreviewSync,
+  onSyncTask,
   onPrevious,
   onNext
 }) {
@@ -630,10 +777,13 @@ function TaskDetailDrawer({
   }
 
   const previewImageUrl = activeTab === 'summary' ? task.screenshots?.summaryUrl : task.screenshots?.rawUrl
+  const taskBusy = isTaskBusy(task)
   const canCopyQr = Boolean(task.qrImageUrl && supportsClipboardImage())
-  const canRefresh = !['QUEUED', 'RUNNING'].includes(task.query.status)
-  const canRetry = Boolean(task.accountId) && !['QUEUED', 'RUNNING', 'SUCCEEDED'].includes(task.query.status)
+  const canRefresh = canRefreshTaskLogin(task)
+  const canRetry = canRetryTaskQuery(task)
+  const canDelete = canDeleteTask(task)
   const showQr = Boolean(task.qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login.status))
+  const recommendations = getTaskRecommendations(task, syncConfig)
 
   return (
     <aside className="panel task-detail-drawer stack-md">
@@ -641,7 +791,7 @@ function TaskDetailDrawer({
         <div className="compact-panel-header">
           <span className="section-eyebrow">焦点区</span>
           <h2>任务详情</h2>
-          <p>二维码和结果都只在这里查看，主列表只负责排队和筛选。</p>
+          <p>二维码、查询结果和腾讯文档回填都集中在这里处理，主列表只负责排队和筛选。</p>
         </div>
 
         <div className="task-detail-nav">
@@ -659,6 +809,13 @@ function TaskDetailDrawer({
       <div className={`task-focus-banner tone-${getTaskOverallTone(task)}`}>
         <strong>当前建议</strong>
         <small>{getTaskSummary(task)}</small>
+        {recommendations.length > 0 ? (
+          <div className="task-recommend-list">
+            {recommendations.map((item) => (
+              <span key={item} className="task-recommend-pill">{item}</span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="task-detail-section stack-md">
@@ -667,6 +824,7 @@ function TaskDetailDrawer({
           <div className="task-status-pills">
             <span className={`status-pill status-${getTaskLoginTone(task.login.status)}`}>登录：{formatTaskLoginStatus(task.login.status)}</span>
             <span className={`status-pill status-${getTaskQueryTone(task.query.status)}`}>查询：{formatTaskQueryStatus(task.query.status)}</span>
+            <span className={`status-pill status-${normalizeStatusTone(getTaskSyncTone(task, syncConfig))}`}>同步：{formatTaskSyncStatus(task, syncConfig)}</span>
           </div>
         </div>
 
@@ -695,7 +853,7 @@ function TaskDetailDrawer({
             >
               下载二维码
             </a>
-            <button className="secondary-btn" type="button" disabled={!canCopyQr || busy} onClick={() => onCopyQr(task)}>
+            <button className="secondary-btn" type="button" disabled={!canCopyQr || busy || taskBusy} onClick={() => onCopyQr(task)}>
               {copying ? '已复制' : '复制二维码图片'}
             </button>
             <button className="secondary-btn" type="button" disabled={!canRefresh || busy} onClick={() => onRefreshLogin(task.taskId)}>
@@ -725,6 +883,15 @@ function TaskDetailDrawer({
         onRetryQuery={onRetryQuery}
       />
 
+      <TaskDetailSyncSection
+        task={task}
+        syncConfig={syncConfig}
+        syncPreview={syncPreview}
+        syncAction={syncAction}
+        onPreviewSync={onPreviewSync}
+        onSyncTask={onSyncTask}
+      />
+
       {task.error?.message ? (
         <div className={`task-state-banner tone-${getTaskQueryTone(task.query.status)}`}>
           <strong>{task.error.message}</strong>
@@ -736,7 +903,7 @@ function TaskDetailDrawer({
         <button className="secondary-btn" type="button" disabled={!canRetry || busy} onClick={() => onRetryQuery(task.taskId)}>
           重试查询
         </button>
-        <button className="secondary-btn danger-ghost-btn" type="button" disabled={task.query.status === 'RUNNING' || busy} onClick={() => onDeleteTask(task.taskId)}>
+        <button className="secondary-btn danger-ghost-btn" type="button" disabled={!canDelete || busy} onClick={() => onDeleteTask(task.taskId)}>
           删除任务
         </button>
       </div>
@@ -832,11 +999,139 @@ function TaskDetailResultSection({ activeTab, setActiveTab, previewImageUrl, tas
   )
 }
 
+function TaskDetailSyncSection({ task, syncConfig, syncPreview, syncAction, onPreviewSync, onSyncTask }) {
+  const syncState = resolveTaskSyncState(task, syncConfig)
+  const tone = normalizeStatusTone(getTaskSyncTone(task, syncConfig))
+  const previewData = syncPreview?.data || null
+  const previewError = syncPreview?.error || null
+  const previewWarnings = previewData?.warnings || []
+  const previewLoading = syncAction === 'preview'
+  const syncing = syncAction === 'sync' || task.sync?.status === 'RUNNING'
+  const effectiveError = previewError || task.sync?.error || null
+  const effectiveArtifacts = task.sync?.artifacts || previewError?.details?.artifacts || previewData?.artifacts || null
+  const effectiveTarget = task.sync?.target || previewData?.target || null
+  const effectiveMatch = task.sync?.match || previewData?.match || null
+  const effectiveWriteSummary = task.sync?.writeSummary || previewData?.writeSummary || null
+  const canPreview = canPreviewTaskSync(task, syncConfig) && !previewLoading && !syncing
+  const canSync = canSyncTask(task, syncConfig) && !previewLoading && !syncing
+  const columnCount = Array.isArray(previewData?.columns) ? previewData.columns.length : 0
+  const updatedCount = Array.isArray(effectiveWriteSummary?.columnsUpdated) ? effectiveWriteSummary.columnsUpdated.length : 0
+
+  return (
+    <div className="task-detail-section stack-md">
+      <div className="task-section-header">
+        <div>
+          <strong>腾讯文档同步</strong>
+          <small>查询成功后会自动尝试回填；失败不会影响已生成的指标、截图和结果文件。</small>
+        </div>
+        <div className="task-actions-inline">
+          <button className="secondary-btn" type="button" disabled={!canPreview} onClick={() => onPreviewSync(task)}>
+            {previewLoading ? '预览中...' : '预览回填'}
+          </button>
+          <button className="secondary-btn" type="button" disabled={!canSync} onClick={() => onSyncTask(task)}>
+            {syncing ? '同步中...' : '立即同步'}
+          </button>
+        </div>
+      </div>
+
+      <div className={`task-state-banner tone-${tone}`}>
+        <strong>同步：{formatTaskSyncStatus(task, syncConfig)}</strong>
+        <small>{getTaskSyncDescription(task, syncConfig)}</small>
+      </div>
+
+      <div className="task-summary-grid">
+        <div className="meta-card compact-meta-card">
+          <span>目标工作表</span>
+          <strong>{effectiveTarget?.sheetName || syncConfig.defaultSheetName || '未配置'}</strong>
+          <small>
+            {effectiveTarget?.docUrl
+              ? effectiveTarget.docUrl
+              : syncConfig.loading
+                ? '正在读取默认配置'
+                : syncConfig.defaultTargetConfigured
+                  ? '使用默认腾讯文档目标'
+                  : '请先配置默认 docUrl 和 sheetName'}
+          </small>
+        </div>
+        <div className="meta-card compact-meta-card">
+          <span>匹配结果</span>
+          <strong>{effectiveMatch?.sheetRow ? `第 ${effectiveMatch.sheetRow} 行` : '待匹配'}</strong>
+          <small>{effectiveMatch?.contentId || task.contentId}</small>
+        </div>
+        <div className="meta-card compact-meta-card">
+          <span>写入结果</span>
+          <strong>{effectiveWriteSummary?.action || (previewData ? '预览完成' : formatTaskSyncStatus(task, syncConfig))}</strong>
+          <small>
+            {updatedCount > 0
+              ? `已更新 ${updatedCount} 列`
+              : columnCount > 0
+                ? `预计更新 ${columnCount} 列`
+                : `模式：${syncConfig.defaultWriteMode || 'upsert'}`}
+          </small>
+        </div>
+      </div>
+
+      {effectiveError ? (
+        <div className="task-state-banner tone-danger">
+          <strong>{effectiveError.message}</strong>
+          <small>{effectiveError.code || 'TENCENT_DOCS_SYNC_FAILED'}</small>
+        </div>
+      ) : null}
+
+      {previewWarnings.length > 0 ? (
+        <div className="task-state-banner tone-warning">
+          <strong>预览提示</strong>
+          <small>{previewWarnings.join('；')}</small>
+        </div>
+      ) : null}
+
+      {previewData ? (
+        <div className="sync-preview-card stack-sm">
+          <strong>预览摘要</strong>
+          <small>
+            {previewData.match?.sheetRow
+              ? `将命中第 ${previewData.match.sheetRow} 行，并回填 ${columnCount} 列`
+              : `已生成预览，本次预计回填 ${columnCount} 列`}
+          </small>
+          {columnCount > 0 ? (
+            <div className="sync-columns-list">
+              {previewData.columns.map((column) => {
+                const label = typeof column === 'string' ? column : column.columnName || column.columnLetter || '-'
+                return <span key={label} className="task-recommend-pill">{label}</span>
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {effectiveArtifacts ? (
+        <div className="result-actions-row sync-artifact-links">
+          {effectiveArtifacts.beforeReadUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.beforeReadUrl} target="_blank" rel="noreferrer">读表前截图</a> : null}
+          {effectiveArtifacts.afterReadUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.afterReadUrl} target="_blank" rel="noreferrer">读表后截图</a> : null}
+          {effectiveArtifacts.beforeFillUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.beforeFillUrl} target="_blank" rel="noreferrer">写入前截图</a> : null}
+          {effectiveArtifacts.afterFillUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.afterFillUrl} target="_blank" rel="noreferrer">写入后截图</a> : null}
+          {effectiveArtifacts.previewJsonUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.previewJsonUrl} target="_blank" rel="noreferrer">打开预览 JSON</a> : null}
+          {effectiveArtifacts.selectionTsvUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.selectionTsvUrl} target="_blank" rel="noreferrer">打开选区 TSV</a> : null}
+          {effectiveArtifacts.writeLogUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.writeLogUrl} target="_blank" rel="noreferrer">打开写入日志</a> : null}
+          {effectiveArtifacts.errorUrl ? <a className="secondary-btn inline-link-btn" href={effectiveArtifacts.errorUrl} target="_blank" rel="noreferrer">打开错误截图</a> : null}
+        </div>
+      ) : null}
+
+      {syncState === 'PENDING' ? (
+        <div className="task-state-banner tone-info">
+          <strong>等待查询完成</strong>
+          <small>任务只有在查询成功后才会触发自动同步或开放手动补同步。</small>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function matchesFilter(task, filterKey) {
   if (filterKey === 'waiting') return isWaitingTask(task)
   if (filterKey === 'in-progress') return isInProgressTask(task)
   if (filterKey === 'exception') return isExceptionalTask(task)
-  if (filterKey === 'finished') return task.query?.status === 'SUCCEEDED'
+  if (filterKey === 'finished') return task.query?.status === 'SUCCEEDED' && task.sync?.status !== 'FAILED'
   return true
 }
 
@@ -845,11 +1140,11 @@ function isWaitingTask(task) {
 }
 
 function isInProgressTask(task) {
-  return ['QUEUED', 'RUNNING'].includes(task.query?.status) || (task.login?.status === 'LOGGED_IN' && task.query?.status === 'IDLE')
+  return ['QUEUED', 'RUNNING'].includes(task.query?.status) || task.sync?.status === 'RUNNING' || (task.login?.status === 'LOGGED_IN' && task.query?.status === 'IDLE')
 }
 
 function isExceptionalTask(task) {
-  return ['NO_DATA', 'FAILED'].includes(task.query?.status) || ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)
+  return ['NO_DATA', 'FAILED'].includes(task.query?.status) || ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status) || task.sync?.status === 'FAILED'
 }
 
 function compareTasks(left, right) {
@@ -890,8 +1185,11 @@ function getTaskOverallTone(task) {
 }
 
 function getTaskSummary(task) {
+  if (task.sync?.status === 'FAILED') return task.sync.error?.message || '腾讯文档同步失败，建议先预览再补同步。'
+  if (task.sync?.status === 'RUNNING') return '查询结果已生成，正在自动回填腾讯文档。'
   if (task.error?.message) return task.error.message
-  if (task.query?.status === 'SUCCEEDED') return '5 项指标、截图和结果文件都已生成，可直接复核。'
+  if (task.query?.status === 'SUCCEEDED' && task.sync?.status === 'SUCCEEDED') return '5 项指标、截图和腾讯文档回填都已完成，可直接复核。'
+  if (task.query?.status === 'SUCCEEDED') return '5 项指标和截图已生成，可继续预览或立即同步腾讯文档。'
   if (task.query?.status === 'NO_DATA') return '接口未返回目标内容，建议查看原图和网络日志。'
   if (task.query?.status === 'FAILED') return '查询流程异常结束，建议先看原图和错误信息。'
   if (task.query?.status === 'QUEUED') return '任务已进入查询队列，系统会自动执行。'
@@ -904,13 +1202,14 @@ function getTaskSummary(task) {
 
 function getTaskPrimaryActionLabel(task) {
   if (isWaitingTask(task)) return '去发码'
+  if (task.sync?.status === 'FAILED') return '补同步'
   if (isExceptionalTask(task)) return '处理异常'
   if (task.query?.status === 'SUCCEEDED') return '查看结果'
   return '查看进度'
 }
 
 function getWorkspaceHeadline(tasks, filteredTasks) {
-  if (tasks.length === 0) return '先新建第一批任务，工作台会自动接管后续扫码和查询跟进。'
+  if (tasks.length === 0) return '先新建第一批任务，工作台会自动接管后续扫码、查询和回填跟进。'
   if (filteredTasks.length === 0) return '当前筛选下没有任务，切回全部即可继续处理。'
 
   const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
@@ -918,16 +1217,69 @@ function getWorkspaceHeadline(tasks, filteredTasks) {
   const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
 
   if (waitingCount > 0) return `当前有 ${waitingCount} 条待扫码任务，建议优先发码。`
-  if (exceptionCount > 0) return `当前有 ${exceptionCount} 条异常任务，建议先处理失败和无数据情况。`
-  if (inProgressCount > 0) return `当前有 ${inProgressCount} 条任务正在推进，可继续观察自动查询结果。`
-  return '所有任务都已进入完成状态，可按需抽查结果和截图。'
+  if (exceptionCount > 0) return `当前有 ${exceptionCount} 条异常任务，建议先处理查询异常或腾讯文档回填失败。`
+  if (inProgressCount > 0) return `当前有 ${inProgressCount} 条任务正在推进，可继续观察自动查询和回填结果。`
+  return '所有任务都已进入完成状态，可按需抽查结果、截图和腾讯文档写入日志。'
 }
 
 function getFilterDescription(filterKey) {
   const current = FILTER_OPTIONS.find((option) => option.value === filterKey)
   if (!current) return '按优先级展示任务，点击任一任务即可进入右侧焦点区。'
-  if (filterKey === 'all') return '按优先级展示任务，优先把注意力放在待扫码和异常项。'
+  if (filterKey === 'all') return '按优先级展示任务，优先把注意力放在待扫码、异常和同步失败项。'
   return `当前聚焦：${current.label}。点击任一任务即可在右侧集中处理。`
+}
+
+function isTaskBusy(task) {
+  return ['QUEUED', 'RUNNING'].includes(task?.query?.status) || task?.sync?.status === 'RUNNING'
+}
+
+function canRefreshTaskLogin(task) {
+  return !isTaskBusy(task)
+}
+
+function canRetryTaskQuery(task) {
+  return Boolean(task?.accountId) && !isTaskBusy(task) && !['SUCCEEDED'].includes(task?.query?.status)
+}
+
+function canDeleteTask(task) {
+  return !isTaskBusy(task)
+}
+
+function canPreviewTaskSync(task, syncConfig) {
+  return task?.query?.status === 'SUCCEEDED' && Boolean(task?.artifacts?.resultUrl) && Boolean(syncConfig?.enabled) && Boolean(syncConfig?.defaultTargetConfigured) && task?.sync?.status !== 'RUNNING'
+}
+
+function canSyncTask(task, syncConfig) {
+  return canPreviewTaskSync(task, syncConfig)
+}
+
+function getTaskRecommendations(task, syncConfig) {
+  if (task.login?.status === 'WAITING_QR') return ['下载或复制二维码发群', '提醒达人扫码后手机确认']
+  if (task.login?.status === 'WAITING_CONFIRM') return ['等待手机确认', '若长时间无响应可刷新二维码']
+  if (['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)) return ['先刷新二维码', '重新发群并等待达人扫码']
+  if (task.query?.status === 'NO_DATA') return ['打开原图和网络日志复核内容 ID', '确认无误后可结束此任务']
+  if (task.query?.status === 'FAILED') return ['先看原图和错误信息', '确认账号状态后再重试查询']
+  if (task.sync?.status === 'FAILED') return ['先点预览回填确认命中行', '确认腾讯文档登录态后点击立即同步']
+  if (task.query?.status === 'SUCCEEDED' && syncConfig?.enabled && syncConfig?.defaultTargetConfigured && task.sync?.status !== 'SUCCEEDED') return ['先预览回填确认目标行', '确认无误后立即同步']
+  if (task.query?.status === 'SUCCEEDED' && task.sync?.status === 'SUCCEEDED') return ['抽查汇总图和写入日志', '继续处理下一条任务']
+  if (task.query?.status === 'RUNNING' || task.query?.status === 'QUEUED') return ['等待自动查询完成', '先继续处理其他二维码任务']
+  return []
+}
+
+function getTaskSyncDescription(task, syncConfig) {
+  const syncState = resolveTaskSyncState(task, syncConfig)
+  if (syncState === 'PENDING') return '查询成功后才会自动触发腾讯文档回填，也会开放手动补同步。'
+  if (syncState === 'RUNNING') return '正在读取腾讯文档并回填目标行，期间会保存写入前后截图和写入日志。'
+  if (syncState === 'SUCCEEDED') return '腾讯文档已回填成功，可通过写入日志和截图复核实际效果。'
+  if (syncState === 'FAILED') return task.sync?.error?.message || '腾讯文档回填失败，可先预览再立即同步。'
+  if (syncState === 'DISABLED') return '腾讯文档同步未启用；当前任务的查询结果已保留，可稍后再配置回填。'
+  if (syncState === 'NOT_CONFIGURED') return '腾讯文档默认目标未配置；请先设置 docUrl 和 sheetName。'
+  if (syncState === 'UNAVAILABLE') return syncConfig?.error || '当前服务未提供腾讯文档同步配置。'
+  return '查询结果已准备好，可先预览命中行和列，再决定是否立即同步。'
+}
+
+function normalizeStatusTone(tone) {
+  return tone === 'neutral' ? 'info' : tone
 }
 
 function stopPropagation(event) {

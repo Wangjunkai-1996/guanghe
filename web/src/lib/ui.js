@@ -59,6 +59,57 @@ export function getTaskQueryTone(status) {
   return 'info'
 }
 
+export function resolveTaskSyncState(task, syncConfig = null) {
+  if (task?.sync?.status === 'RUNNING') return 'RUNNING'
+  if (task?.sync?.status === 'SUCCEEDED') return 'SUCCEEDED'
+  if (task?.sync?.status === 'FAILED') return 'FAILED'
+  if (task?.query?.status !== 'SUCCEEDED') return 'PENDING'
+  if (syncConfig && syncConfig.available === false) return 'UNAVAILABLE'
+  if (syncConfig && syncConfig.enabled === false) return 'DISABLED'
+  if (syncConfig && syncConfig.defaultTargetConfigured === false) return 'NOT_CONFIGURED'
+  return 'IDLE'
+}
+
+export function formatTaskSyncStatus(task, syncConfig = null) {
+  switch (resolveTaskSyncState(task, syncConfig)) {
+    case 'RUNNING':
+      return '同步中'
+    case 'SUCCEEDED':
+      return '已同步'
+    case 'FAILED':
+      return '同步失败'
+    case 'DISABLED':
+      return '未启用'
+    case 'NOT_CONFIGURED':
+      return '待配置'
+    case 'UNAVAILABLE':
+      return '未接入'
+    case 'IDLE':
+      return '未同步'
+    default:
+      return '待查询'
+  }
+}
+
+export function getTaskSyncTone(task, syncConfig = null) {
+  switch (resolveTaskSyncState(task, syncConfig)) {
+    case 'SUCCEEDED':
+      return 'success'
+    case 'FAILED':
+      return 'danger'
+    case 'RUNNING':
+      return 'info'
+    case 'IDLE':
+    case 'NOT_CONFIGURED':
+      return 'warning'
+    case 'DISABLED':
+    case 'UNAVAILABLE':
+      return 'neutral'
+    default:
+      return 'info'
+  }
+}
+
 export function isTaskFinished(task) {
   if (['SUCCEEDED', 'NO_DATA', 'FAILED'].includes(task?.query?.status)) return true
   return ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task?.login?.status) && task?.query?.status === 'IDLE'

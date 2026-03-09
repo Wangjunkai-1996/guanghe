@@ -4,6 +4,7 @@ const { AppError } = require('../lib/errors')
 const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM'])
 const TRACKED_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'LOGGED_IN'])
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
+const BUSY_QUERY_STATUSES = new Set(['QUEUED', 'RUNNING'])
 
 class GuangheTaskService {
   constructor({ taskStore, loginService, queryService, tencentDocsSyncService = null, maxActiveLoginSessions = 5, maxConcurrentQueries = 2, pollIntervalMs = 2000 }) {
@@ -17,6 +18,7 @@ class GuangheTaskService {
     this.queryQueue = []
     this.queuedTaskIds = new Set()
     this.runningQueries = new Map()
+    this.runningSyncs = new Map()
     this.pollTimer = null
     this.isPolling = false
 
@@ -68,8 +70,8 @@ class GuangheTaskService {
 
   async refreshTaskLogin(taskId) {
     const task = this.getTaskOrThrow(taskId)
-    if (['QUEUED', 'RUNNING'].includes(task.query.status)) {
-      throw new AppError(409, 'TASK_QUERY_BUSY', '任务正在查询中，暂时不能刷新二维码')
+    if (this.isTaskBusy(task)) {
+      throw new AppError(409, 'TASK_BUSY', '任务正在执行查询或同步，暂时不能刷新二维码')
     }
 
     this.ensureActiveLoginCapacity(1, taskId)
@@ -90,7 +92,7 @@ class GuangheTaskService {
       metrics: null,
       screenshots: { rawUrl: '', summaryUrl: '' },
       artifacts: { resultUrl: '', networkLogUrl: '' },
-      sync: { status: 'IDLE', operationId: '', target: null, match: null, writeSummary: null, error: null }
+      sync: createIdleSyncState()
     })
   }
 
@@ -99,14 +101,14 @@ class GuangheTaskService {
     if (!task.accountId) {
       throw new AppError(400, 'TASK_ACCOUNT_REQUIRED', '当前任务还没有已登录账号，无法重试查询')
     }
-    if (['QUEUED', 'RUNNING'].includes(task.query.status)) {
-      throw new AppError(409, 'TASK_QUERY_BUSY', '任务正在查询中，请稍后再试')
+    if (this.isTaskBusy(task)) {
+      throw new AppError(409, 'TASK_BUSY', '任务正在执行查询或同步，请稍后再试')
     }
 
     const nextTask = this.taskStore.patch(taskId, {
       error: null,
       query: { status: 'QUEUED' },
-      sync: { status: 'IDLE', operationId: '', target: null, match: null, writeSummary: null, error: null }
+      sync: createIdleSyncState()
     })
     this.enqueueQuery(taskId)
     return nextTask
@@ -114,8 +116,8 @@ class GuangheTaskService {
 
   async deleteTask(taskId) {
     const task = this.getTaskOrThrow(taskId)
-    if (task.query.status === 'RUNNING') {
-      throw new AppError(409, 'TASK_QUERY_BUSY', '任务正在查询中，暂不支持删除')
+    if (this.isTaskBusy(task)) {
+      throw new AppError(409, 'TASK_BUSY', '任务正在执行查询或同步，暂不支持删除')
     }
 
     if (this.queuedTaskIds.has(taskId)) {
@@ -128,6 +130,24 @@ class GuangheTaskService {
     }
 
     this.taskStore.remove(taskId)
+  }
+
+  async syncTaskTencentDocsHandoff(taskId, { target, maxRows } = {}) {
+    const task = this.getTaskOrThrow(taskId)
+    if (task.query.status !== 'SUCCEEDED' || !task.artifacts?.resultUrl) {
+      throw new AppError(409, 'TASK_SYNC_NOT_READY', '当前任务还没有可同步的查询结果，请先等待查询成功')
+    }
+    if (task.sync?.status === 'RUNNING' || this.runningSyncs.has(taskId)) {
+      throw new AppError(409, 'TASK_SYNC_BUSY', '任务正在同步腾讯文档，请稍后再试')
+    }
+
+    return this.performTencentDocsSync({
+      taskId,
+      resultUrl: task.artifacts.resultUrl,
+      target,
+      maxRows,
+      rethrow: true
+    })
   }
 
   async pollOnce() {
@@ -148,8 +168,11 @@ class GuangheTaskService {
   }
 
   async waitForIdle() {
-    while (this.queryQueue.length > 0 || this.runningQueries.size > 0) {
-      await Promise.allSettled([...this.runningQueries.values()])
+    while (this.queryQueue.length > 0 || this.runningQueries.size > 0 || this.runningSyncs.size > 0) {
+      await Promise.allSettled([
+        ...this.runningQueries.values(),
+        ...this.runningSyncs.values()
+      ])
     }
   }
 
@@ -264,7 +287,7 @@ class GuangheTaskService {
         metrics: result.metrics,
         screenshots: result.screenshots,
         artifacts: result.artifacts,
-        sync: { status: 'IDLE', operationId: '', target: null, match: null, writeSummary: null, error: null }
+        sync: createIdleSyncState()
       })
 
       await this.syncTaskToTencentDocs(taskId, result)
@@ -298,41 +321,79 @@ class GuangheTaskService {
   }
 
   async syncTaskToTencentDocs(taskId, result) {
-    if (!this.tencentDocsSyncService?.syncHandoffRow) return
-    if (this.tencentDocsSyncService.getConfig && !this.tencentDocsSyncService.getConfig().enabled) return
-    if (!result?.artifacts?.resultUrl) return
+    if (!result?.artifacts?.resultUrl) return null
+    if (!this.tencentDocsSyncService?.syncHandoffRow) return null
+    if (this.tencentDocsSyncService.getConfig && !this.tencentDocsSyncService.getConfig().enabled) return null
+
+    return this.performTencentDocsSync({
+      taskId,
+      resultUrl: result.artifacts.resultUrl,
+      rethrow: false
+    })
+  }
+
+  async performTencentDocsSync({ taskId, resultUrl, target, maxRows, rethrow }) {
+    if (!this.tencentDocsSyncService?.syncHandoffRow) {
+      if (rethrow) {
+        throw new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '腾讯文档同步服务不可用')
+      }
+      return null
+    }
+
+    if (!resultUrl) {
+      if (rethrow) {
+        throw new AppError(400, 'TASK_RESULT_REQUIRED', '当前任务缺少结果文件，无法同步腾讯文档')
+      }
+      return null
+    }
+
+    const syncConfig = this.tencentDocsSyncService.getConfig ? this.tencentDocsSyncService.getConfig() : null
+    if (syncConfig && !syncConfig.enabled) {
+      if (rethrow) {
+        throw new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '腾讯文档同步功能未启用')
+      }
+      return null
+    }
+
+    if (this.runningSyncs.has(taskId)) {
+      if (rethrow) {
+        throw new AppError(409, 'TASK_SYNC_BUSY', '任务正在同步腾讯文档，请稍后再试')
+      }
+      return this.runningSyncs.get(taskId) || null
+    }
 
     this.taskStore.patch(taskId, {
-      sync: { status: 'RUNNING', operationId: '', target: null, match: null, writeSummary: null, error: null }
+      sync: createRunningSyncState()
     })
 
-    try {
-      const syncResult = await this.tencentDocsSyncService.syncHandoffRow({
-        source: { resultUrl: result.artifacts.resultUrl }
+    const promise = this.tencentDocsSyncService.syncHandoffRow({
+      source: { resultUrl },
+      target,
+      maxRows
+    })
+      .then((syncResult) => {
+        this.taskStore.patch(taskId, {
+          sync: createSucceededSyncState(syncResult)
+        })
+        return syncResult
+      })
+      .catch((error) => {
+        this.taskStore.patch(taskId, {
+          sync: createFailedSyncState(error)
+        })
+        if (rethrow) throw error
+        return null
+      })
+      .finally(() => {
+        this.runningSyncs.delete(taskId)
       })
 
-      this.taskStore.patch(taskId, {
-        sync: {
-          status: 'SUCCEEDED',
-          operationId: syncResult.operationId || '',
-          target: syncResult.target || null,
-          match: syncResult.match || null,
-          writeSummary: syncResult.writeSummary || null,
-          error: null
-        }
-      })
-    } catch (error) {
-      this.taskStore.patch(taskId, {
-        sync: {
-          status: 'FAILED',
-          operationId: '',
-          target: null,
-          match: null,
-          writeSummary: null,
-          error: serializeError(error)
-        }
-      })
-    }
+    this.runningSyncs.set(taskId, promise)
+    return promise
+  }
+
+  isTaskBusy(task) {
+    return BUSY_QUERY_STATUSES.has(task?.query?.status) || task?.sync?.status === 'RUNNING'
   }
 
   ensureActiveLoginCapacity(incomingCount, excludeTaskId = '') {
@@ -389,15 +450,50 @@ function createBaseTask(entry, loginSession) {
       resultUrl: '',
       networkLogUrl: ''
     },
-    sync: {
-      status: 'IDLE',
-      operationId: '',
-      target: null,
-      match: null,
-      writeSummary: null,
-      error: null
-    }
+    sync: createIdleSyncState()
   }
+}
+
+function createIdleSyncState(overrides = {}) {
+  return {
+    status: 'IDLE',
+    operationId: '',
+    target: null,
+    match: null,
+    writeSummary: null,
+    artifacts: null,
+    error: null,
+    ...overrides
+  }
+}
+
+function createRunningSyncState() {
+  return createIdleSyncState({ status: 'RUNNING' })
+}
+
+function createSucceededSyncState(syncResult = {}) {
+  return createIdleSyncState({
+    status: 'SUCCEEDED',
+    operationId: syncResult.operationId || '',
+    target: syncResult.target || null,
+    match: syncResult.match || null,
+    writeSummary: syncResult.writeSummary || null,
+    artifacts: syncResult.artifacts || null,
+    error: null
+  })
+}
+
+function createFailedSyncState(error) {
+  const details = error?.details || {}
+  return createIdleSyncState({
+    status: 'FAILED',
+    operationId: details.operationId || '',
+    target: details.target || null,
+    match: details.match || null,
+    writeSummary: details.writeSummary || null,
+    artifacts: details.artifacts || null,
+    error: serializeError(error)
+  })
 }
 
 function validateBatchEntries(entries) {

@@ -1125,6 +1125,12 @@ select,
   font-variant-numeric: tabular-nums;
 }
 
+.status-pill.status-neutral {
+  background: rgba(241, 245, 249, 0.92);
+  border-color: rgba(148, 163, 184, 0.22);
+  color: var(--text-secondary);
+}
+
 .status-pill.status-info {
   background: rgba(219, 234, 254, 0.62);
   border-color: rgba(37, 99, 235, 0.16);
@@ -1299,6 +1305,45 @@ select,
   border-color: rgba(37, 99, 235, 0.16);
   background: rgba(219, 234, 254, 0.94);
   color: var(--blue-600);
+}
+
+
+.task-recommend-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.task-recommend-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sync-preview-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px dashed rgba(148, 163, 184, 0.34);
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.sync-columns-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sync-artifact-links {
+  flex-wrap: wrap;
 }
 
 @media (max-width: 1440px) {
@@ -1724,6 +1769,45 @@ select,
 .task-focus-banner.tone-success {
   background: rgba(220, 252, 231, 0.64);
   border-color: rgba(21, 128, 61, 0.18);
+}
+
+
+.task-recommend-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.task-recommend-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sync-preview-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px dashed rgba(148, 163, 184, 0.34);
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.sync-columns-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sync-artifact-links {
+  flex-wrap: wrap;
 }
 
 @media (max-width: 1440px) {
