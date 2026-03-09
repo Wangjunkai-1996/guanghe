@@ -19,6 +19,10 @@ class TencentDocsLoginService {
     this.sessions = new Map()
   }
 
+  hasActiveSession() {
+    return Array.from(this.sessions.values()).some((session) => ['WAITING_QR', 'WAITING_CONFIRM'].includes(session.status))
+  }
+
   async createLoginSession({ docUrl } = {}) {
     const activeSession = Array.from(this.sessions.values()).find((session) => ['WAITING_QR', 'WAITING_CONFIRM'].includes(session.status))
     if (activeSession) {
@@ -29,15 +33,20 @@ class TencentDocsLoginService {
     const targetUrl = String(docUrl || this.defaultDocUrl || 'https://docs.qq.com/desktop/').trim()
     ensureDir(this.profileDir)
 
-    const context = await chromium.launchPersistentContext(this.profileDir, {
-      headless: this.headless,
-      executablePath: this.browserExecutablePath,
-      viewport: { width: 1440, height: 1080 },
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox'
-      ]
-    })
+    let context
+    try {
+      context = await chromium.launchPersistentContext(this.profileDir, {
+        headless: this.headless,
+        executablePath: this.browserExecutablePath,
+        viewport: { width: 1440, height: 1080 },
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-sandbox'
+        ]
+      })
+    } catch (error) {
+      throw mapTencentDocsBrowserError(error)
+    }
     const page = context.pages()[0] || await context.newPage()
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(1500)
@@ -159,6 +168,15 @@ class TencentDocsLoginService {
       error: session.error
     })
   }
+}
+
+
+function mapTencentDocsBrowserError(error) {
+  const message = String(error?.message || '')
+  if (message.includes('ProcessSingleton')) {
+    return createTencentDocsError(409, ERROR_CODES.BROWSER_PROFILE_BUSY, '腾讯文档浏览器正被其他任务占用，请稍后重试')
+  }
+  return error
 }
 
 async function closeSessionContext(session) {

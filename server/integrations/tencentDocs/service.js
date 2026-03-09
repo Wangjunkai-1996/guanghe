@@ -37,6 +37,7 @@ class TencentDocsSyncService {
       }
     })
     this.docQueues = new Map()
+    this.browserOperationQueue = Promise.resolve()
     this.jobStore.markStaleJobsFailed()
   }
 
@@ -70,8 +71,10 @@ class TencentDocsSyncService {
   async createLoginSession({ target } = {}) {
     this.ensureEnabled()
     const resolvedDocUrl = String(target?.docUrl || this.getDefaultTarget().docUrl || 'https://docs.qq.com/desktop/').trim()
-    this.workspaceStore.saveLogin({ status: 'WAITING_QR', updatedAt: new Date().toISOString(), error: null })
-    return this.loginService.createLoginSession({ docUrl: resolvedDocUrl })
+    return this.runSerializedBrowserOperation(async () => {
+      this.workspaceStore.saveLogin({ status: 'WAITING_QR', updatedAt: new Date().toISOString(), error: null })
+      return this.loginService.createLoginSession({ docUrl: resolvedDocUrl })
+    })
   }
 
   getLoginSession(loginSessionId) {
@@ -125,11 +128,14 @@ class TencentDocsSyncService {
     const prepared = await this.prepareHandoffSync({ source, target, maxRows, match })
 
     try {
-      const writeSummary = await this.adapter.updateRowCells({
-        target: prepared.target,
-        sheetRow: prepared.match.sheetRow,
-        cells: prepared.columns,
-        artifactDir: prepared.artifactDir
+      const writeSummary = await this.runSerializedBrowserOperation(async () => {
+        this.ensureBrowserProfileAvailable()
+        return this.adapter.updateRowCells({
+          target: prepared.target,
+          sheetRow: prepared.match.sheetRow,
+          cells: prepared.columns,
+          artifactDir: prepared.artifactDir
+        })
       })
 
       writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
@@ -353,6 +359,25 @@ class TencentDocsSyncService {
     return { docUrl, sheetName }
   }
 
+  ensureBrowserProfileAvailable() {
+    if (this.loginService?.hasActiveSession?.()) {
+      throw createTencentDocsError(409, ERROR_CODES.BROWSER_PROFILE_BUSY, '腾讯文档登录二维码正在占用浏览器，请先完成登录后再检查工作表')
+    }
+  }
+
+  runSerializedBrowserOperation(operation) {
+    const previous = this.browserOperationQueue
+    let releaseQueue = () => {}
+    this.browserOperationQueue = new Promise((resolve) => {
+      releaseQueue = resolve
+    })
+
+    return previous
+      .catch(() => {})
+      .then(() => operation())
+      .finally(() => releaseQueue())
+  }
+
   normalizeMode(mode) {
     const candidate = String(mode || this.config.writeMode || 'upsert').toLowerCase()
     return candidate === 'append' ? 'append' : 'upsert'
@@ -421,10 +446,13 @@ class TencentDocsSyncService {
     ensureDir(artifactDir)
 
     try {
-      const snapshot = await this.adapter.readSheet({
-        target: resolvedTarget,
-        maxRows,
-        artifactDir
+      const snapshot = await this.runSerializedBrowserOperation(async () => {
+        this.ensureBrowserProfileAvailable()
+        return this.adapter.readSheet({
+          target: resolvedTarget,
+          maxRows,
+          artifactDir
+        })
       })
       this.workspaceStore.saveLogin({ status: 'LOGGED_IN', updatedAt: new Date().toISOString(), error: null })
       const demands = buildSheetDemands(snapshot.rows)

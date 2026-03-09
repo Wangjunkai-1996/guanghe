@@ -189,16 +189,29 @@ class TencentDocsBrowserAdapter {
 
   async launchContext() {
     ensureDir(this.profileDir)
-    return chromium.launchPersistentContext(this.profileDir, {
-      headless: this.headless,
-      executablePath: this.browserExecutablePath,
-      viewport: { width: 1728, height: 1117 },
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox'
-      ]
-    })
+    try {
+      return await chromium.launchPersistentContext(this.profileDir, {
+        headless: this.headless,
+        executablePath: this.browserExecutablePath,
+        viewport: { width: 1728, height: 1117 },
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-sandbox'
+        ]
+      })
+    } catch (error) {
+      throw mapTencentDocsBrowserError(error)
+    }
   }
+}
+
+
+function mapTencentDocsBrowserError(error) {
+  const message = String(error?.message || '')
+  if (message.includes('ProcessSingleton')) {
+    return createTencentDocsError(409, ERROR_CODES.BROWSER_PROFILE_BUSY, '腾讯文档浏览器正被其他任务占用，请稍后重试')
+  }
+  return error
 }
 
 async function openDocumentPage(page, docUrl) {
