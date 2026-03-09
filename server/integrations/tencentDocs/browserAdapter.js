@@ -163,6 +163,11 @@ class TencentDocsBrowserAdapter {
         })
         await pasteTextIntoFocusedRange(page, group.map((cell) => String(cell.value ?? '')).join('	'), this.platform)
         await page.waitForTimeout(250)
+        await verifyTextGroupWritten(page, {
+          sheetRow,
+          group,
+          platform: this.platform
+        })
       }
 
       await page.waitForTimeout(800)
@@ -387,6 +392,56 @@ async function pasteImageIntoFocusedCell(page, imageUrl, platform) {
   await convertFloatingImageToCellImage(page)
 }
 
+
+async function verifyTextGroupWritten(page, { sheetRow, group, platform }) {
+  if (!Array.isArray(group) || group.length === 0) return
+  await focusCell(page, {
+    sheetRow,
+    columnIndex: group[0].columnIndex,
+    platform
+  })
+  await selectFocusedRange(page, group.length, platform)
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => {})
+  await page.keyboard.press(`${getShortcutKey(platform)}+c`).catch(() => {})
+  await page.waitForTimeout(300)
+
+  const actualValues = parseClipboardRowValues(await readClipboardText(page))
+  const expectedValues = group.map((cell) => String(cell.value ?? ''))
+  if (!clipboardRowMatches(actualValues, expectedValues)) {
+    throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, `腾讯文档第 ${sheetRow} 行写入校验失败`, {
+      sheetRow,
+      columnIndexes: group.map((cell) => cell.columnIndex),
+      columns: group.map((cell) => cell.columnName),
+      expectedValues,
+      actualValues
+    })
+  }
+}
+
+async function selectFocusedRange(page, width, platform) {
+  const rangeWidth = Math.max(1, Number(width || 1))
+  const refocused = await refocusPrimarySelection(page)
+  if (!refocused) {
+    await focusSheetGrid(page)
+  }
+  await page.waitForTimeout(120)
+  for (let index = 1; index < rangeWidth; index += 1) {
+    await page.keyboard.press('Shift+ArrowRight').catch(() => {})
+    await page.waitForTimeout(40)
+  }
+}
+
+function parseClipboardRowValues(rawTsv) {
+  const normalized = String(rawTsv || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const firstLine = normalized.split('\n')[0] || ''
+  return firstLine.split('\t').map((value) => String(value ?? ''))
+}
+
+function clipboardRowMatches(actualValues, expectedValues) {
+  if (actualValues.length !== expectedValues.length) return false
+  return actualValues.every((value, index) => String(value ?? '') === String(expectedValues[index] ?? ''))
+}
+
 async function convertFloatingImageToCellImage(page) {
   const menuItemPattern = /转为单元格图片/
 
@@ -453,7 +508,14 @@ async function fetchImageAsBase64(imageUrl) {
 async function focusCell(page, { sheetRow, columnIndex, platform }) {
   const cellReference = `${toColumnLetter(columnIndex)}${sheetRow}`
   const jumped = await jumpToCellReference(page, cellReference)
-  if (jumped) return
+  if (jumped) {
+    const refocused = await refocusPrimarySelection(page)
+    if (!refocused) {
+      await focusSheetGrid(page)
+    }
+    await page.waitForTimeout(120)
+    return
+  }
 
   await focusSheetGrid(page)
   await page.keyboard.press('Escape').catch(() => {})
@@ -621,4 +683,12 @@ function hasAnyText(bodyText, candidates) {
   return candidates.some((candidate) => bodyText.includes(candidate))
 }
 
-module.exports = { TencentDocsBrowserAdapter }
+module.exports = {
+  TencentDocsBrowserAdapter,
+  __private: {
+    focusCell,
+    refocusPrimarySelection,
+    parseClipboardRowValues,
+    clipboardRowMatches
+  }
+}
