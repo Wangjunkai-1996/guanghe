@@ -119,7 +119,8 @@ async function dismissInterferingOverlays(page) {
       const didClick = await clickAnyText(page, [text])
       if (didClick) {
         clicked = true
-        await page.waitForTimeout(500)
+        // Allow fade out animation to finish
+        await page.waitForTimeout(100)
       }
     }
 
@@ -137,7 +138,7 @@ async function dismissInterferingOverlays(page) {
 
     if (closedByIcon) {
       clicked = true
-      await page.waitForTimeout(500)
+      await page.waitForTimeout(100)
     }
     if (!clicked) break
   }
@@ -188,11 +189,13 @@ async function fillContentId(page, contentId) {
   await input.click({ timeout: 5000 })
   await input.fill('')
   await input.fill(String(contentId))
-  await page.waitForTimeout(500)
+
+  // Wait for React to process the input change
+  await page.waitForTimeout(200)
 
   const clicked = await clickAnyText(page, QUERY_BUTTON_CANDIDATES)
   if (!clicked) {
-    await page.keyboard.press('Enter').catch(() => {})
+    await page.keyboard.press('Enter').catch(() => { })
   }
   await settle(page)
 }
@@ -209,10 +212,15 @@ async function chooseMetrics(page, metrics = DEFAULT_METRICS) {
   const opened = await clickAnyText(page, METRIC_TRIGGER_CANDIDATES)
   if (!opened) return false
 
-  await page.waitForTimeout(800)
+  // Wait for the dropdown or popover to be visible
+  await settle(page)
+
   for (const metric of metrics) {
-    await clickAnyText(page, [metric]).catch(() => false)
-    await page.waitForTimeout(250)
+    const clicked = await clickAnyText(page, [metric]).catch(() => false)
+    if (clicked) {
+      // Small pause to allow React state to settle after clicking a checkbox
+      await page.waitForTimeout(100)
+    }
   }
 
   await clickAnyText(page, ['确定', '完成', '应用', '确认']).catch(() => false)
@@ -259,8 +267,9 @@ async function clickSidebarMenu(page, candidates) {
       target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       return true
     }, candidate).catch(() => false)
+
     if (clicked) {
-      await page.waitForTimeout(600)
+      await settle(page)
       return true
     }
   }
@@ -284,8 +293,8 @@ async function clickAnyText(page, texts) {
 
     for (const locator of locators) {
       try {
-        if (await locator.isVisible({ timeout: 1200 })) {
-          await locator.click({ timeout: 5000 })
+        if (await locator.isVisible({ timeout: 500 })) {
+          await locator.click({ timeout: 2000 })
           return true
         }
       } catch (error) {
@@ -320,7 +329,7 @@ async function findInputByKeywords(page, keywords) {
 }
 
 async function settle(page) {
-  await page.waitForLoadState('domcontentloaded').catch(() => {})
+  await page.waitForLoadState('domcontentloaded').catch(() => { })
   await page.waitForTimeout(1200)
 }
 

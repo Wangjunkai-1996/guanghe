@@ -452,7 +452,7 @@ describe('tencent docs integration', () => {
     expect(callOrder).toEqual(['1001:554608495125', '1001:554608495126'])
   })
 
-  test('marks stale pending and running jobs as failed on startup', () => {
+  test('marks stale pending and running jobs as failed on startup', async () => {
     const { root, config } = createTencentDocsConfig()
     writeJson(config.jobsFile, {
       jobs: [
@@ -478,10 +478,12 @@ describe('tencent docs integration', () => {
     })
     tempRoots.push(root)
 
-    new TencentDocsSyncService({
+    const service = new TencentDocsSyncService({
       config,
       adapter: { writeRow: async () => ({ action: 'APPENDED', matchedBy: ['同步键'] }) }
     })
+
+    await service.jobStore.flush()
 
     const payload = readJson(config.jobsFile, { jobs: [] })
     expect(payload.jobs[0].status).toBe('FAILED')
@@ -511,7 +513,7 @@ function createAppWithService(options = {}) {
       listAccounts: () => [],
       createLoginSession: async () => null,
       getLoginSession: () => null,
-      deleteAccount: async () => {}
+      deleteAccount: async () => { }
     },
     queryService: {
       queryByContentId: async () => ({ ok: true })

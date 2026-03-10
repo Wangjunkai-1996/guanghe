@@ -1,4 +1,4 @@
-const { ensureDir, readJson, writeJson } = require('./files')
+const { ensureDir, readJson, writeJson, writeJsonAsync, readJsonAsync } = require('./files')
 
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
 const TERMINAL_SHEET_MATCH_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
@@ -6,13 +6,25 @@ const TERMINAL_SHEET_MATCH_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET
 class TaskStore {
   constructor({ tasksFile }) {
     this.tasksFile = tasksFile
+    this._memoryCache = null
+    this._writeTimeout = null
+    this._writePromise = Promise.resolve()
+    this._isDirty = false
     ensureDir(require('path').dirname(tasksFile))
+    this._initSync() // load initial state
+  }
+
+  _initSync() {
+    const payload = readJson(this.tasksFile, { tasks: [] })
+    const tasks = Array.isArray(payload.tasks) ? payload.tasks.map(normalizeTask) : []
+    this._memoryCache = sortTasks(tasks)
   }
 
   list() {
-    const payload = readJson(this.tasksFile, { tasks: [] })
-    const tasks = Array.isArray(payload.tasks) ? payload.tasks.map(normalizeTask) : []
-    return sortTasks(tasks)
+    if (!this._memoryCache) {
+      this._initSync()
+    }
+    return this._memoryCache
   }
 
   get(taskId) {
@@ -23,7 +35,9 @@ class TaskStore {
     const normalized = normalizeTask(task)
     const tasks = this.list().filter((item) => item.taskId !== normalized.taskId)
     tasks.push(normalized)
-    this.write(tasks)
+    const nextTasks = sortTasks(tasks)
+    this._memoryCache = nextTasks
+    this._scheduleWrite(nextTasks)
     return normalized
   }
 
@@ -35,8 +49,9 @@ class TaskStore {
   }
 
   remove(taskId) {
-    const tasks = this.list().filter((item) => item.taskId !== taskId)
-    this.write(tasks)
+    const nextTasks = this.list().filter((item) => item.taskId !== taskId)
+    this._memoryCache = nextTasks
+    this._scheduleWrite(nextTasks)
   }
 
   markInterruptedNonTerminalTasks() {
@@ -67,12 +82,61 @@ class TaskStore {
       })
     })
 
-    if (changed) this.write(next)
+    if (changed) {
+      this._memoryCache = sortTasks(next)
+      this._scheduleWrite(this._memoryCache)
+    }
     return changed
   }
 
+  _scheduleWrite(tasks) {
+    this._isDirty = true
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+    }
+
+    this._writeTimeout = setTimeout(() => {
+      this.flush()
+    }, 100)
+  }
+
+  async flush() {
+    if (!this._isDirty) return this._writePromise
+
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+      this._writeTimeout = null
+    }
+
+    const payload = { tasks: this._memoryCache }
+    const file = this.tasksFile
+
+    this._writePromise = this._writePromise
+      .then(() => writeJsonAsync(file, payload))
+      .catch((error) => {
+        console.error(`[TaskStore] flush file async error: ${error.message}`)
+        writeJson(file, payload) // fallback
+      })
+
+    this._isDirty = false
+    return this._writePromise
+  }
+
+  // legacy synchronous write fallback if absolutely needed during shutdown
+  writeSync() {
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+    }
+    if (this._isDirty) {
+      writeJson(this.tasksFile, { tasks: this._memoryCache })
+      this._isDirty = false
+    }
+  }
+
   write(tasks) {
-    writeJson(this.tasksFile, { tasks: sortTasks(tasks.map(normalizeTask)) })
+    // legacy API
+    this._memoryCache = sortTasks(tasks.map(normalizeTask))
+    this._scheduleWrite(this._memoryCache)
   }
 }
 
@@ -212,3 +276,4 @@ function sortTasks(tasks) {
 }
 
 module.exports = { TaskStore }
+

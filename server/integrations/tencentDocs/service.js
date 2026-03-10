@@ -96,7 +96,8 @@ class TencentDocsSyncService {
     const snapshot = await this.readSheetDemandSnapshot({
       target,
       maxRows: normalizedMaxRows,
-      artifactDir: this.getInspectArtifactDir()
+      artifactDir: this.getInspectArtifactDir(),
+      strict: false
     })
     return {
       ...snapshot,
@@ -110,7 +111,8 @@ class TencentDocsSyncService {
     const snapshot = await this.readSheetDemandSnapshot({
       target,
       maxRows: this.normalizeInspectMaxRows(maxRows),
-      artifactDir: this.getInspectArtifactDir()
+      artifactDir: this.getInspectArtifactDir(),
+      strict: false
     })
 
     return {
@@ -221,7 +223,7 @@ class TencentDocsSyncService {
     const queueKey = `${storedJob.target.docUrl}:${storedJob.target.sheetName}`
     const previous = this.docQueues.get(queueKey) || Promise.resolve()
     const current = previous
-      .catch(() => {})
+      .catch(() => { })
       .then(() => this.runJob(jobId))
 
     const tracked = current.finally(() => {
@@ -368,13 +370,13 @@ class TencentDocsSyncService {
 
   runSerializedBrowserOperation(operation) {
     const previous = this.browserOperationQueue
-    let releaseQueue = () => {}
+    let releaseQueue = () => { }
     this.browserOperationQueue = new Promise((resolve) => {
       releaseQueue = resolve
     })
 
     return previous
-      .catch(() => {})
+      .catch(() => { })
       .then(() => operation())
       .finally(() => releaseQueue())
   }
@@ -442,7 +444,7 @@ class TencentDocsSyncService {
     }
   }
 
-  async readSheetDemandSnapshot({ target, maxRows, artifactDir }) {
+  async readSheetDemandSnapshot({ target, maxRows, artifactDir, strict = true }) {
     const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
     ensureDir(artifactDir)
 
@@ -452,7 +454,8 @@ class TencentDocsSyncService {
         return this.adapter.readSheet({
           target: resolvedTarget,
           maxRows,
-          artifactDir
+          artifactDir,
+          strict
         })
       })
       this.workspaceStore.saveLogin({ status: 'LOGGED_IN', updatedAt: new Date().toISOString(), error: null })

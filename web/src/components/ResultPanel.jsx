@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDateTime, formatMetricValue, getErrorPresentation } from '../lib/ui'
+import { resolveMetricPayload } from '../lib/taskFormat'
 
 const METRIC_ORDER = [
   '内容查看次数',
@@ -27,7 +28,10 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
       `账号昵称：${result.nickname}`,
       `账号 ID：${result.accountId}`,
       `内容 ID：${result.contentId}`,
-      ...METRIC_ORDER.map((metric) => `${metric}：${result.metrics?.[metric]?.value ?? '-'}`)
+      ...METRIC_ORDER.map((metric) => {
+        const payload = resolveMetricPayload(result.metrics, metric)
+        return `${metric}：${payload?.value ?? '-'}`
+      })
     ].join('\n')
 
     try {
@@ -97,13 +101,16 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
           </div>
 
           <div className="metrics-grid">
-            {METRIC_ORDER.map((metric) => (
-              <div key={metric} className="metric-card emphasized-metric-card">
-                <span>{metric}</span>
-                <strong>{formatMetricValue(result.metrics?.[metric]?.value)}</strong>
-                <small>{result.metrics?.[metric]?.field || '-'}</small>
-              </div>
-            ))}
+            {METRIC_ORDER.map((metric) => {
+              const payload = resolveMetricPayload(result.metrics, metric)
+              return (
+                <div key={metric} className="metric-card emphasized-metric-card">
+                  <span>{metric}</span>
+                  <strong>{formatMetricValue(payload?.value)}</strong>
+                  <small>{payload?.field || '-'}</small>
+                </div>
+              )
+            })}
           </div>
 
           <div className="result-meta-grid expanded-meta-grid">

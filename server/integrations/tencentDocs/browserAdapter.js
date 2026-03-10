@@ -48,17 +48,17 @@ class TencentDocsBrowserAdapter {
       }
     } catch (error) {
       if (page) {
-        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => {})
+        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => { })
       }
       throw error
     } finally {
       if (context) {
-        await context.close().catch(() => {})
+        await context.close().catch(() => { })
       }
     }
   }
 
-  async readSheet({ target, maxRows = 20, artifactDir }) {
+  async readSheet({ target, maxRows = 20, artifactDir, strict = true }) {
     ensureDir(artifactDir)
 
     let context = null
@@ -71,7 +71,7 @@ class TencentDocsBrowserAdapter {
       await page.screenshot({ path: path.join(artifactDir, 'before-read.png'), fullPage: true })
 
       await assertLoggedIn(page)
-      const selectedSheetName = await ensureSheetSelected(page, target.sheetName)
+      const selectedSheetName = await ensureSheetSelected(page, target.sheetName, { strict })
       const tabs = await readVisibleSheetTabs(page)
       const rawTsv = await readSheetSelection(page, {
         maxRows,
@@ -115,12 +115,12 @@ class TencentDocsBrowserAdapter {
       }
     } catch (error) {
       if (page) {
-        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => {})
+        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => { })
       }
       throw error
     } finally {
       if (context) {
-        await context.close().catch(() => {})
+        await context.close().catch(() => { })
       }
     }
   }
@@ -155,19 +155,27 @@ class TencentDocsBrowserAdapter {
         await page.waitForTimeout(250)
       }
 
-      for (const cell of textCells) {
+      for (const group of buildContiguousGroups(textCells)) {
         await focusCell(page, {
           sheetRow,
-          columnIndex: cell.columnIndex,
+          columnIndex: group[0].columnIndex,
           platform: this.platform
         })
-        await writeTextIntoFocusedCell(page, String(cell.value ?? ''), this.platform)
+        await pasteTextIntoFocusedRange(page, group.map((cell) => String(cell.value ?? '')).join('	'), this.platform)
         await page.waitForTimeout(250)
-        await verifyTextGroupWritten(page, {
-          sheetRow,
-          group: [cell],
-          platform: this.platform
-        })
+        try {
+          await verifyTextGroupWritten(page, {
+            sheetRow,
+            group,
+            platform: this.platform
+          })
+        } catch (error) {
+          await writeTextCellsIndividually(page, {
+            sheetRow,
+            group,
+            platform: this.platform
+          })
+        }
       }
 
       await page.waitForTimeout(800)
@@ -182,12 +190,12 @@ class TencentDocsBrowserAdapter {
       }
     } catch (error) {
       if (page) {
-        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => {})
+        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => { })
       }
       throw error
     } finally {
       if (context) {
-        await context.close().catch(() => {})
+        await context.close().catch(() => { })
       }
     }
   }
@@ -225,15 +233,33 @@ async function openDocumentPage(page, docUrl) {
 }
 
 async function assertLoggedIn(page) {
+  // Give the page time to settle
+  await Promise.race([
+    page.waitForSelector('.toolbar-container, .ribbon-toolbar_ribbon-toolbar__3xV-1, .fixed-toolbar-container_fixed-toolbar-wrapper__3NxGh', { timeout: 8000 }).catch(() => { }),
+    page.waitForSelector('text="立即登录", text="扫码登录"', { timeout: 8000 }).catch(() => { })
+  ])
+
+  // If the spreadsheet toolbar is visible, the document has loaded — pass the check.
+  // Even shared/read-only docs show '只能查看' and '登录腾讯文档' text, but they ARE functional.
+  const hasToolbar = await page.locator('.toolbar-container, .ribbon-toolbar_ribbon-toolbar__3xV-1, .fixed-toolbar-container_fixed-toolbar-wrapper__3NxGh').first().isVisible().catch(() => false)
+  if (hasToolbar) return
+
   const bodyText = await readBodyText(page)
-  const hasLoginPrompt = hasAnyText(bodyText, ['扫码登录', '微信登录', 'QQ登录', '登录后继续', '登录腾讯文档', '立即登录', '只能查看', '若要编辑文档，请登录后编辑', '请选择登录方式', '微信快捷登录'])
+
+  // If it's a pure login redirect page (no document content at all), reject
+  const hasLoginPrompt = hasAnyText(bodyText, ['扫码登录', '微信登录', 'QQ登录', '登录后继续', '请选择登录方式', '微信快捷登录'])
     || page.frames().some((frame) => /open\.weixin\.qq\.com\/connect\/qrconnect|bind-wx-quick-login/i.test(frame.url()))
   if (/login|signin/i.test(page.url()) || hasLoginPrompt) {
     throw createTencentDocsError(401, ERROR_CODES.LOGIN_REQUIRED, '腾讯文档当前未登录或已退回只读态，请先重新扫码登录腾讯文档')
   }
+
+  // Fallback: if page has very little content and no toolbar, it's likely a white screen
+  if (bodyText.length < 200) {
+    throw createTencentDocsError(401, ERROR_CODES.LOGIN_REQUIRED, '腾讯文档页面加载超时或需登录验证，请重新扫码登录')
+  }
 }
 
-async function ensureSheetSelected(page, sheetName) {
+async function ensureSheetSelected(page, sheetName, { strict = true } = {}) {
   const tabs = await readVisibleSheetTabs(page)
   const selected = tabs.find((tab) => tab.selected)
   if (!sheetName) {
@@ -243,10 +269,14 @@ async function ensureSheetSelected(page, sheetName) {
   const locator = page.getByRole('tab', { name: sheetName, exact: true }).first()
   const visible = await locator.isVisible().catch(() => false)
   if (!visible) {
-    throw createTencentDocsError(400, ERROR_CODES.SHEET_NOT_FOUND, `未找到工作表：${sheetName}`)
+    if (strict) {
+      throw createTencentDocsError(400, ERROR_CODES.SHEET_NOT_FOUND, `未找到工作表：${sheetName}`)
+    } else {
+      return selected?.name || ''
+    }
   }
 
-  await locator.click({ timeout: 5000 }).catch(() => {})
+  await locator.click({ timeout: 5000 }).catch(() => { })
   await page.waitForTimeout(800)
   return sheetName
 }
@@ -268,13 +298,22 @@ async function assertTemplateVisible(page, columns, platform) {
 
 async function findExistingRow(page, syncKey, platform) {
   const shortcutKey = getShortcutKey(platform)
+
+  // Open search UI
   await page.keyboard.press(`${shortcutKey}+f`)
-  await page.waitForTimeout(300)
+  const searchInput = page.locator('.alloy-find-input, [placeholder*="查找"]').first()
+  await searchInput.waitFor({ state: 'visible', timeout: 5000 }).catch(() => { })
+
   await page.keyboard.type(syncKey)
   await page.keyboard.press('Enter')
-  await page.waitForTimeout(800)
-  await page.keyboard.press('Escape').catch(() => {})
+
+  // Give it a moment to scroll to the result
   await page.waitForTimeout(400)
+
+  // Close search UI
+  await page.keyboard.press('Escape').catch(() => { })
+  await searchInput.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => { })
+
   const bodyText = await readBodyText(page)
   return bodyText.includes(syncKey)
 }
@@ -379,7 +418,7 @@ async function pasteTextIntoFocusedRange(page, text, platform) {
   await page.evaluate(async ({ text }) => {
     await navigator.clipboard.writeText(text)
   }, { text })
-  await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => {})
+  await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
 }
 
 async function writeTextIntoFocusedCell(page, value, platform) {
@@ -387,16 +426,34 @@ async function writeTextIntoFocusedCell(page, value, platform) {
   if (!refocused) {
     await focusSheetGrid(page)
   }
-  await page.waitForTimeout(120)
-  await page.keyboard.press('Backspace').catch(() => {})
-  await page.waitForTimeout(80)
+
+  // Wait for cell edit mode or focus to settle if UI delays exist
+  await page.waitForTimeout(50)
+
+  await page.keyboard.press('Backspace').catch(() => { })
   const normalizedValue = String(value ?? '')
   if (normalizedValue) {
-    await page.keyboard.insertText(normalizedValue).catch(() => {})
-    await page.waitForTimeout(80)
+    await page.keyboard.insertText(normalizedValue).catch(() => { })
   }
-  await page.keyboard.press('Enter').catch(() => {})
-  await page.waitForTimeout(120)
+  await page.keyboard.press('Enter').catch(() => { })
+  await page.waitForTimeout(50)
+}
+
+async function writeTextCellsIndividually(page, { sheetRow, group, platform }) {
+  for (const cell of group) {
+    await focusCell(page, {
+      sheetRow,
+      columnIndex: cell.columnIndex,
+      platform
+    })
+    await writeTextIntoFocusedCell(page, String(cell.value ?? ''), platform)
+    await page.waitForTimeout(200)
+    await verifyTextGroupWritten(page, {
+      sheetRow,
+      group: [cell],
+      platform
+    })
+  }
 }
 
 async function pasteImageIntoFocusedCell(page, imageUrl, platform) {
@@ -407,7 +464,7 @@ async function pasteImageIntoFocusedCell(page, imageUrl, platform) {
     const item = new ClipboardItem({ 'image/png': blob })
     await navigator.clipboard.write([item])
   }, { imageBase64 })
-  await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => {})
+  await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
   await convertFloatingImageToCellImage(page)
 }
 
@@ -420,8 +477,8 @@ async function verifyTextGroupWritten(page, { sheetRow, group, platform }) {
     platform
   })
   await selectFocusedRange(page, group.length, platform)
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => {})
-  await page.keyboard.press(`${getShortcutKey(platform)}+c`).catch(() => {})
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => { })
+  await page.keyboard.press(`${getShortcutKey(platform)}+c`).catch(() => { })
   await page.waitForTimeout(300)
 
   const actualValues = parseClipboardRowValues(await readClipboardText(page))
@@ -445,7 +502,7 @@ async function selectFocusedRange(page, width, platform) {
   }
   await page.waitForTimeout(120)
   for (let index = 1; index < rangeWidth; index += 1) {
-    await page.keyboard.press('Shift+ArrowRight').catch(() => {})
+    await page.keyboard.press('Shift+ArrowRight').catch(() => { })
     await page.waitForTimeout(40)
   }
 }
@@ -465,29 +522,98 @@ async function convertFloatingImageToCellImage(page) {
   const menuItemPattern = /转为单元格图片/
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    await page.waitForTimeout(attempt === 0 ? 1200 : 300)
+    await page.waitForTimeout(attempt === 0 ? 800 : 300)
     const selectionBounds = await getPrimarySelectionBounds(page)
     if (!selectionBounds) continue
 
-    await page.mouse.click(
-      Math.round(selectionBounds.x + selectionBounds.w / 2),
-      Math.round(selectionBounds.y + selectionBounds.h / 2),
-      { button: 'right' }
-    ).catch(() => {})
-    await page.waitForTimeout(250)
+    const imageBounds = await findFloatingImageBounds(page, selectionBounds)
+    const clickTargets = buildImageConversionTargets(selectionBounds, imageBounds)
 
-    const menuItem = page.getByRole('menuitem', { name: menuItemPattern }).first()
-    const visible = await menuItem.isVisible().catch(() => false)
-    if (visible) {
-      await menuItem.click({ timeout: 3000 }).catch(() => {})
-      await page.waitForTimeout(800)
-      return
+    for (const target of clickTargets) {
+      await page.mouse.click(target.x, target.y).catch(() => { })
+      await page.waitForTimeout(80)
+      await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
+      await page.waitForTimeout(200)
+
+      const menuItem = page.getByRole('menuitem', { name: menuItemPattern }).first()
+      const visible = await menuItem.isVisible().catch(() => false)
+      if (visible) {
+        await menuItem.click({ timeout: 3000 }).catch(() => { })
+        await page.waitForTimeout(800)
+        return
+      }
+
+      await page.keyboard.press('Escape').catch(() => { })
+      await page.waitForTimeout(120)
     }
-
-    await page.keyboard.press('Escape').catch(() => {})
   }
 
   throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, '截图已粘贴，但未找到“转为单元格图片”入口')
+}
+
+function buildImageConversionTargets(selectionBounds, imageBounds) {
+  const targets = []
+  const seen = new Set()
+  const addPoint = (x, y) => {
+    const key = `${x}:${y}`
+    if (seen.has(key)) return
+    seen.add(key)
+    targets.push({ x, y })
+  }
+
+  if (imageBounds) {
+    addPoint(
+      Math.round(imageBounds.x + imageBounds.w / 2),
+      Math.round(imageBounds.y + imageBounds.h / 2)
+    )
+  }
+
+  const { x, y, w, h } = selectionBounds
+  const ratios = [
+    [0.5, 0.5],
+    [0.5, 0.3],
+    [0.5, 0.7],
+    [0.3, 0.5],
+    [0.7, 0.5],
+    [0.2, 0.2],
+    [0.8, 0.8]
+  ]
+
+  for (const [rx, ry] of ratios) {
+    addPoint(Math.round(x + w * rx), Math.round(y + h * ry))
+  }
+
+  return targets
+}
+
+async function findFloatingImageBounds(page, selectionBounds) {
+  return page.evaluate(({ selectionBounds }) => {
+    if (!selectionBounds) return null
+    const { x, y, w, h } = selectionBounds
+    const left = x
+    const right = x + w
+    const top = y
+    const bottom = y + h
+
+    const overlaps = (rect) => rect.right > left && rect.left < right && rect.bottom > top && rect.top < bottom
+    const nodes = document.querySelectorAll('img, canvas, svg, [style*="background-image"], [class*="image"], [class*="Image"]')
+    const candidates = []
+    nodes.forEach((node) => {
+      const rect = node.getBoundingClientRect()
+      if (rect.width < 12 || rect.height < 12) return
+      if (!overlaps(rect)) return
+      candidates.push({
+        x: rect.x,
+        y: rect.y,
+        w: rect.width,
+        h: rect.height,
+        area: rect.width * rect.height
+      })
+    })
+
+    candidates.sort((a, b) => b.area - a.area)
+    return candidates[0] || null
+  }, { selectionBounds }).catch(() => null)
 }
 
 async function getPrimarySelectionBounds(page) {
@@ -537,7 +663,7 @@ async function focusCell(page, { sheetRow, columnIndex, platform }) {
   }
 
   await focusSheetGrid(page)
-  await page.keyboard.press('Escape').catch(() => {})
+  await page.keyboard.press('Escape').catch(() => { })
   await page.waitForTimeout(120)
   await moveToSheetStart(page, platform)
   await moveToRowStart(page, platform)
@@ -568,9 +694,9 @@ async function readSheetSelection(page, { maxRows, platform }) {
 
 async function copySheetSelection(page, { maxRows, platform }) {
   const rowCount = normalizeMaxRows(maxRows)
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => {})
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => { })
   await focusSheetGrid(page)
-  await page.keyboard.press('Escape').catch(() => {})
+  await page.keyboard.press('Escape').catch(() => { })
   await page.waitForTimeout(200)
   const jumped = await jumpToCellReference(page, 'A1')
   if (!jumped) {
@@ -617,7 +743,7 @@ async function refocusPrimarySelection(page) {
     await page.mouse.click(
       Math.round(selectionBounds.x + Math.max(selectionBounds.w / 2, 12)),
       Math.round(selectionBounds.y + Math.max(selectionBounds.h / 2, 12))
-    ).catch(() => {})
+    ).catch(() => { })
     await page.waitForTimeout(120)
     return true
   }
@@ -662,9 +788,9 @@ async function jumpToCellReference(page, cellReference) {
   const visible = await locator.isVisible().catch(() => false)
   if (!visible) return false
 
-  await locator.click({ timeout: 3000 }).catch(() => {})
-  await locator.fill(cellReference).catch(() => {})
-  await page.keyboard.press('Enter').catch(() => {})
+  await locator.click({ timeout: 3000 }).catch(() => { })
+  await locator.fill(cellReference).catch(() => { })
+  await page.keyboard.press('Enter').catch(() => { })
   await page.waitForTimeout(250)
   return true
 }

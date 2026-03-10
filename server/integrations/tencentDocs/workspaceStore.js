@@ -1,16 +1,28 @@
-const { ensureDir, readJson, writeJson } = require('../../lib/files')
+const path = require('path')
+const { ensureDir, readJson, writeJson, writeJsonAsync, readJsonAsync } = require('../../lib/files')
 
-const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM'])
+const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'LOGGED_IN'])
 
 class TencentDocsWorkspaceStore {
   constructor({ filePath }) {
     this.filePath = filePath
-    ensureDir(require('path').dirname(filePath))
-    this.sanitize()
+    this._memoryCache = null
+    this._writeTimeout = null
+    this._writePromise = Promise.resolve()
+    this._isDirty = false
+    ensureDir(path.dirname(filePath))
+    this._initSync()
+  }
+
+  _initSync() {
+    this._memoryCache = normalizeWorkspaceState(readJson(this.filePath, null))
   }
 
   getState() {
-    return normalizeWorkspaceState(readJson(this.filePath, null))
+    if (!this._memoryCache) {
+      this._initSync()
+    }
+    return this._memoryCache
   }
 
   getTarget(defaultTarget = {}) {
@@ -38,7 +50,7 @@ class TencentDocsWorkspaceStore {
       }
     })
     this.write(nextState)
-    return nextState
+    return nextState.target
   }
 
   getLogin() {
@@ -74,7 +86,41 @@ class TencentDocsWorkspaceStore {
   }
 
   write(state) {
-    writeJson(this.filePath, normalizeWorkspaceState(state))
+    this._memoryCache = normalizeWorkspaceState(state)
+    this._scheduleWrite(this._memoryCache)
+  }
+
+  _scheduleWrite(state) {
+    this._isDirty = true
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+    }
+
+    this._writeTimeout = setTimeout(() => {
+      this.flush()
+    }, 100)
+  }
+
+  async flush() {
+    if (!this._isDirty) return this._writePromise
+
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+      this._writeTimeout = null
+    }
+
+    const payload = this._memoryCache
+    const file = this.filePath
+
+    this._writePromise = this._writePromise
+      .then(() => writeJsonAsync(file, payload))
+      .catch((error) => {
+        console.error(`[TencentDocsWorkspaceStore] flush async error: ${error.message}`)
+        writeJson(file, payload)
+      })
+
+    this._isDirty = false
+    return this._writePromise
   }
 }
 
@@ -97,10 +143,10 @@ function normalizeLoginState(login) {
     updatedAt: String(login?.updatedAt || ''),
     error: login?.error
       ? {
-          code: String(login.error.code || 'TENCENT_DOCS_LOGIN_FAILED'),
-          message: String(login.error.message || '腾讯文档登录失败'),
-          details: login.error.details || null
-        }
+        code: String(login.error.code || 'TENCENT_DOCS_LOGIN_FAILED'),
+        message: String(login.error.message || '腾讯文档登录失败'),
+        details: login.error.details || null
+      }
       : null
   }
 }

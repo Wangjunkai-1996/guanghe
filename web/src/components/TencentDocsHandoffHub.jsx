@@ -40,7 +40,8 @@ export function TencentDocsHandoffHub({
       return [item.nickname, item.contentId, item.status].some((value) => String(value || '').toLowerCase().includes(keyword))
     })
   const loginStatus = docsLoginSession?.status || syncConfig.login?.status || 'IDLE'
-  const showLoginQr = Boolean(docsLoginSession?.qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(docsLoginSession.status))
+  const qrImageUrl = docsLoginSession?.qrImageUrl || syncConfig.login?.qrImageUrl || ''
+  const showLoginQr = Boolean(qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(loginStatus))
   const canCreateSheetTasks = Boolean(syncConfig.enabled && docsConfigDraft.docUrl && docsConfigDraft.sheetName && loginStatus === 'LOGGED_IN')
   const urlTabToken = readTencentDocsTabToken(docsConfigDraft.docUrl)
 
@@ -124,7 +125,7 @@ export function TencentDocsHandoffHub({
           </div>
           <div className="qr-wrap handoff-login-qr-wrap">
             {showLoginQr ? (
-              <img className="qr-image" src={docsLoginSession.qrImageUrl} alt="腾讯文档登录二维码" />
+              <img className="qr-image" src={qrImageUrl} alt="腾讯文档登录二维码" />
             ) : (
               <div className="task-qr-placeholder">
                 <strong>{loginStatus === 'LOGGED_IN' ? '已登录腾讯文档' : (loginStatus === 'WAITING_QR' || loginStatus === 'WAITING_CONFIRM' ? '二维码恢复中' : '等待生成登录二维码')}</strong>

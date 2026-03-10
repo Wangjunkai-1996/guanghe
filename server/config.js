@@ -1,4 +1,6 @@
 const path = require('path')
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') })
+
 const { getAppPaths } = require('./lib/constants')
 const { resolveBrowserExecutable } = require('./lib/browserPath')
 

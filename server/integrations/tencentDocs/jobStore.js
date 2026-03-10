@@ -1,17 +1,29 @@
 const path = require('path')
-const { ensureDir, readJson, writeJson } = require('../../lib/files')
+const { ensureDir, readJson, writeJson, writeJsonAsync, readJsonAsync } = require('../../lib/files')
 const { ERROR_CODES } = require('./errors')
 
 class TencentDocsJobStore {
   constructor({ jobsFile, now = () => new Date().toISOString() }) {
     this.jobsFile = jobsFile
     this.now = now
+    this._memoryCache = null
+    this._writeTimeout = null
+    this._writePromise = Promise.resolve()
+    this._isDirty = false
     ensureDir(path.dirname(jobsFile))
+    this._initSync()
+  }
+
+  _initSync() {
+    const payload = readJson(this.jobsFile, { jobs: [] })
+    this._memoryCache = Array.isArray(payload.jobs) ? payload.jobs : []
   }
 
   listJobs() {
-    const payload = readJson(this.jobsFile, { jobs: [] })
-    return Array.isArray(payload.jobs) ? payload.jobs : []
+    if (!this._memoryCache) {
+      this._initSync()
+    }
+    return this._memoryCache
   }
 
   getJob(jobId) {
@@ -21,7 +33,8 @@ class TencentDocsJobStore {
   createJob(job) {
     const jobs = this.listJobs()
     jobs.unshift(job)
-    writeJson(this.jobsFile, { jobs })
+    this._memoryCache = jobs
+    this._scheduleWrite(jobs)
     return job
   }
 
@@ -39,7 +52,8 @@ class TencentDocsJobStore {
     }
 
     jobs[index] = nextJob
-    writeJson(this.jobsFile, { jobs })
+    this._memoryCache = jobs
+    this._scheduleWrite(jobs)
     return nextJob
   }
 
@@ -63,10 +77,44 @@ class TencentDocsJobStore {
     })
 
     if (changed > 0) {
-      writeJson(this.jobsFile, { jobs: nextJobs })
+      this._memoryCache = nextJobs
+      this._scheduleWrite(nextJobs)
     }
 
     return changed
+  }
+
+  _scheduleWrite(jobs) {
+    this._isDirty = true
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+    }
+
+    this._writeTimeout = setTimeout(() => {
+      this.flush()
+    }, 100)
+  }
+
+  async flush() {
+    if (!this._isDirty) return this._writePromise
+
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+      this._writeTimeout = null
+    }
+
+    const payload = { jobs: this._memoryCache }
+    const file = this.jobsFile
+
+    this._writePromise = this._writePromise
+      .then(() => writeJsonAsync(file, payload))
+      .catch((error) => {
+        console.error(`[TencentDocsJobStore] flush async error: ${error.message}`)
+        writeJson(file, payload)
+      })
+
+    this._isDirty = false
+    return this._writePromise
   }
 }
 

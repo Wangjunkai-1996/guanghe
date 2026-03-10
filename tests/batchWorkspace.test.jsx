@@ -187,7 +187,7 @@ describe('batch task workspace ui', () => {
 
     render(<BatchTasksWorkspace />)
 
-    await screen.findByRole('heading', { name: '任务队列' })
+    await screen.findByRole('heading', { name: '任务过滤器' })
     expect(screen.getAllByText('达人A').length).toBeGreaterThan(0)
     expect(screen.getByText('达人B')).toBeInTheDocument()
 
@@ -198,21 +198,21 @@ describe('batch task workspace ui', () => {
     fireEvent.click(screen.getByRole('button', { name: /全部任务/ }))
     fireEvent.click(screen.getByText('达人B'))
 
-    const closeButton = await screen.findByRole('button', { name: '关闭任务详情' })
-    const drawer = closeButton.closest('aside')
+    const expandedPill = await screen.findByText('收起详情')
+    const accordionItem = expandedPill.closest('.task-accordion-item')
 
-    expect(drawer).not.toBeNull()
-    expect(within(drawer).getByText('二维码、查询结果和腾讯文档回填都集中在这里处理，主列表只负责排队和筛选。')).toBeInTheDocument()
-    expect(within(drawer).getByRole('link', { name: '查看汇总图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
-    expect(within(drawer).getByText('自然卷儿')).toBeInTheDocument()
-    expect(within(drawer).getByText('腾讯文档同步')).toBeInTheDocument()
+    expect(accordionItem).not.toBeNull()
+    expect(within(accordionItem).getByText('当前建议')).toBeInTheDocument()
+    expect(within(accordionItem).getByRole('link', { name: '查看汇总图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
+    expect(within(accordionItem).getAllByText('自然卷儿').length).toBeGreaterThan(0)
+    expect(within(accordionItem).getByText('腾讯文档同步')).toBeInTheDocument()
   })
 
   test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
     render(<BatchTasksWorkspace />)
 
     expect(await screen.findByRole('heading', { name: '同步诊断' })).toBeInTheDocument()
-    expect(await screen.findByText('表头完整')).toBeInTheDocument()
+    expect(await screen.findByText('完全匹配')).toBeInTheDocument()
     expect(screen.getAllByText('已登录').length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: '打开诊断 JSON' })).toHaveAttribute('href', '/api/artifacts/tencent-docs/inspect/sheet-preview.json')
     expect(screen.getByRole('heading', { name: '缺数达人列表' })).toBeInTheDocument()
@@ -399,20 +399,20 @@ describe('batch task workspace ui', () => {
     expect((await screen.findAllByText('达人C')).length).toBeGreaterThan(0)
     fireEvent.click(screen.getAllByText('达人C')[0])
 
-    const closeButton = await screen.findByRole('button', { name: '关闭任务详情' })
-    const drawer = closeButton.closest('aside')
+    const expandedPill = await screen.findByText('收起详情')
+    const accordionItem = expandedPill.closest('.task-accordion-item')
 
-    expect(within(drawer).getByText('同步失败')).toBeInTheDocument()
-    expect(within(drawer).getAllByText('腾讯文档当前未登录，请先完成登录').length).toBeGreaterThan(0)
+    expect(within(accordionItem).getAllByText(/同步：失败/).length).toBeGreaterThan(0)
+    expect(within(accordionItem).getAllByText('腾讯文档当前未登录，请先完成登录').length).toBeGreaterThan(0)
 
-    fireEvent.click(within(drawer).getByRole('button', { name: '预览回填' }))
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '预览回填' }))
     await waitFor(() => {
       expect(api.previewTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
         resultUrl: '/api/artifacts/results.json'
       }))
     })
 
-    fireEvent.click(within(drawer).getByRole('button', { name: '立即同步' }))
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '立即同步' }))
     await waitFor(() => {
       expect(api.syncTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
         taskId: 'task-sync-failed',

@@ -218,7 +218,7 @@ describe('taskService', () => {
     expect(saved.artifacts.networkLogUrl).toBe('/api/artifacts/network-log.json')
   })
 
-  test('marks pending tasks interrupted on restart', () => {
+  test('marks pending tasks interrupted on restart', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guanghe-task-store-'))
     const tasksFile = path.join(tmpDir, 'tasks.json')
     const taskStore = new TaskStore({ tasksFile })
@@ -237,6 +237,8 @@ describe('taskService', () => {
       screenshots: { rawUrl: '', summaryUrl: '' },
       artifacts: { resultUrl: '', networkLogUrl: '' }
     })
+
+    await taskStore.flush()
 
     const restartedStore = new TaskStore({ tasksFile })
     new GuangheTaskService({
