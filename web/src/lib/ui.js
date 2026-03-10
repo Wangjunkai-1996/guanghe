@@ -16,6 +16,8 @@ export function formatLoginStatus(status) {
       return '等待扫码'
     case 'WAITING_CONFIRM':
       return '等待手机确认'
+    case 'WAITING_SMS':
+      return '请输入手机验证码'
     case 'LOGGED_IN':
       return '登录成功'
     case 'EXPIRED':

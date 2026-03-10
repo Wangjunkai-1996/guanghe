@@ -11,7 +11,7 @@ import { formatLoginStatus } from './lib/ui'
 import { useAccounts } from './hooks/useAccounts'
 import { useLoginSession } from './hooks/useLoginSession'
 
-const LOGIN_SESSION_PENDING_STATUSES = ['WAITING_QR', 'WAITING_CONFIRM']
+const LOGIN_SESSION_PENDING_STATUSES = ['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS']
 
 export default function App() {
   const [booting, setBooting] = useState(true)
@@ -187,6 +187,10 @@ export default function App() {
         isOpen={isLoginDrawerOpen}
         onClose={() => setIsLoginDrawerOpen(false)}
         onRefresh={handleCreateLoginSession}
+        onSubmitSmsCode={async (code) => {
+          if (!loginSession?.loginSessionId) return
+          await api.submitSmsCode(loginSession.loginSessionId, code)
+        }}
       />
     </div>
   )

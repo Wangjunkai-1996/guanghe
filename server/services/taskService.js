@@ -1,8 +1,8 @@
 const crypto = require('crypto')
 const { AppError } = require('../lib/errors')
 
-const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM'])
-const TRACKED_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'LOGGED_IN'])
+const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS'])
+const TRACKED_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS', 'LOGGED_IN'])
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
 const BUSY_QUERY_STATUSES = new Set(['QUEUED', 'RUNNING'])
 const TERMINAL_SHEET_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
@@ -180,6 +180,18 @@ class GuangheTaskService {
     }
 
     this.taskStore.remove(taskId)
+  }
+
+  async submitSmsCode(taskId, smsCode) {
+    const task = this.getTaskOrThrow(taskId)
+    if (task.login.status !== 'WAITING_SMS') {
+      throw new AppError(409, 'TASK_NOT_WAITING_SMS', '当前任务不在等待短信验证码状态')
+    }
+    const session = this.loginService.getLoginSession(task.loginSessionId)
+    if (!session) {
+      throw new AppError(404, 'LOGIN_SESSION_NOT_FOUND', '登录会话不存在')
+    }
+    await this.loginService.submitSmsCode(task.loginSessionId, smsCode)
   }
 
   async syncTaskTencentDocsHandoff(taskId, { target, maxRows } = {}) {

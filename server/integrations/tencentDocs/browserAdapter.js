@@ -544,7 +544,8 @@ function clipboardRowMatches(actualValues, expectedValues) {
 }
 
 async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, platform }) {
-  const menuItemPattern = /转为单元格图片/
+  const convertMenuPattern = /转(?:换)?为单元格图片/
+  const floatingMenuPattern = /转(?:换)?为浮动图片/
   const cellRef = toColumnLetter(columnIndex) + sheetRow
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -564,25 +565,123 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
     const clickTargets = buildImageConversionTargets(selectionBounds, imageBounds)
 
     for (const target of clickTargets) {
-      await page.mouse.click(target.x, target.y).catch(() => { })
-      await page.waitForTimeout(80)
-      await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
-      await page.waitForTimeout(300)
+      const menuState = await openImageContextMenuAt(page, target, {
+        convertMenuPattern,
+        floatingMenuPattern
+      })
 
-      const menuItem = page.getByRole('menuitem', { name: menuItemPattern }).first()
-      const visible = await menuItem.isVisible().catch(() => false)
-      if (visible) {
-        await menuItem.click({ timeout: 3000 }).catch(() => { })
+      if (menuState.convertItem) {
+        const clicked = await clickVisibleLocator(menuState.convertItem)
+        if (!clicked) {
+          await dismissOpenMenu(page)
+          continue
+        }
         await page.waitForTimeout(1200)
-        return
+
+        const converted = await verifyImageConvertedToCellImage(page, {
+          cellRef,
+          target,
+          convertMenuPattern,
+          floatingMenuPattern
+        })
+        if (converted) {
+          return
+        }
       }
 
-      await page.keyboard.press('Escape').catch(() => { })
-      await page.waitForTimeout(150)
+      await dismissOpenMenu(page)
     }
   }
 
-  throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, '截图已粘贴，但未找到“转为单元格图片”入口')
+  throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, '截图已粘贴，但未成功转为单元格图片')
+}
+
+async function openImageContextMenuAt(page, target, { convertMenuPattern, floatingMenuPattern }) {
+  await page.mouse.click(target.x, target.y).catch(() => { })
+  await page.waitForTimeout(80)
+  await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
+  await page.waitForTimeout(300)
+
+  return {
+    convertItem: await findVisibleMenuItem(page, convertMenuPattern),
+    floatingItem: await findVisibleMenuItem(page, floatingMenuPattern)
+  }
+}
+
+async function verifyImageConvertedToCellImage(page, {
+  cellRef,
+  target,
+  convertMenuPattern,
+  floatingMenuPattern
+}) {
+  await dismissOpenMenu(page)
+  await jumpToCellReference(page, cellRef)
+  await page.waitForTimeout(200)
+
+  const selectionBounds = await getPrimarySelectionBounds(page)
+  if (!selectionBounds) {
+    return false
+  }
+
+  const imageBounds = await findFloatingImageBounds(page, selectionBounds)
+  if (imageBounds && !looksLikeFloatingImage(imageBounds, selectionBounds)) {
+    return true
+  }
+
+  const menuState = await openImageContextMenuAt(page, target, {
+    convertMenuPattern,
+    floatingMenuPattern
+  })
+  const converted = Boolean(menuState.floatingItem)
+    || (!menuState.convertItem && !imageBounds)
+
+  await dismissOpenMenu(page)
+  return converted
+}
+
+function looksLikeFloatingImage(imageBounds, selectionBounds) {
+  if (!imageBounds || !selectionBounds) return false
+  const tolerance = 6
+  return imageBounds.x < selectionBounds.x - tolerance
+    || imageBounds.y < selectionBounds.y - tolerance
+    || imageBounds.x + imageBounds.w > selectionBounds.x + selectionBounds.w + tolerance
+    || imageBounds.y + imageBounds.h > selectionBounds.y + selectionBounds.h + tolerance
+}
+
+async function findVisibleMenuItem(page, pattern) {
+  const candidates = [
+    page.getByRole('menuitem', { name: pattern }).first(),
+    page.locator('[role="menuitem"]').filter({ hasText: pattern }).first(),
+    page.getByText(pattern).first()
+  ]
+
+  for (const locator of candidates) {
+    const visible = await locator.isVisible().catch(() => false)
+    if (visible) {
+      return locator
+    }
+  }
+
+  return null
+}
+
+async function clickVisibleLocator(locator) {
+  try {
+    await locator.click({ timeout: 3000 })
+    return true
+  } catch (_error) {
+    try {
+      await locator.click({ timeout: 3000, force: true })
+      return true
+    } catch (_nextError) {
+      return false
+    }
+  }
+}
+
+async function dismissOpenMenu(page) {
+  await page.keyboard.press('Escape').catch(() => { })
+  await page.waitForTimeout(150)
 }
 
 function buildImageConversionTargets(selectionBounds, imageBounds) {

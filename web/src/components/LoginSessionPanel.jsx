@@ -1,11 +1,30 @@
+import { useState } from 'react'
 import { buildFallbackAvatar, formatLoginStatus } from '../lib/ui'
 
-const STEP_LABELS = ['等待扫码', '等待手机确认', '登录成功']
+const STEP_LABELS = ['等待扫码', '等待手机确认', '短信验证', '登录成功']
 
-export function LoginSessionPanel({ loginSession, qrCodeDataUrl, isOpen, onClose, onRefresh }) {
+export function LoginSessionPanel({ loginSession, qrCodeDataUrl, isOpen, onClose, onRefresh, onSubmitSmsCode }) {
+  const [smsCode, setSmsCode] = useState('')
+  const [smsSubmitting, setSmsSubmitting] = useState(false)
+  const [smsError, setSmsError] = useState('')
+
   if (!loginSession) return null
 
   const tone = getTone(loginSession.status)
+
+  async function handleSmsSubmit() {
+    if (!smsCode.trim()) return
+    setSmsSubmitting(true)
+    setSmsError('')
+    try {
+      await onSubmitSmsCode(smsCode.trim())
+      setSmsCode('')
+    } catch (e) {
+      setSmsError(e.message || '提交失败，请重试')
+    } finally {
+      setSmsSubmitting(false)
+    }
+  }
 
   return (
     <div className={`drawer-root ${isOpen ? 'open' : ''}`} aria-hidden={!isOpen}>
@@ -49,6 +68,34 @@ export function LoginSessionPanel({ loginSession, qrCodeDataUrl, isOpen, onClose
               <div>登录成功后 2 秒自动收起抽屉</div>
             </div>
           </div>
+        ) : loginSession.status === 'WAITING_SMS' ? (
+          <div className="drawer-sms-card">
+            <div className="drawer-helper-text">
+              <strong>需要手机验证码</strong>
+              <p>检测到风控验证，请查收手机短信，输入验证码后继续登录。</p>
+            </div>
+            <div className="sms-input-row">
+              <input
+                className="sms-input"
+                type="text"
+                maxLength={8}
+                placeholder="请输入短信验证码"
+                value={smsCode}
+                onChange={e => setSmsCode(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSmsSubmit()}
+                disabled={smsSubmitting}
+              />
+              <button
+                className="primary-btn"
+                type="button"
+                onClick={handleSmsSubmit}
+                disabled={smsSubmitting || !smsCode.trim()}
+              >
+                {smsSubmitting ? '提交中...' : '提交验证码'}
+              </button>
+            </div>
+            {smsError ? <div className="status-card-error">{smsError}</div> : null}
+          </div>
         ) : (
           <div className="drawer-qr-card">
             <div className="qr-wrap drawer-qr-wrap">
@@ -62,7 +109,7 @@ export function LoginSessionPanel({ loginSession, qrCodeDataUrl, isOpen, onClose
         )}
 
         <div className="drawer-actions">
-          {loginSession.status !== 'LOGGED_IN' ? (
+          {loginSession.status !== 'LOGGED_IN' && loginSession.status !== 'WAITING_SMS' ? (
             <button className="secondary-btn" type="button" onClick={onRefresh}>
               {loginSession.status === 'EXPIRED' ? '刷新二维码' : '重新生成二维码'}
             </button>
@@ -78,6 +125,7 @@ function getTone(status) {
   if (status === 'LOGGED_IN') return 'success'
   if (status === 'EXPIRED') return 'warning'
   if (status === 'FAILED') return 'danger'
+  if (status === 'WAITING_SMS') return 'warning'
   return 'info'
 }
 
@@ -89,8 +137,13 @@ function getStepState(status, index) {
     if (index === 1) return 'active'
     return 'idle'
   }
-  if (status === 'LOGGED_IN') {
+  if (status === 'WAITING_SMS') {
     if (index < 2) return 'done'
+    if (index === 2) return 'active'
+    return 'idle'
+  }
+  if (status === 'LOGGED_IN') {
+    if (index < 3) return 'done'
     return 'active'
   }
   return 'idle'

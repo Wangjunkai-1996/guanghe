@@ -7,7 +7,8 @@ const {
   parseQrGenerateResponse,
   detectLoginStatus,
   extractAccountProfile,
-  waitForLoginState
+  waitForLoginState,
+  submitSmsCode
 } = require('../lib/guangheUtils')
 
 class GuangheLoginService {
@@ -16,6 +17,7 @@ class GuangheLoginService {
     this.accountStore = accountStore
     this.artifactsRootDir = artifactsRootDir
     this.sessions = new Map()
+    this.sessionCleanupTimers = new Map()
   }
 
   listAccounts() {
@@ -77,6 +79,7 @@ class GuangheLoginService {
   }
 
   async discardLoginSession(loginSessionId) {
+    this.clearSessionCleanup(loginSessionId)
     const session = this.sessions.get(loginSessionId)
     if (!session) return
 
@@ -107,6 +110,14 @@ class GuangheLoginService {
           session.qrImageUrl = await this.captureLoginQrScreenshot({ loginSessionId, page }).catch(() => session.qrImageUrl)
         }
 
+        if (status === LOGIN_SESSION_STATUS.WAITING_SMS) {
+          // 触发风控，等待用户提交短信验证码，暂停轮询
+          session.page = page
+          this.scheduleSessionCleanup(loginSessionId)
+          console.log(`[login] session=${loginSessionId} waiting for SMS code`)
+          return
+        }
+
         if (status === LOGIN_SESSION_STATUS.LOGGED_IN) {
           const account = await extractAccountProfile(page)
           await this.persistLoggedInAccount(loginSessionId, account, session.profileDir)
@@ -115,15 +126,19 @@ class GuangheLoginService {
 
         if (status === LOGIN_SESSION_STATUS.EXPIRED) {
           console.log(`[login] session=${loginSessionId} expired`)
+          delete session.page
           await this.browserManager.closeLoginSession(loginSessionId)
+          this.scheduleSessionCleanup(loginSessionId)
           return
         }
       } catch (error) {
         session.status = LOGIN_SESSION_STATUS.FAILED
         session.error = error.message
         session.updatedAt = new Date().toISOString()
+        delete session.page
         console.error(`[login] session=${loginSessionId} failed: ${error.message}`)
         await this.browserManager.closeLoginSession(loginSessionId)
+        this.scheduleSessionCleanup(loginSessionId)
         return
       }
 
@@ -133,7 +148,9 @@ class GuangheLoginService {
         session.status = LOGIN_SESSION_STATUS.EXPIRED
         session.error = '二维码已过期，请重新生成'
         session.updatedAt = new Date().toISOString()
+        delete session.page
         await this.browserManager.closeLoginSession(loginSessionId)
+        this.scheduleSessionCleanup(loginSessionId)
         return
       }
 
@@ -163,6 +180,7 @@ class GuangheLoginService {
     this.browserManager.adoptLoginSession(loginSessionId, account.accountId)
     const session = this.sessions.get(loginSessionId)
     if (session) {
+      delete session.page
       session.status = LOGIN_SESSION_STATUS.LOGGED_IN
       session.account = {
         accountId: account.accountId,
@@ -172,9 +190,59 @@ class GuangheLoginService {
         lastLoginAt: new Date().toISOString()
       }
       session.updatedAt = new Date().toISOString()
+      this.scheduleSessionCleanup(loginSessionId)
     }
 
     console.log(`[login] session=${loginSessionId} logged_in accountId=${account.accountId} nickname=${account.nickname}`)
+  }
+
+  async submitSmsCode(loginSessionId, code) {
+    const session = this.sessions.get(loginSessionId)
+    if (!session) throw new AppError(404, 'LOGIN_SESSION_NOT_FOUND', '登录会话不存在')
+    if (session.status !== LOGIN_SESSION_STATUS.WAITING_SMS) {
+      throw new AppError(400, 'INVALID_SESSION_STATUS', '当前会话不在等待短信验证码状态')
+    }
+    const page = session.page
+    if (!page) throw new AppError(500, 'PAGE_NOT_FOUND', '浏览器页面丢失，请重新登录')
+
+    const success = await submitSmsCode(page, code)
+    if (!success) {
+      // 验证码错误，保持 WAITING_SMS 状态，用户可以重试
+      session.updatedAt = new Date().toISOString()
+      throw new AppError(400, 'SMS_CODE_FAILED', '验证码提交失败，请检查验证码是否正确')
+    }
+
+    // 验证码正确，恢复轮询
+    this.clearSessionCleanup(loginSessionId)
+    delete session.page
+    session.status = LOGIN_SESSION_STATUS.WAITING_CONFIRM
+    session.updatedAt = new Date().toISOString()
+    this.startPolling(loginSessionId, page)
+  }
+
+  clearSessionCleanup(loginSessionId) {
+    const timer = this.sessionCleanupTimers.get(loginSessionId)
+    if (!timer) return
+    clearTimeout(timer)
+    this.sessionCleanupTimers.delete(loginSessionId)
+  }
+
+  scheduleSessionCleanup(loginSessionId, delayMs = 10 * 60 * 1000) {
+    this.clearSessionCleanup(loginSessionId)
+    const timer = setTimeout(() => {
+      this.sessionCleanupTimers.delete(loginSessionId)
+      const session = this.sessions.get(loginSessionId)
+      if (!session) return
+      if (![LOGIN_SESSION_STATUS.LOGGED_IN, LOGIN_SESSION_STATUS.EXPIRED, LOGIN_SESSION_STATUS.FAILED].includes(session.status)) {
+        return
+      }
+      delete session.page
+      this.sessions.delete(loginSessionId)
+    }, delayMs)
+    if (typeof timer.unref === 'function') {
+      timer.unref()
+    }
+    this.sessionCleanupTimers.set(loginSessionId, timer)
   }
 
   async waitUntilLoggedIn(loginSessionId, timeoutMs = 180000) {

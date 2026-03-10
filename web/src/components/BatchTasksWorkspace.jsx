@@ -569,6 +569,10 @@ export function BatchTasksWorkspace() {
     await runTaskAction(taskId, () => api.refreshTaskLogin(taskId), '二维码已刷新')
   }
 
+  const handleSubmitSmsCode = async (taskId, code) => {
+    await runTaskAction(taskId, () => api.submitTaskSmsCode(taskId, code), '验证码提交成功')
+  }
+
   const handleRetryQuery = async (taskId) => {
     await runTaskAction(taskId, () => api.retryTaskQuery(taskId), '任务已重新加入查询队列')
   }
@@ -875,6 +879,11 @@ export function BatchTasksWorkspace() {
                     expanded={expandedTaskId === task.taskId}
                     recommended={index === 0 && filterKey === 'waiting'}
                     onToggleExpand={handleToggleExpand}
+                    onCopyQr={handleCopyQr}
+                    onRefreshLogin={handleRefreshLogin}
+                    onSubmitSmsCode={handleSubmitSmsCode}
+                    copying={copyingTaskId === task.taskId}
+                    busy={Boolean(actionLoading[task.taskId])}
                   />
                   {expandedTaskId === task.taskId ? (
                     <div className="task-accordion-content">

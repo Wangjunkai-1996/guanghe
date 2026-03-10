@@ -110,6 +110,19 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
     }
   })
 
+  app.post('/api/accounts/login-sessions/:loginSessionId/sms-code', async (req, res, next) => {
+    try {
+      const { code } = req.body || {}
+      if (!code || typeof code !== 'string' || !/^\d{4,8}$/.test(code.trim())) {
+        throw new AppError(400, 'INVALID_SMS_CODE', '验证码格式不正确')
+      }
+      await loginService.submitSmsCode(req.params.loginSessionId, code.trim())
+      res.json({ ok: true })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   app.delete('/api/accounts/:accountId', async (req, res, next) => {
     try {
       await loginService.deleteAccount(req.params.accountId)
@@ -146,6 +159,19 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
       try {
         const task = await taskService.refreshTaskLogin(req.params.taskId)
         res.json(task)
+      } catch (error) {
+        next(error)
+      }
+    })
+
+    app.post('/api/tasks/:taskId/sms-code', async (req, res, next) => {
+      try {
+        const { code } = req.body || {}
+        if (!code || typeof code !== 'string' || !/^\d{4,8}$/.test(code.trim())) {
+          throw new AppError(400, 'INVALID_SMS_CODE', '验证码格式不正确')
+        }
+        await taskService.submitSmsCode(req.params.taskId, code.trim())
+        res.json({ ok: true })
       } catch (error) {
         next(error)
       }

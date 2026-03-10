@@ -78,11 +78,36 @@ async function detectLoginStatus(page) {
   const expiredVisible = await page.locator('text=/二维码已失效|已失效|刷新/').first().isVisible().catch(() => false)
   const confirmVisible = await page.locator('text=/扫描成功|请在手机上确认登录|请在手机上确认|确认登录/').first().isVisible().catch(() => false)
   const qrVisible = await page.locator('.qrcode-login, #qrcode-img canvas, #qrcode-img').first().isVisible().catch(() => false)
+  const smsVisible = await page.locator('input[placeholder*="验证码"], input[id*="sms"], input[name*="sms"], input[type="tel"]').first().isVisible().catch(() => false)
 
   if (expiredVisible && /二维码已失效|已失效/.test(visibleText)) return LOGIN_SESSION_STATUS.EXPIRED
   if (confirmVisible || /请在手机上确认登录|请在手机上确认|确认登录|扫描成功/.test(visibleText)) return LOGIN_SESSION_STATUS.WAITING_CONFIRM
+  if (smsVisible || /手机验证码|短信验证码|请输入验证码|安全验证|输入验证码/.test(visibleText)) return LOGIN_SESSION_STATUS.WAITING_SMS
   if (qrVisible) return LOGIN_SESSION_STATUS.WAITING_QR
   return LOGIN_SESSION_STATUS.WAITING_QR
+}
+
+async function submitSmsCode(page, code) {
+  try {
+    const input = page.locator('input[placeholder*="验证码"], input[id*="sms"], input[name*="sms"], input[type="tel"]').first()
+    await input.fill(code)
+    await page.waitForTimeout(300)
+    // 点击确认/提交按钮
+    const submitBtn = page.locator('button[type="submit"], button:has-text("确认"), button:has-text("提交"), button:has-text("验证"), button:has-text("登录")').first()
+    await submitBtn.click()
+    // 等待页面响应
+    await page.waitForTimeout(1500)
+    // 判断是否还在验证码页面（说明验证码错误）
+    const statusAfter = await detectLoginStatus(page)
+    if (statusAfter === LOGIN_SESSION_STATUS.WAITING_SMS) {
+      console.warn('[submitSmsCode] 验证码可能错误，页面未跳转')
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[submitSmsCode] 提交验证码失败:', err.message)
+    return false
+  }
 }
 
 async function extractAccountProfile(page) {
@@ -249,7 +274,10 @@ async function createNetworkRecorder(page) {
       })
       if (networkLog.length > 160) networkLog.shift()
     } catch (error) {
-      // ignore
+      if (!isIgnorableNetworkRecorderError(error)) {
+        const url = typeof response?.url === 'function' ? response.url() : 'unknown'
+        console.warn(`[network-recorder] failed to capture response body: ${url} ${error?.message || error}`)
+      }
     }
   })
   return networkLog
@@ -330,7 +358,17 @@ async function findInputByKeywords(page, keywords) {
 
 async function settle(page) {
   await page.waitForLoadState('domcontentloaded').catch(() => { })
-  await page.waitForTimeout(1200)
+  const softWaitStartedAt = Date.now()
+  await page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => { })
+  const remainingMs = 600 - (Date.now() - softWaitStartedAt)
+  if (remainingMs > 0) {
+    await page.waitForTimeout(remainingMs)
+  }
+}
+
+function isIgnorableNetworkRecorderError(error) {
+  const message = String(error?.message || error || '')
+  return /body.*used already|No resource with given identifier found|Target page, context or browser has been closed|Target closed|Session closed|Browser has been closed/i.test(message)
 }
 
 function escapeRegExp(value) {
@@ -354,5 +392,6 @@ module.exports = {
   pickDateRange30Days,
   chooseMetrics,
   createNetworkRecorder,
-  settle
+  settle,
+  submitSmsCode
 }

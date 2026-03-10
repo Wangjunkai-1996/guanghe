@@ -5,7 +5,7 @@ import { QueryForm } from './QueryForm'
 import { ResultPanel } from './ResultPanel'
 import { formatLoginStatus } from '../lib/ui'
 
-const LOGIN_SESSION_PENDING_STATUSES = ['WAITING_QR', 'WAITING_CONFIRM']
+const LOGIN_SESSION_PENDING_STATUSES = ['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS']
 
 export function ManualWorkspace({
     accounts,

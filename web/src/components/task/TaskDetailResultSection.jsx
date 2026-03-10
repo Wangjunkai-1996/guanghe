@@ -1,7 +1,21 @@
 import React from 'react'
 import { METRIC_ORDER, formatDateTime, formatMetricValue, formatTaskQueryStatus, formatTaskLoginStatus, getTaskQueryTone, resolveMetricPayload } from '../../lib/taskFormat'
 
-export const TaskDetailResultSection = React.memo(function TaskDetailResultSection({ activeTab, setActiveTab, previewImageUrl, task, busy, canRetry, onRetryQuery, showAdvanced }) {
+export const TaskDetailResultSection = React.memo(function TaskDetailResultSection({
+    activeTab,
+    setActiveTab,
+    previewImageUrl,
+    task,
+    busy,
+    canRetry,
+    onRetryQuery,
+    showAdvanced,
+    onCopyQr,
+    onRefreshLogin,
+    copying,
+    canCopyQr,
+    canRefresh
+}) {
     const tone = getTaskQueryTone(task.query.status)
 
     if (task.query.status === 'SUCCEEDED') {
@@ -97,6 +111,8 @@ export const TaskDetailResultSection = React.memo(function TaskDetailResultSecti
         )
     }
 
+    const showQr = Boolean(task.qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login.status))
+
     return (
         <div className="task-detail-section stack-md">
             <div className={`result-state-card tone-${tone}`}>
@@ -107,7 +123,30 @@ export const TaskDetailResultSection = React.memo(function TaskDetailResultSecti
                     </div>
                     <small>{formatTaskLoginStatus(task.login.status)}</small>
                 </div>
-                <p>扫码确认成功后，系统会自动把任务推进到查询队列。你可以先继续处理其他二维码任务。</p>
+
+                {showQr ? (
+                    <div className="qr-scannable-zone stack-md">
+                        <div className="qr-wrap result-qr-wrap">
+                            <img className="qr-image scannable-qr" src={task.qrImageUrl} alt={`任务 ${task.remark} 的二维码`} />
+                        </div>
+                        <div className="qr-scannable-actions">
+                            <button className="primary-btn" type="button" disabled={!canCopyQr || busy} onClick={() => onCopyQr(task)}>
+                                {copying ? '已复制' : '复制二维码图片'}
+                            </button>
+                            <button className="secondary-btn" type="button" disabled={!canRefresh || busy} onClick={() => onRefreshLogin(task.taskId)}>
+                                刷新
+                            </button>
+                        </div>
+                        <p className="qr-help-text">请使用手机光合平台或微信扫码。确认成功后，系统会自动开始查询。</p>
+                    </div>
+                ) : (
+                    <div className="stack-sm">
+                        <p>扫码确认成功后，系统会自动把任务推进到查询队列。你可以先继续处理其他二维码任务。</p>
+                        {!task.qrImageUrl && canRefresh ? (
+                            <button className="primary-btn" type="button" disabled={busy} onClick={() => onRefreshLogin(task.taskId)}>生成二维码</button>
+                        ) : null}
+                    </div>
+                )}
             </div>
         </div>
     )

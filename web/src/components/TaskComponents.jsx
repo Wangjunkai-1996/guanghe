@@ -33,12 +33,56 @@ import { TaskDetailResultSection } from './task/TaskDetailResultSection'
 import { TaskDetailSheetMatchSection } from './task/TaskDetailSheetMatchSection'
 import { TaskDetailSyncSection } from './task/TaskDetailSyncSection'
 
-export const TaskCard = React.memo(function TaskCard({ task, syncConfig, selected, recommended, onSelect, expanded, onToggleExpand }) {
+export const TaskSmsInput = React.memo(function TaskSmsInput({ taskId, onSubmitSmsCode, onClick }) {
+    const [smsCode, setSmsCode] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const [smsError, setSmsError] = useState('')
+
+    const handleSubmit = async () => {
+        if (!smsCode.trim()) return
+        setSubmitting(true)
+        setSmsError('')
+        try {
+            await onSubmitSmsCode(taskId, smsCode.trim())
+            setSmsCode('')
+        } catch (e) {
+            setSmsError(e.message || '验证码错误，请重试')
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    return (
+        <div className="task-card-sms-input" onClick={onClick}>
+            <p className="sms-hint">检测到风控验证，请输入手机验证码</p>
+            <div className="sms-input-row">
+                <input
+                    className="sms-code-input"
+                    type="text"
+                    placeholder="请输入验证码"
+                    value={smsCode}
+                    maxLength={8}
+                    onChange={e => setSmsCode(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                    disabled={submitting}
+                />
+                <button className="primary-btn compact-btn" type="button" disabled={submitting || !smsCode.trim()} onClick={handleSubmit}>
+                    {submitting ? '提交中...' : '提交'}
+                </button>
+            </div>
+            {smsError ? <p className="sms-error">{smsError}</p> : null}
+        </div>
+    )
+})
+
+export const TaskCard = React.memo(function TaskCard({ task, syncConfig, selected, recommended, onSelect, expanded, onToggleExpand, onCopyQr, onRefreshLogin, onSubmitSmsCode, copying, busy }) {
     const tone = getTaskOverallTone(task)
+    const waitingForLogin = ['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS'].includes(task.login.status)
+    const waitingForSms = task.login.status === 'WAITING_SMS'
 
     return (
         <article
-            className={`task-queue-card tone-${tone} ${selected || expanded ? 'selected' : ''}`}
+            className={`task-queue-card tone-${tone} ${selected || expanded ? 'selected' : ''} ${waitingForLogin ? 'has-qr-peek' : ''}`}
             role="button"
             tabIndex={0}
             onClick={() => onToggleExpand ? onToggleExpand(task.taskId) : onSelect(task.taskId)}
@@ -73,36 +117,59 @@ export const TaskCard = React.memo(function TaskCard({ task, syncConfig, selecte
                 </div>
             </div>
 
-            <div className="task-status-pills">
-                <span className={`status-pill status-${getTaskLoginTone(task.login.status)}`}>
-                    登录：{formatTaskLoginStatus(task.login.status)}
-                </span>
-                <span className={`status-pill status-${getTaskQueryTone(task.query.status)}`}>
-                    查询：{formatTaskQueryStatus(task.query.status)}
-                </span>
-                <span className={`status-pill status-${normalizeStatusTone(getTaskSyncTone(task, syncConfig))}`}>
-                    同步：{formatTaskSyncStatus(task, syncConfig)}
-                </span>
-            </div>
-
-            <div className="task-meta-grid">
-                <div className="task-meta-item">
-                    <span>内容 ID</span>
-                    <strong className="mono-cell">{task.contentId || '-'}</strong>
-                </div>
-                <div className="task-meta-item">
-                    <span>账号</span>
-                    <strong>{task.accountNickname || '待扫码'}</strong>
-                </div>
-                <div className="task-meta-item">
-                    <span>更新时间</span>
-                    <strong>{formatDateTime(task.updatedAt)}</strong>
-                </div>
-                {task.taskMode === 'SHEET_DEMAND' ? (
-                    <div className="task-meta-item">
-                        <span>交接表</span>
-                        <strong>{formatTaskSheetMatchStatus(task.sheetMatch?.status)}</strong>
+            <div className="task-card-body-layout">
+                <div className="task-card-main-content stack-sm">
+                    <div className="task-status-pills">
+                        <span className={`status-pill status-${getTaskLoginTone(task.login.status)}`}>
+                            登录：{formatTaskLoginStatus(task.login.status)}
+                        </span>
+                        <span className={`status-pill status-${getTaskQueryTone(task.query.status)}`}>
+                            查询：{formatTaskQueryStatus(task.query.status)}
+                        </span>
+                        <span className={`status-pill status-${normalizeStatusTone(getTaskSyncTone(task, syncConfig))}`}>
+                            同步：{formatTaskSyncStatus(task, syncConfig)}
+                        </span>
                     </div>
+
+                    <div className="task-meta-grid">
+                        <div className="task-meta-item">
+                            <span>内容 ID</span>
+                            <strong className="mono-cell">{task.contentId || '-'}</strong>
+                        </div>
+                        <div className="task-meta-item">
+                            <span>账号</span>
+                            <strong>{task.accountNickname || '待扫码'}</strong>
+                        </div>
+                        <div className="task-meta-item">
+                            <span>更新时间</span>
+                            <strong>{formatDateTime(task.updatedAt)}</strong>
+                        </div>
+                        {task.taskMode === 'SHEET_DEMAND' ? (
+                            <div className="task-meta-item">
+                                <span>交接表</span>
+                                <strong>{formatTaskSheetMatchStatus(task.sheetMatch?.status)}</strong>
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+
+                {waitingForLogin && !waitingForSms && task.qrImageUrl ? (
+                    <div className="task-card-qr-peek" onClick={stopPropagation}>
+                        <div className="qr-peek-image-wrap">
+                            <img className="qr-image" src={task.qrImageUrl} alt="扫码登录" />
+                        </div>
+                        <div className="qr-peek-actions">
+                            <button className="primary-btn compact-btn" type="button" disabled={busy} onClick={() => onCopyQr(task)}>
+                                {copying ? '已复制' : '复制二维码'}
+                            </button>
+                            <button className="secondary-btn compact-btn" type="button" disabled={busy} onClick={() => onRefreshLogin(task.taskId)}>
+                                刷新
+                            </button>
+                        </div>
+                    </div>
+                ) : null}
+                {waitingForSms ? (
+                    <TaskSmsInput taskId={task.taskId} onSubmitSmsCode={onSubmitSmsCode} onClick={stopPropagation} />
                 ) : null}
             </div>
 
@@ -280,6 +347,11 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
                         canRetry={canRetry}
                         onRetryQuery={onRetryQuery}
                         showAdvanced={true}
+                        onCopyQr={onCopyQr}
+                        onRefreshLogin={onRefreshLogin}
+                        copying={copying}
+                        canCopyQr={canCopyQr}
+                        canRefresh={canRefresh}
                     />
                 </>
             ) : null}

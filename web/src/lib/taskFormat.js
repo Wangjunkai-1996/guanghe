@@ -71,7 +71,8 @@ export function isTaskBusy(task) {
 
 export function canRefreshTaskLogin(task) {
     return ['WAITING_QR', 'WAITING_CONFIRM', 'EXPIRED', 'FAILED'].includes(task.login.status) &&
-        !['QUEUED', 'RUNNING', 'SUCCEEDED'].includes(task.query.status)
+        !['QUEUED', 'RUNNING', 'SUCCEEDED'].includes(task.query.status) &&
+        task.login.status !== 'WAITING_SMS'
 }
 
 export function canRetryTaskQuery(task) {
@@ -154,6 +155,7 @@ export function getTaskSummary(task) {
     if (task.query?.status === 'QUEUED') return '已进入队列，准备查询。'
 
     if (task.login?.status === 'WAITING_QR' || task.login?.status === 'WAITING_CONFIRM') return '请用对应达人账号扫码或在手机确认授权。'
+    if (task.login?.status === 'WAITING_SMS') return '触发风控验证，请输入手机短信验证码。'
     if (task.login?.status === 'EXPIRED') return '二维码已过期。'
     if (task.login?.status === 'FAILED') return '登录流程异常中断。'
     if (task.login?.status === 'LOGGED_IN') {
@@ -187,6 +189,7 @@ export function formatTaskLoginStatus(status) {
     switch (status) {
         case 'WAITING_QR': return '获取二维码'
         case 'WAITING_CONFIRM': return '等待手机确认'
+        case 'WAITING_SMS': return '输入短信验证码'
         case 'LOGGED_IN': return '已登录'
         case 'EXPIRED': return '二维码过期'
         case 'FAILED': return '登录失败'
@@ -226,6 +229,7 @@ export function getTaskPrimaryActionLabel(task) {
     if (task.query?.status === 'SUCCEEDED') return '查看截图'
     if (['NO_DATA', 'FAILED'].includes(task.query?.status)) return '重试查询'
     if (['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login?.status)) return '立即扫码'
+    if (task.login?.status === 'WAITING_SMS') return '输入验证码'
     if (['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)) return '刷新二维码'
     if (task.taskMode === 'SHEET_DEMAND' && ['NOT_IN_SHEET', 'DUPLICATE_NICKNAME', 'CONTENT_ID_MISSING', 'ROW_CHANGED'].includes(task.sheetMatch?.status)) return '手动干预'
     return '查看详情'
@@ -346,7 +350,7 @@ export function getFilterDescription(filterKey, filterOptions) {
 }
 
 export function isWaitingTask(task) {
-    return ['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login?.status)
+    return ['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS'].includes(task.login?.status)
 }
 
 export function isInProgressTask(task) {
