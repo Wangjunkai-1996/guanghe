@@ -1,14 +1,27 @@
 const { ensureDir, readJson, writeJson } = require('./files')
+const EventEmitter = require('events')
 
-class AccountStore {
+class AccountStore extends EventEmitter {
   constructor({ accountsFile }) {
+    super()
     this.accountsFile = accountsFile
+    this._memoryCache = null
+    this._writeTimeout = null
+    this._isDirty = false
     ensureDir(require('path').dirname(accountsFile))
+    this._initSync()
+  }
+
+  _initSync() {
+    const payload = readJson(this.accountsFile, { accounts: [] })
+    this._memoryCache = Array.isArray(payload.accounts) ? payload.accounts : []
   }
 
   list() {
-    const payload = readJson(this.accountsFile, { accounts: [] })
-    return Array.isArray(payload.accounts) ? payload.accounts : []
+    if (!this._memoryCache) {
+      this._initSync()
+    }
+    return this._memoryCache
   }
 
   get(accountId) {
@@ -20,7 +33,9 @@ class AccountStore {
     const next = accounts.filter((item) => item.accountId !== account.accountId)
     next.push(account)
     next.sort((left, right) => new Date(right.lastLoginAt || 0) - new Date(left.lastLoginAt || 0))
-    writeJson(this.accountsFile, { accounts: next })
+    this._memoryCache = next
+    this._scheduleWrite()
+    this.emit('change')
     return account
   }
 
@@ -31,8 +46,31 @@ class AccountStore {
   }
 
   remove(accountId) {
-    const accounts = this.list().filter((item) => item.accountId !== accountId)
-    writeJson(this.accountsFile, { accounts })
+    this._memoryCache = this.list().filter((item) => item.accountId !== accountId)
+    this._scheduleWrite()
+    this.emit('change')
+  }
+
+  _scheduleWrite() {
+    this._isDirty = true
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+    }
+    this._writeTimeout = setTimeout(() => {
+      this.flush()
+    }, 100)
+  }
+
+  flush() {
+    if (!this._isDirty) return
+
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+      this._writeTimeout = null
+    }
+
+    writeJson(this.accountsFile, { accounts: this._memoryCache })
+    this._isDirty = false
   }
 }
 

@@ -127,6 +127,16 @@ class GuangheLoginService {
         return
       }
 
+      const elapsedMs = Date.now() - new Date(session.createdAt).getTime()
+      if (elapsedMs > 5 * 60 * 1000) {
+        console.log(`[login] session=${loginSessionId} TTL expired`)
+        session.status = LOGIN_SESSION_STATUS.EXPIRED
+        session.error = '二维码已过期，请重新生成'
+        session.updatedAt = new Date().toISOString()
+        await this.browserManager.closeLoginSession(loginSessionId)
+        return
+      }
+
       setTimeout(loop, 2000)
     }
 

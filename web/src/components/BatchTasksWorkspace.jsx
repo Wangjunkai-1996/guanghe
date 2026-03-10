@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
+import { useSSE } from '../hooks/useSSE'
 import { TencentDocsHandoffHub } from './TencentDocsHandoffHub'
 import { TencentDocsDiagnosticPanel } from './TencentDocsDiagnosticPanel'
 import { TaskCard, TaskBuilderModal, TaskDetailAccordion } from './TaskComponents'
@@ -352,18 +353,17 @@ export function BatchTasksWorkspace() {
     }
 
     void boot()
-    const timer = window.setInterval(() => {
-      if (!cancelled) {
-        void loadTasks({ silent: true })
-      }
-    }, 2000)
 
     return () => {
       cancelled = true
       stopDocsLoginPolling()
-      window.clearInterval(timer)
     }
   }, [loadSyncConfig, loadTasks, stopDocsLoginPolling])
+
+  useSSE('tasks', (nextTasks) => {
+    setTasks(nextTasks)
+    setLastSyncedAt(new Date().toISOString())
+  })
 
 
   useEffect(() => {
@@ -945,10 +945,6 @@ function compareTasks(left, right) {
   const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime()
   const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime()
   return rightTime - leftTime
-  return String(input || '')
-    .split(/\r?\n/)
-    .filter((line) => line.trim())
-    .length
 }
 
 

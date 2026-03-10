@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { api } from '../api'
+import { useSSE } from './useSSE'
 
 export function useAccounts({ onLoaded } = {}) {
     const [accounts, setAccounts] = useState([])
@@ -40,6 +41,14 @@ export function useAccounts({ onLoaded } = {}) {
         await loadAccounts()
         return true
     }, [selectedAccountId, loadAccounts])
+
+    useSSE('accounts', (nextAccounts) => {
+        setAccounts(nextAccounts)
+        setSelectedAccountId((current) => {
+            if (current && nextAccounts.some((account) => account.accountId === current)) return current
+            return nextAccounts[0]?.accountId || ''
+        })
+    })
 
     return {
         accounts,

@@ -1,10 +1,12 @@
 const { ensureDir, readJson, writeJson, writeJsonAsync, readJsonAsync } = require('./files')
+const EventEmitter = require('events')
 
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
 const TERMINAL_SHEET_MATCH_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
 
-class TaskStore {
+class TaskStore extends EventEmitter {
   constructor({ tasksFile }) {
+    super()
     this.tasksFile = tasksFile
     this._memoryCache = null
     this._writeTimeout = null
@@ -18,6 +20,7 @@ class TaskStore {
     const payload = readJson(this.tasksFile, { tasks: [] })
     const tasks = Array.isArray(payload.tasks) ? payload.tasks.map(normalizeTask) : []
     this._memoryCache = sortTasks(tasks)
+    this.emit('change')
   }
 
   list() {
@@ -38,6 +41,7 @@ class TaskStore {
     const nextTasks = sortTasks(tasks)
     this._memoryCache = nextTasks
     this._scheduleWrite(nextTasks)
+    this.emit('change')
     return normalized
   }
 
@@ -52,6 +56,7 @@ class TaskStore {
     const nextTasks = this.list().filter((item) => item.taskId !== taskId)
     this._memoryCache = nextTasks
     this._scheduleWrite(nextTasks)
+    this.emit('change')
   }
 
   markInterruptedNonTerminalTasks() {
@@ -85,6 +90,7 @@ class TaskStore {
     if (changed) {
       this._memoryCache = sortTasks(next)
       this._scheduleWrite(this._memoryCache)
+      this.emit('change')
     }
     return changed
   }
@@ -137,6 +143,7 @@ class TaskStore {
     // legacy API
     this._memoryCache = sortTasks(tasks.map(normalizeTask))
     this._scheduleWrite(this._memoryCache)
+    this.emit('change')
   }
 }
 

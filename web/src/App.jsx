@@ -72,11 +72,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated) return undefined
-    const timer = window.setInterval(() => {
-      void loadAccounts({ silent: true })
-    }, 10000)
-    return () => window.clearInterval(timer)
-  }, [authenticated, loadAccounts])
+  }, [authenticated])
 
   const handleLogin = async (password) => {
     setAuthLoading(true)

@@ -139,6 +139,7 @@ class TencentDocsBrowserAdapter {
 
       await assertLoggedIn(page)
       await ensureSheetSelected(page, target.sheetName)
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => { })
 
       const orderedCells = (cells || []).slice().sort((left, right) => left.columnIndex - right.columnIndex)
       const imageCells = orderedCells.filter((cell) => isImageCell(cell))
@@ -151,7 +152,11 @@ class TencentDocsBrowserAdapter {
           columnIndex: cell.columnIndex,
           platform: this.platform
         })
-        await pasteImageIntoFocusedCell(page, cell.value, this.platform)
+        await pasteImageIntoFocusedCell(page, cell.value, {
+          sheetRow,
+          columnIndex: cell.columnIndex,
+          platform: this.platform
+        })
         await page.waitForTimeout(250)
       }
 
@@ -239,10 +244,19 @@ async function assertLoggedIn(page) {
     page.waitForSelector('text="立即登录", text="扫码登录"', { timeout: 8000 }).catch(() => { })
   ])
 
-  // If the spreadsheet toolbar is visible, the document has loaded — pass the check.
-  // Even shared/read-only docs show '只能查看' and '登录腾讯文档' text, but they ARE functional.
+  // If the spreadsheet toolbar is visible, the document has loaded.
+  // However, shared docs show the toolbar even in read-only/guest mode,
+  // so we must also check for read-only indicators.
   const hasToolbar = await page.locator('.toolbar-container, .ribbon-toolbar_ribbon-toolbar__3xV-1, .fixed-toolbar-container_fixed-toolbar-wrapper__3NxGh').first().isVisible().catch(() => false)
-  if (hasToolbar) return
+  if (hasToolbar) {
+    // Check for read-only indicators that signal expired login or guest mode
+    const bodyText = await readBodyText(page)
+    const hasReadOnlyIndicator = hasAnyText(bodyText, ['只能查看', '登录腾讯文档'])
+    if (hasReadOnlyIndicator) {
+      throw createTencentDocsError(401, ERROR_CODES.LOGIN_REQUIRED, '腾讯文档登录已过期，当前为只读模式，请重新扫码登录腾讯文档')
+    }
+    return
+  }
 
   const bodyText = await readBodyText(page)
 
@@ -456,7 +470,7 @@ async function writeTextCellsIndividually(page, { sheetRow, group, platform }) {
   }
 }
 
-async function pasteImageIntoFocusedCell(page, imageUrl, platform) {
+async function pasteImageIntoFocusedCell(page, imageUrl, { sheetRow, columnIndex, platform }) {
   const imageBase64 = await fetchImageAsBase64(imageUrl)
   await page.evaluate(async ({ imageBase64 }) => {
     const bytes = Uint8Array.from(atob(imageBase64), (character) => character.charCodeAt(0))
@@ -465,32 +479,43 @@ async function pasteImageIntoFocusedCell(page, imageUrl, platform) {
     await navigator.clipboard.write([item])
   }, { imageBase64 })
   await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
-  await convertFloatingImageToCellImage(page)
+  await convertFloatingImageToCellImage(page, { sheetRow, columnIndex, platform })
 }
 
 
 async function verifyTextGroupWritten(page, { sheetRow, group, platform }) {
   if (!Array.isArray(group) || group.length === 0) return
-  await focusCell(page, {
-    sheetRow,
-    columnIndex: group[0].columnIndex,
-    platform
-  })
-  await selectFocusedRange(page, group.length, platform)
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => { })
-  await page.keyboard.press(`${getShortcutKey(platform)}+c`).catch(() => { })
-  await page.waitForTimeout(300)
-
-  const actualValues = parseClipboardRowValues(await readClipboardText(page))
   const expectedValues = group.map((cell) => String(cell.value ?? ''))
-  if (!clipboardRowMatches(actualValues, expectedValues)) {
-    throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, `腾讯文档第 ${sheetRow} 行写入校验失败`, {
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) {
+      await page.waitForTimeout(400 * attempt)
+    }
+
+    await focusCell(page, {
       sheetRow,
-      columnIndexes: group.map((cell) => cell.columnIndex),
-      columns: group.map((cell) => cell.columnName),
-      expectedValues,
-      actualValues
+      columnIndex: group[0].columnIndex,
+      platform
     })
+    await selectFocusedRange(page, group.length, platform)
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => { })
+    await page.keyboard.press(`${getShortcutKey(platform)}+c`).catch(() => { })
+    await page.waitForTimeout(300)
+
+    const actualValues = parseClipboardRowValues(await readClipboardText(page))
+    if (clipboardRowMatches(actualValues, expectedValues)) {
+      return
+    }
+
+    if (attempt === 2) {
+      throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, `腾讯文档第 ${sheetRow} 行写入校验失败`, {
+        sheetRow,
+        columnIndexes: group.map((cell) => cell.columnIndex),
+        columns: group.map((cell) => cell.columnName),
+        expectedValues,
+        actualValues
+      })
+    }
   }
 }
 
@@ -518,11 +543,20 @@ function clipboardRowMatches(actualValues, expectedValues) {
   return actualValues.every((value, index) => String(value ?? '') === String(expectedValues[index] ?? ''))
 }
 
-async function convertFloatingImageToCellImage(page) {
+async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, platform }) {
   const menuItemPattern = /转为单元格图片/
+  const cellRef = toColumnLetter(columnIndex) + sheetRow
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    await page.waitForTimeout(attempt === 0 ? 800 : 300)
+    await page.waitForTimeout(attempt === 0 ? 1000 : 400)
+
+    // After paste, floating image captures focus so .select-selection-border won't appear.
+    // Escape to deselect, re-navigate to the cell so cell selection border reappears.
+    await page.keyboard.press('Escape').catch(() => { })
+    await page.waitForTimeout(150)
+    await jumpToCellReference(page, cellRef)
+    await page.waitForTimeout(200)
+
     const selectionBounds = await getPrimarySelectionBounds(page)
     if (!selectionBounds) continue
 
@@ -533,18 +567,18 @@ async function convertFloatingImageToCellImage(page) {
       await page.mouse.click(target.x, target.y).catch(() => { })
       await page.waitForTimeout(80)
       await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
-      await page.waitForTimeout(200)
+      await page.waitForTimeout(300)
 
       const menuItem = page.getByRole('menuitem', { name: menuItemPattern }).first()
       const visible = await menuItem.isVisible().catch(() => false)
       if (visible) {
         await menuItem.click({ timeout: 3000 }).catch(() => { })
-        await page.waitForTimeout(800)
+        await page.waitForTimeout(1200)
         return
       }
 
       await page.keyboard.press('Escape').catch(() => { })
-      await page.waitForTimeout(120)
+      await page.waitForTimeout(150)
     }
   }
 

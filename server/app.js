@@ -58,6 +58,37 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
     next()
   })
 
+  app.get('/api/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders()
+
+    const sendAccounts = () => {
+      res.write(`event: accounts\ndata: ${JSON.stringify({ accounts: loginService.listAccounts() })}\n\n`)
+    }
+    const sendTasks = () => {
+      if (taskService) {
+        res.write(`event: tasks\ndata: ${JSON.stringify({ tasks: taskService.listTasks() })}\n\n`)
+      }
+    }
+
+    sendAccounts()
+    sendTasks()
+
+    loginService.accountStore.on('change', sendAccounts)
+    if (taskService) {
+      taskService.taskStore.on('change', sendTasks)
+    }
+
+    req.on('close', () => {
+      loginService.accountStore.removeListener('change', sendAccounts)
+      if (taskService) {
+        taskService.taskStore.removeListener('change', sendTasks)
+      }
+    })
+  })
+
   app.get('/api/accounts', (_req, res) => {
     res.json({ accounts: loginService.listAccounts() })
   })
@@ -244,7 +275,9 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
       const relativePath = req.params[0]
       const decoded = relativePath.split('/').map(decodeURIComponent).join(path.sep)
       const fullPath = path.resolve(config.artifactsRootDir, decoded)
-      if (!fullPath.startsWith(config.artifactsRootDir)) {
+      const relativeToRoot = path.relative(config.artifactsRootDir, fullPath)
+
+      if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
         throw new AppError(400, 'ARTIFACT_PATH_INVALID', '文件路径非法')
       }
       res.set('Cache-Control', 'no-store')

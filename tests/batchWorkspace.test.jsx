@@ -30,6 +30,20 @@ vi.mock('../web/src/api', () => {
   return { api }
 })
 
+class MockEventSource {
+  constructor(url) {
+    this.url = url
+    this.cleanup = []
+  }
+  addEventListener(event, cb) {
+    this.cleanup.push({ event, cb })
+  }
+  close() {
+    this.cleanup = []
+  }
+}
+vi.stubGlobal('EventSource', MockEventSource)
+
 import App from '../web/src/App'
 import { BatchTasksWorkspace } from '../web/src/components/BatchTasksWorkspace'
 import { api } from '../web/src/api'
@@ -203,8 +217,14 @@ describe('batch task workspace ui', () => {
 
     expect(accordionItem).not.toBeNull()
     expect(within(accordionItem).getByText('当前建议')).toBeInTheDocument()
+
+    // Switch to results tab to see results content
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '概览与结果' }))
     expect(within(accordionItem).getByRole('link', { name: '查看汇总图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
     expect(within(accordionItem).getAllByText('自然卷儿').length).toBeGreaterThan(0)
+
+    // Switch to sync tab to see sync content
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
     expect(within(accordionItem).getByText('腾讯文档同步')).toBeInTheDocument()
   })
 
@@ -401,6 +421,9 @@ describe('batch task workspace ui', () => {
 
     const expandedPill = await screen.findByText('收起详情')
     const accordionItem = expandedPill.closest('.task-accordion-item')
+
+    // Switch to sync tab to see sync content and buttons
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
 
     expect(within(accordionItem).getAllByText(/同步：失败/).length).toBeGreaterThan(0)
     expect(within(accordionItem).getAllByText('腾讯文档当前未登录，请先完成登录').length).toBeGreaterThan(0)

@@ -157,6 +157,13 @@ class TencentDocsSyncService {
         writeSummary
       }
     } catch (error) {
+      if (error?.code === ERROR_CODES.LOGIN_REQUIRED) {
+        this.workspaceStore.saveLogin({
+          status: 'FAILED',
+          updatedAt: new Date().toISOString(),
+          error: serializeSyncError(error)
+        })
+      }
       const wrappedError = enrichHandoffError(error, prepared)
       writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
         operationId: prepared.operationId,
