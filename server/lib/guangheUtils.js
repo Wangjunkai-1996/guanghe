@@ -3,6 +3,8 @@ const {
   DATE_CANDIDATES,
   CONTENT_DATA_CANDIDATES,
   WORK_ANALYSIS_CANDIDATES,
+  CONTENT_MANAGE_CANDIDATES,
+  WORKS_MANAGE_CANDIDATES,
   METRIC_TRIGGER_CANDIDATES,
   QUERY_BUTTON_CANDIDATES,
   OVERLAY_CLOSE_CANDIDATES,
@@ -89,24 +91,96 @@ async function detectLoginStatus(page) {
 
 async function submitSmsCode(page, code) {
   try {
+    console.log(`[submitSmsCode] 开始提交验证码: ${code}, URL: ${page.url()}`)
     const input = page.locator('input[placeholder*="验证码"], input[id*="sms"], input[name*="sms"], input[type="tel"]').first()
-    await input.fill(code)
-    await page.waitForTimeout(300)
-    // 点击确认/提交按钮
-    const submitBtn = page.locator('button[type="submit"], button:has-text("确认"), button:has-text("提交"), button:has-text("验证"), button:has-text("登录")').first()
-    await submitBtn.click()
-    // 等待页面响应
-    await page.waitForTimeout(1500)
-    // 判断是否还在验证码页面（说明验证码错误）
-    const statusAfter = await detectLoginStatus(page)
-    if (statusAfter === LOGIN_SESSION_STATUS.WAITING_SMS) {
-      console.warn('[submitSmsCode] 验证码可能错误，页面未跳转')
+
+    if (!(await input.isVisible().catch(() => false))) {
+      console.error('[submitSmsCode] 未找到验证码输入框, 页面源码:', await page.content().catch(() => '无法获取源码'))
+      await page.screenshot({ path: 'artifacts/web/sms-input-not-found.png' }).catch(() => { })
       return false
     }
+    await input.fill('')
+    // 改用 pressSequentially(也就是慢慢模拟打字输入)以强行触发前端框架的 onChange 侦听器，防止提交按钮死活不亮
+    await input.pressSequentially(String(code), { delay: 50 })
+    await input.evaluate(node => node.blur()).catch(() => {})
+    await page.waitForTimeout(500)
+
+    // 点击确认/提交按钮
+    // 增加多种选择器回退机制，避免由于前序存在隐藏的 submit 导致 .first() 查找到不可见元素
+    let clicked = false;
+    const locators = [
+      page.locator('#submitBtn').first(),
+      page.locator('input[type="submit"][value="确定"]').first(),
+      page.locator('button[type="submit"], input[type="button"][value="确定"]').first(),
+      page.getByRole('button', { name: /确定|提交|确认|验证|登录/ }).first()
+    ]
+
+    for (const locator of locators) {
+      if (await locator.isVisible().catch(() => false)) {
+        console.log(`[submitSmsCode] 找到可见的提交按钮: ${locator.toString()}, 准备点击`)
+        
+        // 如果前端开发人员在元素上写死了 disabled，我们强行把它移除掉（因为已经输入完毕了）
+        await locator.evaluate((node) => node.removeAttribute('disabled')).catch(() => {})
+        
+        // 带上 force: true 强制点击，且缩短这里无意义的死等超时
+        await locator.click({ force: true, timeout: 5000 }).catch(e => console.warn('[submitSmsCode] 点击警告:', e.message))
+        clicked = true;
+        break;
+      }
+    }
+
+    if (!clicked) {
+      console.error('[submitSmsCode] 遍历所有特征仍未找到可见的验证码提交按钮, 页面源码:', await page.content().catch(() => '无法获取源码'))
+      await page.screenshot({ path: 'artifacts/web/sms-btn-not-found.png' }).catch(() => { })
+      return false
+    }
+
+    // 等待页面响应
+    await page.waitForTimeout(2000)
+
+    // 判断是否还在验证码页面（说明验证码错误）
+    const statusAfter = await detectLoginStatus(page)
+    console.log(`[submitSmsCode] 点击提交后, 页面状态检测为: ${statusAfter}, URL: ${page.url()}`)
+
+    if (statusAfter === LOGIN_SESSION_STATUS.WAITING_SMS) {
+      console.warn('[submitSmsCode] 验证码可能错误，页面未跳转')
+      await page.screenshot({ path: 'artifacts/web/sms-submit-failed.png' }).catch(() => { })
+      const errorMsg = await page.locator('.err-msg, .error, [class*="error"]').first().textContent().catch(() => '')
+      if (errorMsg) {
+        console.warn(`[submitSmsCode] 发现页面可能的错误提示文字: ${errorMsg}`)
+      }
+      return false
+    }
+
+    console.log('[submitSmsCode] 验证码提交成功，页面状态发生变化')
     return true
   } catch (err) {
-    console.error('[submitSmsCode] 提交验证码失败:', err.message)
+    console.error('[submitSmsCode] 提交验证码过程中发生异常:', err.message, err.stack)
+    await page.screenshot({ path: 'artifacts/web/sms-submit-exception.png' }).catch(() => { })
     return false
+  }
+}
+
+async function triggerSmsIfNeeded(page) {
+  try {
+    // 扩大选择器范围，防止淘宝使用 input 标签
+    const getCodeBtn = page.locator('button:has-text("获取短信校验码"), button:has-text("获取验证码"), a:has-text("验证码"), a:has-text("校验码"), input[value*="获取短信校验码"], input[value*="获取验证码"]').first()
+    
+    if (await getCodeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+      const isDisabled = await getCodeBtn.evaluate((b) => b.disabled || b.classList.contains('disabled')).catch(() => true)
+      if (!isDisabled) {
+        console.log(`[triggerSmsIfNeeded] 未禁用，开始点击获取验证码按钮... URL: ${page.url()}`)
+        await getCodeBtn.click()
+        await page.waitForTimeout(1000)
+        console.log('[triggerSmsIfNeeded] 点击获取验证码按钮完毕')
+      } else {
+        console.log('[triggerSmsIfNeeded] 验证码按钮处于禁用状态（可能已经发送或倒计时中）')
+      }
+    } else {
+      console.log('[triggerSmsIfNeeded] 未在当前页面找到"获取短信校验码"按钮')
+    }
+  } catch (err) {
+    console.warn('[triggerSmsIfNeeded] 尝试点击获取短信校验码时发生异常:', err.message)
   }
 }
 
@@ -173,7 +247,7 @@ async function navigateToWorkAnalysis(page) {
   await settle(page)
   await dismissInterferingOverlays(page)
 
-  const alreadyThere = await page.getByText(/作品分析/).first().isVisible().catch(() => false)
+  const alreadyThere = /unify\/work-analysis/i.test(page.url())
   if (alreadyThere) return true
 
   let firstStep = await clickAnyText(page, CONTENT_DATA_CANDIDATES)
@@ -205,18 +279,139 @@ async function navigateToWorkAnalysis(page) {
   return true
 }
 
+
+async function navigateToWorksManagement(page) {
+  await settle(page)
+  await dismissInterferingOverlays(page)
+
+  const alreadyThere = /content-manage\/works-manage/i.test(page.url())
+  if (alreadyThere) return true
+
+  let firstStep = await clickAnyText(page, CONTENT_MANAGE_CANDIDATES)
+  if (!firstStep) firstStep = await clickSidebarMenu(page, CONTENT_MANAGE_CANDIDATES)
+  if (firstStep) {
+    await settle(page)
+    await dismissInterferingOverlays(page)
+  }
+
+  let secondStep = await clickAnyText(page, WORKS_MANAGE_CANDIDATES)
+  if (!secondStep) secondStep = await clickSidebarMenu(page, WORKS_MANAGE_CANDIDATES)
+  
+  if (!secondStep) return false
+  await settle(page)
+  await dismissInterferingOverlays(page)
+  return true
+}
+
+async function searchWorkInList(page, contentId) {
+  // Wait for the page to be stable
+  await settle(page)
+  
+  const input = await findSearchInput(page)
+  if (!input) {
+    console.warn('[searchWorkInList] 未找到搜索框')
+    return false
+  }
+
+  await input.click({ timeout: 5000 })
+  await input.fill('')
+  await page.keyboard.press('Meta+A').catch(() => { })
+  await page.keyboard.press('Backspace').catch(() => { })
+  
+  // Use pressSequentially to ensure React picks up the value
+  await input.pressSequentially(String(contentId), { delay: 50 })
+  await page.waitForTimeout(500)
+
+  const clicked = await clickAnyText(page, QUERY_BUTTON_CANDIDATES)
+  if (!clicked) {
+    await page.keyboard.press('Enter').catch(() => { })
+  }
+
+  // Wait for the table/list to filter
+  await settle(page)
+  await page.waitForTimeout(3000) // Increased wait time for search results
+  return true
+}
+
+async function extractWorksManagementData(page, contentId) {
+  return page.evaluate((targetId) => {
+    const sid = String(targetId).trim()
+    
+    // 1. 根据截图，找到包含指定 ID 的表格单元格
+    // 兼容多种可能的容器：td, div[role="gridcell"], .next-table-cell
+    const cells = Array.from(document.querySelectorAll('td, [role="gridcell"], .next-table-cell, div'))
+    const targetCell = cells.find(el => {
+      // 检查是否包含 ID
+      const text = (el.innerText || '').replace(/\s+/g, '')
+      const hasId = text.includes('ID:' + sid) || text.includes('ID：' + sid) || text.includes(sid)
+      if (!hasId) return false
+      
+      // 必须有一定尺寸
+      const r = el.getBoundingClientRect()
+      return r.width > 100 && r.height > 50
+    })
+
+    if (!targetCell) {
+      console.log('[DEBUG] 未找到包含 ID 的 单元格')
+      return null
+    }
+
+    // 2. 提取数据
+    let stats = { viewCount: '-', likeCount: '-', collectCount: '-', commentCount: '-' }
+    
+    const quantityDiv = targetCell.querySelector('[class*="quantity"], [class*="Quantity"], [class*="stats"], [class*="Stats"]')
+    if (quantityDiv) {
+      const nums = (quantityDiv.innerText || '').match(/[0-9.]+(?:[wW万])?/g) || []
+      if (nums.length >= 4) {
+        stats.viewCount = nums[0]
+        stats.likeCount = nums[1]
+        stats.collectCount = nums[2]
+        stats.commentCount = nums[3]
+      }
+    }
+
+    if (stats.viewCount === '-') {
+      let afterIdText = (targetCell.innerText || '').split(sid)[1] || ''
+      afterIdText = afterIdText.replace(/\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(:\d{2})?/g, '')
+      const nums = afterIdText.match(/[0-9.]+(?:[wW万])?/g) || []
+      if (nums.length >= 4) {
+        stats.viewCount = nums[0]
+        stats.likeCount = nums[1]
+        stats.collectCount = nums[2]
+        stats.commentCount = nums[3]
+      }
+    }
+
+    const rect = targetCell.getBoundingClientRect()
+    return {
+      ...stats,
+      rect: {
+         x: rect.left,
+         y: rect.top,
+         width: rect.width,
+         height: rect.height
+      }
+    }
+  }, String(contentId))
+}
+
+
 async function fillContentId(page, contentId) {
-  const input = await findInputByKeywords(page, ['内容ID', '内容 Id', '内容id', '作品ID', '作品id', 'ID'])
+  const input = await findSearchInput(page)
   if (!input) {
     throw new AppError(500, 'CONTENT_ID_INPUT_NOT_FOUND', '没有找到内容 ID 输入框')
   }
 
   await input.click({ timeout: 5000 })
   await input.fill('')
-  await input.fill(String(contentId))
+  // Clear any existing text
+  await page.keyboard.press('Meta+A').catch(() => { })
+  await page.keyboard.press('Backspace').catch(() => { })
+  
+  await input.pressSequentially(String(contentId), { delay: 50 })
 
   // Wait for React to process the input change
-  await page.waitForTimeout(200)
+  await page.waitForTimeout(300)
 
   const clicked = await clickAnyText(page, QUERY_BUTTON_CANDIDATES)
   if (!clicked) {
@@ -333,27 +528,44 @@ async function clickAnyText(page, texts) {
   return false
 }
 
-async function findInputByKeywords(page, keywords) {
-  for (const keyword of keywords) {
-    const regex = new RegExp(escapeRegExp(keyword), 'i')
-    const locators = [
-      page.getByLabel(regex).first(),
-      page.locator(`input[placeholder*="${keyword}"]`).first(),
-      page.locator(`textarea[placeholder*="${keyword}"]`).first(),
-      page.locator(`xpath=//*[contains(normalize-space(), "${keyword}")]/following::input[1]`).first(),
-      page.locator('input[type="text"]').first(),
-      page.locator('input').first()
-    ]
-
-    for (const locator of locators) {
-      try {
-        if (await locator.isVisible({ timeout: 1000 })) return locator
-      } catch (error) {
-        // ignore
-      }
+async function findSearchInput(page) {
+  const placeholders = [
+    /请输入.*ID/i,
+    /作品ID/i,
+    /关键字/i,
+    /内容ID/i,
+    /ID/i,
+    /搜索/i
+  ]
+  
+  for (const p of placeholders) {
+    const loc = page.getByPlaceholder(p).filter({ visible: true }).first()
+    if (await loc.isVisible({ timeout: 1000 }).catch(() => false)) {
+      console.log(`[findSearchInput] 匹配到占位符: ${p}`)
+      return loc
     }
   }
+
+  // Fallback to searching for inputs in the search section or main area
+  const searchAreaLocators = [
+    '.micro-gg-search-section input:visible',
+    '.SearchInput_searchSpace__1QJ4L input:visible',
+    'input[type="text"]:visible'
+  ]
+
+  for (const selector of searchAreaLocators) {
+    const loc = page.locator(selector).first()
+    if (await loc.isVisible({ timeout: 500 }).catch(() => false)) {
+      console.log(`[findSearchInput] 匹配到选择器: ${selector}`)
+      return loc
+    }
+  }
+
   return null
+}
+
+async function findInputByKeywords(page, keywords) {
+  return findSearchInput(page)
 }
 
 async function settle(page) {
@@ -388,10 +600,14 @@ module.exports = {
   extractAccountProfile,
   dismissInterferingOverlays,
   navigateToWorkAnalysis,
+  navigateToWorksManagement,
+  searchWorkInList,
+  extractWorksManagementData,
   fillContentId,
   pickDateRange30Days,
   chooseMetrics,
   createNetworkRecorder,
   settle,
-  submitSmsCode
+  submitSmsCode,
+  triggerSmsIfNeeded
 }

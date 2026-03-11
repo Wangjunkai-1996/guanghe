@@ -90,20 +90,42 @@ class TencentDocsSyncService {
     })
   }
 
-  async inspectSheet({ target, maxRows }) {
+  async inspectSheet({ target, maxRows, forceRefresh = false }) {
     this.ensureEnabled()
+    const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
     const normalizedMaxRows = this.normalizeInspectMaxRows(maxRows)
+    
+    // Check in-memory Cache
+    if (!forceRefresh && this._lastInspectCache) {
+      if (
+        this._lastInspectCache.target.docUrl === resolvedTarget.docUrl &&
+        (!resolvedTarget.sheetName || this._lastInspectCache.target.sheetName === resolvedTarget.sheetName)
+      ) {
+        return this._lastInspectCache.data
+      }
+    }
+
     const snapshot = await this.readSheetDemandSnapshot({
       target,
       maxRows: normalizedMaxRows,
       artifactDir: this.getInspectArtifactDir(),
       strict: false
     })
-    return {
+
+    const payload = {
       ...snapshot,
       maxRows: normalizedMaxRows,
       artifacts: this.buildInspectArtifactUrls()
     }
+
+    // Save in-memory cache
+    this._lastInspectCache = {
+      target: resolvedTarget,
+      data: payload,
+      timestamp: Date.now()
+    }
+
+    return payload
   }
 
   async matchDemandByNickname({ nickname, target, maxRows = 200 } = {}) {

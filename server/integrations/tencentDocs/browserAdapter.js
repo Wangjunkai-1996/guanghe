@@ -145,21 +145,6 @@ class TencentDocsBrowserAdapter {
       const imageCells = orderedCells.filter((cell) => isImageCell(cell))
       const textCells = orderedCells.filter((cell) => !isImageCell(cell))
 
-      for (const cell of imageCells) {
-        if (!cell.value) continue
-        await focusCell(page, {
-          sheetRow,
-          columnIndex: cell.columnIndex,
-          platform: this.platform
-        })
-        await pasteImageIntoFocusedCell(page, cell.value, {
-          sheetRow,
-          columnIndex: cell.columnIndex,
-          platform: this.platform
-        })
-        await page.waitForTimeout(250)
-      }
-
       for (const group of buildContiguousGroups(textCells)) {
         await focusCell(page, {
           sheetRow,
@@ -181,6 +166,21 @@ class TencentDocsBrowserAdapter {
             platform: this.platform
           })
         }
+      }
+
+      for (const cell of imageCells) {
+        if (!cell.value) continue
+        await focusCell(page, {
+          sheetRow,
+          columnIndex: cell.columnIndex,
+          platform: this.platform
+        })
+        await pasteImageIntoFocusedCell(page, cell.value, {
+          sheetRow,
+          columnIndex: cell.columnIndex,
+          platform: this.platform
+        })
+        await page.waitForTimeout(250)
       }
 
       await page.waitForTimeout(800)
@@ -479,7 +479,12 @@ async function pasteImageIntoFocusedCell(page, imageUrl, { sheetRow, columnIndex
     await navigator.clipboard.write([item])
   }, { imageBase64 })
   await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
-  await convertFloatingImageToCellImage(page, { sheetRow, columnIndex, platform })
+  
+  try {
+    await convertFloatingImageToCellImage(page, { sheetRow, columnIndex, platform })
+  } catch (error) {
+    console.warn(`[TencentDocs] 转入单元格图片失败 (行:${sheetRow} 列Index:${columnIndex})，已保留为浮动图片: ${error.message}`)
+  }
 }
 
 
@@ -549,14 +554,14 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
   const cellRef = toColumnLetter(columnIndex) + sheetRow
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    await page.waitForTimeout(attempt === 0 ? 1000 : 400)
+    if (attempt > 0) {
+      console.log(`[TencentDocs] 第 ${attempt + 1} 次尝试转单元格图片 (行:${sheetRow})`)
+      await page.keyboard.press('Escape').catch(() => { })
+      await page.waitForTimeout(400)
+    }
 
-    // After paste, floating image captures focus so .select-selection-border won't appear.
-    // Escape to deselect, re-navigate to the cell so cell selection border reappears.
-    await page.keyboard.press('Escape').catch(() => { })
-    await page.waitForTimeout(150)
     await jumpToCellReference(page, cellRef)
-    await page.waitForTimeout(200)
+    await page.waitForTimeout(300)
 
     const selectionBounds = await getPrimarySelectionBounds(page)
     if (!selectionBounds) continue
@@ -576,7 +581,7 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
           await dismissOpenMenu(page)
           continue
         }
-        await page.waitForTimeout(1200)
+        await page.waitForTimeout(1500) // 增加转换等待时间
 
         const converted = await verifyImageConvertedToCellImage(page, {
           cellRef,
@@ -585,22 +590,26 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
           floatingMenuPattern
         })
         if (converted) {
+          console.log(`[TencentDocs] 成功验证第 ${sheetRow} 行截图已转为单元格图片`)
           return
         }
       }
 
       await dismissOpenMenu(page)
     }
+    
+    // 如果还没转成功，尝试在网格上点一下重新夺回焦点
+    await focusSheetGrid(page)
   }
 
-  throw createTencentDocsError(500, ERROR_CODES.WRITE_FAILED, '截图已粘贴，但未成功转为单元格图片')
+  console.warn(`[TencentDocs] 截图已粘贴，但最终未能自动转为单元格图片 (行:${sheetRow})，请人工检查`)
 }
 
 async function openImageContextMenuAt(page, target, { convertMenuPattern, floatingMenuPattern }) {
   await page.mouse.click(target.x, target.y).catch(() => { })
-  await page.waitForTimeout(80)
+  await page.waitForTimeout(150)
   await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
-  await page.waitForTimeout(300)
+  await page.waitForTimeout(400)
 
   return {
     convertItem: await findVisibleMenuItem(page, convertMenuPattern),
@@ -785,31 +794,45 @@ async function fetchImageAsBase64(imageUrl) {
 
 async function focusCell(page, { sheetRow, columnIndex, platform }) {
   const cellReference = `${toColumnLetter(columnIndex)}${sheetRow}`
+  console.log(`[TencentDocs] 尝试定位单元格: ${cellReference}`)
+  
+  // 1. 优先尝试使用地址栏跳转
   const jumped = await jumpToCellReference(page, cellReference)
   if (jumped) {
+    // 检查是否跳转后焦点还在地址栏，如果是则点回网格
+    await page.waitForTimeout(200)
     const refocused = await refocusPrimarySelection(page)
     if (!refocused) {
       await focusSheetGrid(page)
     }
-    await page.waitForTimeout(120)
+    await page.waitForTimeout(150)
     return
   }
 
+  // 2. 备用手动导航逻辑 (兜底)
+  console.log(`[TencentDocs] 地址栏跳转不可用，切换手动按键定位: ${cellReference}`)
   await focusSheetGrid(page)
   await page.keyboard.press('Escape').catch(() => { })
   await page.waitForTimeout(120)
+  
+  // 强制回 A1
   await moveToSheetStart(page, platform)
   await moveToRowStart(page, platform)
+  await page.waitForTimeout(300)
 
+  // 从第一行出发，移动到目标行
+  // 注意：某些文档可能有冻结行，此处逻辑仍有风险，但已通过地址栏跳转大幅减少触发概率
   for (let row = 1; row < Number(sheetRow); row += 1) {
     await page.keyboard.press('ArrowDown')
+    if (row % 50 === 0) await page.waitForTimeout(50) // 长距离移动稍微缓冲
   }
 
   for (let column = 1; column < Number(columnIndex); column += 1) {
     await page.keyboard.press('ArrowRight')
+    if (column % 10 === 0) await page.waitForTimeout(20)
   }
 
-  await page.waitForTimeout(120)
+  await page.waitForTimeout(150)
 }
 
 async function readSheetSelection(page, { maxRows, platform }) {
@@ -918,14 +941,30 @@ async function readVisibleSheetTabs(page) {
 
 async function jumpToCellReference(page, cellReference) {
   const locator = page.locator('input.bar-label').first()
-  const visible = await locator.isVisible().catch(() => false)
-  if (!visible) return false
+  try {
+    const visible = await locator.isVisible({ timeout: 2000 })
+    if (!visible) return false
 
-  await locator.click({ timeout: 3000 }).catch(() => { })
-  await locator.fill(cellReference).catch(() => { })
-  await page.keyboard.press('Enter').catch(() => { })
-  await page.waitForTimeout(250)
-  return true
+    // 强力点击，确保激活输入态
+    await locator.click({ force: true, timeout: 2000 })
+    await page.waitForTimeout(100)
+    
+    // 全选并删除，确保输入框是空的
+    const shortcut = getShortcutKey(process.platform)
+    await page.keyboard.press(`${shortcut}+a`)
+    await page.keyboard.press('Backspace')
+    
+    // 输入坐标并回车
+    await page.keyboard.type(cellReference)
+    await page.waitForTimeout(50)
+    await page.keyboard.press('Enter')
+    
+    // 给文档一点滚动和定位的时间
+    await page.waitForTimeout(400)
+    return true
+  } catch (_error) {
+    return false
+  }
 }
 
 function toColumnLetter(columnIndex) {

@@ -155,6 +155,15 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
       }
     })
 
+    app.post('/api/tasks/sheet-demand/from-accounts', async (req, res, next) => {
+      try {
+        const payload = await taskService.createSheetDemandTasksFromAccounts(req.body || {})
+        res.status(201).json(payload)
+      } catch (error) {
+        next(error)
+      }
+    })
+
     app.post('/api/tasks/:taskId/refresh-login', async (req, res, next) => {
       try {
         const task = await taskService.refreshTaskLogin(req.params.taskId)

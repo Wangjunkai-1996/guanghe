@@ -19,7 +19,6 @@ export function ManualWorkspace({
     handleCreateLoginSession,
     handleDeleteAccount
 }) {
-    const [isManualWorkspaceOpen, setIsManualWorkspaceOpen] = useState(false)
     const [queryLoading, setQueryLoading] = useState(false)
     const [queryResult, setQueryResult] = useState(null)
     const [queryError, setQueryError] = useState(null)
@@ -39,8 +38,67 @@ export function ManualWorkspace({
         }
     }
 
+    const [matchLoading, setMatchLoading] = useState(false)
+    const [sheetDemands, setSheetDemands] = useState(null)
+    const [sheetTarget, setSheetTarget] = useState(null)
+    const [batchQuerying, setBatchQuerying] = useState(false)
+    const [queryProgress, setQueryProgress] = useState({})
+
+    const handleMatchSheet = async () => {
+        try {
+            setMatchLoading(true)
+            const configPayload = await api.getTencentDocsConfig()
+            if (!configPayload.defaultTargetConfigured) {
+                alert('请先在"批量任务"标签页中配置默认的腾讯文档链接和工作表名称')
+                return
+            }
+            setSheetTarget(configPayload.target)
+            const payload = await api.inspectTencentDocsSheet({ target: configPayload.target, maxRows: 200, forceRefresh: true })
+            setSheetDemands(payload.demands || [])
+        } catch (error) {
+            alert(error.message || '匹配失败')
+        } finally {
+            setMatchLoading(false)
+        }
+    }
+
+    const handleBatchQuery = async () => {
+        if (!sheetDemands || !sheetTarget) return
+        
+        const accountsToQuery = accounts.filter(acc => {
+            const reqNick = (acc.nickname || '').trim().toLowerCase()
+            const match = sheetDemands.find(d => d.normalizedNickname === reqNick)
+            return match && match.status === 'NEEDS_FILL' && acc.status === 'READY'
+        })
+
+        if (accountsToQuery.length === 0) {
+            alert('当前没有需要在交接表中自动填表的可查询账号（必须在表中、缺数据、且账号状态可用）。')
+            return
+        }
+
+        if (!window.confirm(`找到 ${accountsToQuery.length} 个账号需要自动查询并填表，是否开始？\n这将会为每个账号在"批量任务"中创建跟踪任务。`)) {
+            return
+        }
+
+        setBatchQuerying(true)
+
+        try {
+            await api.createSheetDemandTaskFromAccounts({
+                accountIds: accountsToQuery.map(a => a.accountId),
+                sheetTarget
+            })
+            window.alert('任务下发成功！即将切换到"批量任务"中进行进度查看。')
+            // trigger custom event to switch tabs in parent component
+            window.dispatchEvent(new CustomEvent('switch-to-batch-tasks'))
+        } catch (error) {
+            alert(error.message || '操作失败')
+        } finally {
+            setBatchQuerying(false)
+        }
+    }
+
     const activeLoginBanner = useMemo(() => {
-        if (!loginSession || isLoginDrawerOpen || !isManualWorkspaceOpen) return null
+        if (!loginSession || isLoginDrawerOpen) return null
         if (loginSession.status === 'LOGGED_IN') return null
         if (LOGIN_SESSION_PENDING_STATUSES.includes(loginSession.status)) {
             return {
@@ -67,7 +125,7 @@ export function ManualWorkspace({
             }
         }
         return null
-    }, [handleCreateLoginSession, isLoginDrawerOpen, isManualWorkspaceOpen, loginSession])
+    }, [handleCreateLoginSession, isLoginDrawerOpen, loginSession])
 
     const manualEntryStatus = useMemo(() => {
         if (!loginSession) return null
@@ -76,88 +134,68 @@ export function ManualWorkspace({
     }, [loginSession])
 
     return (
-        <>
-            <header className="panel workspace-hero">
-                <div className="workspace-hero-copy">
-                    <span className="section-eyebrow">主流程优先</span>
-                    <h1>光合平台查询工作台</h1>
-                    <p>首页只保留批量发码和任务跟进主路径；账号补查下沉为次级入口，用于临时校对、补查和新增账号。</p>
+        <section className="panel manual-entry-strip open">
+            <div className="manual-entry-bar">
+                <div className="compact-panel-header">
+                    <h2>账号库与单条查询</h2>
+                    <p>管理所有授权的光合账号，或者输入单条内容 ID 进行即时的数据验证。</p>
                 </div>
-
-                <div className="workspace-hero-actions">
+                <div className="manual-entry-actions">
+                    {manualEntryStatus ? <span className="status-pill status-info">{manualEntryStatus}</span> : null}
                     <div className="workspace-summary-chip">
                         <span>已保存账号</span>
                         <strong>{accounts.length}</strong>
                     </div>
-                    <div className="workspace-summary-chip wide">
-                        <span>手动补查当前账号</span>
-                        <strong>{activeAccount?.nickname || '未选择'}</strong>
-                        <small>{activeAccount?.accountId || '需要时再展开次级入口'}</small>
-                    </div>
-                    <button className="secondary-btn" type="button" onClick={() => setIsManualWorkspaceOpen((current) => !current)}>
-                        {isManualWorkspaceOpen ? '收起账号补查' : '打开账号补查'}
-                    </button>
                 </div>
-            </header>
+            </div>
 
-            <section className={`panel manual-entry-strip ${isManualWorkspaceOpen ? 'open' : ''}`}>
-                <div className="manual-entry-bar">
-                    <div className="compact-panel-header">
-                        <h2>账号查询（次级入口）</h2>
-                        <p>仅在需要补查单个账号、手动扫码新增账号或校对批量任务结果时使用，不干扰主工作台。</p>
-                    </div>
-                    <div className="manual-entry-actions">
-                        {manualEntryStatus ? <span className="status-pill status-info">{manualEntryStatus}</span> : null}
-                        <button className="secondary-btn" type="button" onClick={() => setIsManualWorkspaceOpen((current) => !current)}>
-                            {isManualWorkspaceOpen ? '收起账号查询' : '展开账号查询'}
+            <div className="manual-query-shell stack-lg">
+                {activeLoginBanner ? (
+                    <div className={`status-banner tone-${activeLoginBanner.tone}`}>
+                        <div>
+                            <strong>{activeLoginBanner.title}</strong>
+                        </div>
+                        <button className="secondary-btn" type="button" onClick={activeLoginBanner.action}>
+                            {activeLoginBanner.actionLabel}
                         </button>
                     </div>
-                </div>
-
-                {isManualWorkspaceOpen ? (
-                    <div className="manual-query-shell stack-lg">
-                        {activeLoginBanner ? (
-                            <div className={`status-banner tone-${activeLoginBanner.tone}`}>
-                                <div>
-                                    <strong>{activeLoginBanner.title}</strong>
-                                </div>
-                                <button className="secondary-btn" type="button" onClick={activeLoginBanner.action}>
-                                    {activeLoginBanner.actionLabel}
-                                </button>
-                            </div>
-                        ) : null}
-
-                        <div className="workspace-layout manual-workspace-layout">
-                            <aside className="workspace-sidebar">
-                                <AccountList
-                                    accounts={accounts}
-                                    selectedAccountId={selectedAccountId}
-                                    loading={accountsLoading}
-                                    onSelect={setSelectedAccountId}
-                                    onCreate={handleCreateLoginSession}
-                                    onDelete={({ accountId }) => { handleDeleteAccount(accountId); setQueryResult(null); setQueryError(null) }}
-                                />
-                            </aside>
-
-                            <main className="workspace-main stack-lg">
-                                <QueryForm
-                                    activeAccount={activeAccount}
-                                    loading={queryLoading}
-                                    onSubmit={handleQuery}
-                                />
-
-                                <ResultPanel
-                                    result={queryResult}
-                                    error={queryError}
-                                    loading={queryLoading}
-                                    activeAccount={activeAccount}
-                                    onRetryLogin={handleCreateLoginSession}
-                                />
-                            </main>
-                        </div>
-                    </div>
                 ) : null}
-            </section>
-        </>
+
+                <div className="workspace-layout manual-workspace-layout">
+                    <aside className="workspace-sidebar">
+                        <AccountList
+                            accounts={accounts}
+                            selectedAccountId={selectedAccountId}
+                            loading={accountsLoading}
+                            onSelect={setSelectedAccountId}
+                            onCreate={handleCreateLoginSession}
+                            onDelete={(accountId) => { handleDeleteAccount(accountId); setQueryResult(null); setQueryError(null) }}
+                            sheetDemands={sheetDemands}
+                            matchLoading={matchLoading}
+                            onMatchSheet={handleMatchSheet}
+                            batchQuerying={batchQuerying}
+                            onBatchQuery={handleBatchQuery}
+                            queryProgress={queryProgress}
+                        />
+                    </aside>
+
+                    <main className="workspace-main stack-lg">
+                        <QueryForm
+                            activeAccount={activeAccount}
+                            loading={queryLoading}
+                            onSubmit={handleQuery}
+                        />
+
+                        <ResultPanel
+                            result={queryResult}
+                            error={queryError}
+                            loading={queryLoading}
+                            activeAccount={activeAccount}
+                            onRetryLogin={handleCreateLoginSession}
+                        />
+                    </main>
+                </div>
+            </div>
+        </section>
     )
 }

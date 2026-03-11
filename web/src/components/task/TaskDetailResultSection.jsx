@@ -30,8 +30,8 @@ export const TaskDetailResultSection = React.memo(function TaskDetailResultSecti
                         <small>优先读 5 项指标摘要，截图与日志按需展开。</small>
                     </div>
                     <div className="task-actions-inline">
-                        {task.screenshots?.summaryUrl ? <a className="secondary-btn inline-link-btn" href={task.screenshots.summaryUrl} target="_blank" rel="noreferrer">查看汇总图</a> : null}
-                        {task.screenshots?.rawUrl ? <a className="secondary-btn inline-link-btn" href={task.screenshots.rawUrl} target="_blank" rel="noreferrer">查看原图</a> : null}
+                        {task.screenshots?.summaryUrl ? <a className="secondary-btn inline-link-btn" href={task.screenshots.summaryUrl} target="_blank" rel="noreferrer">查看分析图</a> : null}
+                        {task.screenshots?.rawUrl ? <a className="secondary-btn inline-link-btn" href={task.screenshots.rawUrl} target="_blank" rel="noreferrer">查看作品图</a> : null}
                     </div>
                 </div>
 
@@ -49,8 +49,8 @@ export const TaskDetailResultSection = React.memo(function TaskDetailResultSecti
                     <div className="image-panel task-image-panel">
                         <div className="image-panel-header">
                             <div className="tabs-switcher" role="tablist" aria-label={`任务 ${task.taskId} 截图切换`}>
-                                <button className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('summary')}>汇总截图</button>
-                                <button className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('raw')}>原始截图</button>
+                                <button className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('summary')}>作品分析截图</button>
+                                <button className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('raw')}>作品管理截图</button>
                             </div>
                             <small>{task.fetchedAt ? formatDateTime(task.fetchedAt) : '已生成查询结果'}</small>
                         </div>
@@ -67,13 +67,13 @@ export const TaskDetailResultSection = React.memo(function TaskDetailResultSecti
                 {!showAdvanced && hasPreview ? (
                     <div className="detail-thumb-grid">
                         {summaryThumbUrl ? (
-                            <a className="detail-thumb" href={summaryThumbUrl} target="_blank" rel="noreferrer" aria-label="查看汇总截图">
-                                <img className="detail-thumb-image" src={summaryThumbUrl} alt="汇总截图缩略图" />
+                            <a className="detail-thumb" href={summaryThumbUrl} target="_blank" rel="noreferrer" aria-label="查看分析截图">
+                                <img className="detail-thumb-image" src={summaryThumbUrl} alt="分析截图缩略图" />
                             </a>
                         ) : null}
                         {rawThumbUrl ? (
-                            <a className="detail-thumb" href={rawThumbUrl} target="_blank" rel="noreferrer" aria-label="查看原始截图">
-                                <img className="detail-thumb-image" src={rawThumbUrl} alt="原始截图缩略图" />
+                            <a className="detail-thumb" href={rawThumbUrl} target="_blank" rel="noreferrer" aria-label="查看作品截图">
+                                <img className="detail-thumb-image" src={rawThumbUrl} alt="作品截图缩略图" />
                             </a>
                         ) : null}
                     </div>

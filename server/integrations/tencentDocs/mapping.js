@@ -14,7 +14,10 @@ const BASE_TEMPLATE_COLUMNS = [
 ]
 
 const LINK_TEMPLATE_COLUMNS = ['原图链接', '汇总图链接', '结果JSON']
-const HANDOFF_TEMPLATE_COLUMNS = ['查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数']
+const HANDOFF_TEMPLATE_COLUMNS = [
+  '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数',
+  '前端小眼睛截图', '小眼睛数', '点赞数', '收藏数', '评论数'
+]
 
 function buildSyncKey({ accountId, contentId }) {
   return `${accountId}:${contentId}`
@@ -74,19 +77,29 @@ function buildTencentDocsHandoffPatch(resultPayload, { toolBaseUrl = '' } = {}) 
     查看人数: getMetricValue(resultPayload, '内容查看人数'),
     种草成交金额: getMetricValue(resultPayload, '种草成交金额'),
     种草成交人数: getMetricValue(resultPayload, '种草成交人数'),
-    商品点击次数: getMetricValue(resultPayload, '商品点击次数')
+    商品点击次数: getMetricValue(resultPayload, '商品点击次数'),
+    前端小眼睛截图: '',
+    小眼睛数: String(resultPayload?.metrics?.viewCount || '-'),
+    点赞数: String(resultPayload?.metrics?.likeCount || '-'),
+    收藏数: String(resultPayload?.metrics?.collectCount || '-'),
+    评论数: String(resultPayload?.metrics?.commentCount || '-')
   }
 
   const warnings = []
   const normalizedBaseUrl = String(toolBaseUrl || '').trim()
   if (normalizedBaseUrl) {
     row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl || resultPayload?.screenshots?.rawUrl)
+    row.前端小眼睛截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.cardUrl)
     if (!row.查看次数截图) {
       warnings.push('查看次数截图 缺少可写入地址')
     }
+    if (!row.前端小眼睛截图) {
+      warnings.push('前端小眼睛截图 缺少可写入地址')
+    }
   } else {
-    warnings.push('TOOL_BASE_URL 未配置，查看次数截图将保持为空')
+    warnings.push('TOOL_BASE_URL 未配置，截图链接将保持为空')
   }
+
 
   return {
     matchValue: String(resultPayload.contentId),

@@ -6,6 +6,7 @@ const { BrowserManager } = require('./lib/browserManager')
 const { GuangheLoginService } = require('./services/loginService')
 const { GuangheQueryService } = require('./services/queryService')
 const { GuangheTaskService } = require('./services/taskService')
+const { KeepAliveService } = require('./services/keepAliveService')
 const { TencentDocsSyncService } = require('./integrations/tencentDocs')
 const { createApp } = require('./app')
 
@@ -55,8 +56,14 @@ const taskService = new GuangheTaskService({
   maxConcurrentQueries: config.maxConcurrentQueries
 })
 
-taskService.start()
+const keepAliveService = new KeepAliveService({
+  accountStore,
+  browserManager,
+  intervalMs: 12 * 60 * 60 * 1000 // 12 小时跑一次
+})
 
+taskService.start()
+keepAliveService.start()
 const app = createApp({ config, loginService, queryService, taskService, tencentDocsSyncService })
 
 app.listen(config.port, config.host, () => {

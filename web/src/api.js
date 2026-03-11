@@ -36,6 +36,7 @@ export const api = {
   listTasks: () => request('/api/tasks', { method: 'GET' }),
   createTaskBatch: (tasks) => request('/api/tasks/batch', { method: 'POST', body: JSON.stringify({ tasks }) }),
   createSheetDemandTaskBatch: (count) => request('/api/tasks/sheet-demand/batch', { method: 'POST', body: JSON.stringify({ count }) }),
+  createSheetDemandTaskFromAccounts: ({ accountIds, sheetTarget }) => request('/api/tasks/sheet-demand/from-accounts', { method: 'POST', body: JSON.stringify({ accountIds, sheetTarget }) }),
   refreshTaskLogin: (taskId) => request(`/api/tasks/${taskId}/refresh-login`, { method: 'POST' }),
   retryTaskQuery: (taskId) => request(`/api/tasks/${taskId}/retry-query`, { method: 'POST' }),
   deleteTask: (taskId) => request(`/api/tasks/${taskId}`, { method: 'DELETE' }),
@@ -50,9 +51,9 @@ export const api = {
     body: JSON.stringify({ target })
   }),
   getTencentDocsLoginSession: (loginSessionId) => request(`/api/tencent-docs/login-sessions/${loginSessionId}`, { method: 'GET' }),
-  inspectTencentDocsSheet: ({ target, maxRows } = {}) => request('/api/tencent-docs/sheet/inspect', {
+  inspectTencentDocsSheet: ({ target, maxRows, forceRefresh = false } = {}) => request('/api/tencent-docs/sheet/inspect', {
     method: 'POST',
-    body: JSON.stringify({ target, maxRows })
+    body: JSON.stringify({ target, maxRows, forceRefresh })
   }),
   previewTencentDocsHandoff: ({ resultUrl, target, maxRows, match } = {}) => request('/api/tencent-docs/handoff/preview', {
     method: 'POST',

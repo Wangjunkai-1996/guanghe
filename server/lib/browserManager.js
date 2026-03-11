@@ -88,8 +88,9 @@ class BrowserManager {
   }
 
   async launchContext(profileDir) {
+    const isHeadless = process.env.PLAYWRIGHT_HEADLESS !== 'false'
     return chromium.launchPersistentContext(profileDir, {
-      headless: true,
+      headless: isHeadless,
       executablePath: this.browserExecutablePath,
       viewport: { width: 1728, height: 1117 },
       args: [

@@ -75,6 +75,58 @@ class GuangheTaskService {
     return this.createTaskBatchFromEntries(entries)
   }
 
+  async createSheetDemandTasksFromAccounts({ accountIds, sheetTarget } = {}) {
+    if (!Array.isArray(accountIds) || accountIds.length === 0) {
+        throw new AppError(400, 'INVALID_INPUT', '请提至少一个要查询的账号 ID')
+    }
+    if (!sheetTarget?.docUrl || !sheetTarget?.sheetName) {
+        throw new AppError(400, 'TENCENT_DOCS_NOT_CONFIGURED', '缺少目标工作表配置')
+    }
+
+    const tasks = []
+    
+    for (const accountId of accountIds) {
+        const account = this.loginService.accountStore.get(accountId)
+        if (!account || account.status !== 'READY') {
+            continue // Skip invalid accounts silently for batch robustness
+        }
+        
+        const partialTask = {
+            remark: `账号跑批一键查询`,
+            contentId: '',
+            taskMode: 'SHEET_DEMAND',
+            sheetTarget: sheetTarget
+        }
+
+        const taskData = {
+            ...partialTask,
+            taskId: crypto.randomUUID(),
+            loginSessionId: '',
+            qrImageUrl: '',
+            accountId: account.accountId,
+            accountNickname: account.nickname,
+            createdAt: new Date().toISOString(),
+            fetchedAt: null,
+            error: null,
+            login: { status: 'LOGGED_IN' }, // Directly mark as logged in since we inject an existing account
+            query: { status: 'IDLE' },
+            metrics: null,
+            screenshots: { rawUrl: '', summaryUrl: '' },
+            artifacts: { resultUrl: '', networkLogUrl: '' },
+            sheetMatch: null,
+            sync: { status: 'IDLE', error: null, result: null }
+        }
+
+        const task = this.taskStore.upsert(taskData)
+        tasks.push(task)
+        
+        // Immediately start resolving the sheet demand for this account in background
+        this.resolveSheetDemandTask(task.taskId).catch(() => {})
+    }
+
+    return { tasks }
+  }
+
   async createTaskBatchFromEntries(entries) {
     const tasks = []
     this.ensureActiveLoginCapacity(entries.length)

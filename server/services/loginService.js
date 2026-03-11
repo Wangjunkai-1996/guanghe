@@ -8,7 +8,8 @@ const {
   detectLoginStatus,
   extractAccountProfile,
   waitForLoginState,
-  submitSmsCode
+  submitSmsCode,
+  triggerSmsIfNeeded
 } = require('../lib/guangheUtils')
 
 class GuangheLoginService {
@@ -111,20 +112,21 @@ class GuangheLoginService {
         }
 
         if (status === LOGIN_SESSION_STATUS.WAITING_SMS) {
-          // 触发风控，等待用户提交短信验证码，暂停轮询
+          // 触发风控，记录 page
           session.page = page
           this.scheduleSessionCleanup(loginSessionId)
-          console.log(`[login] session=${loginSessionId} waiting for SMS code`)
-          return
-        }
-
-        if (status === LOGIN_SESSION_STATUS.LOGGED_IN) {
+          // 避免重复触发点击获取验证码的逻辑
+          if (!session.smsTriggered) {
+            session.smsTriggered = true
+            console.log(`[login] session=${loginSessionId} waiting for SMS code, attempting to trigger SMS logic...`)
+            await triggerSmsIfNeeded(page)
+          }
+          // 重要：切勿 return 挂起轮询！必须继续侦测浏览器状态，以防用户人工在浏览器里成功完成了登录
+        } else if (status === LOGIN_SESSION_STATUS.LOGGED_IN) {
           const account = await extractAccountProfile(page)
           await this.persistLoggedInAccount(loginSessionId, account, session.profileDir)
           return
-        }
-
-        if (status === LOGIN_SESSION_STATUS.EXPIRED) {
+        } else if (status === LOGIN_SESSION_STATUS.EXPIRED) {
           console.log(`[login] session=${loginSessionId} expired`)
           delete session.page
           await this.browserManager.closeLoginSession(loginSessionId)
@@ -212,12 +214,12 @@ class GuangheLoginService {
       throw new AppError(400, 'SMS_CODE_FAILED', '验证码提交失败，请检查验证码是否正确')
     }
 
-    // 验证码正确，恢复轮询
+    // 验证码正确
     this.clearSessionCleanup(loginSessionId)
-    delete session.page
+    // 注意：原本这儿有 this.startPolling(loginSessionId, page) 再次启动轮询...
+    // 但因为最新的设计中 WAITING_SMS 不再停止原生轮询，所以切勿在此重复启动新的轮询（防止雪崩循环）
     session.status = LOGIN_SESSION_STATUS.WAITING_CONFIRM
     session.updatedAt = new Date().toISOString()
-    this.startPolling(loginSessionId, page)
   }
 
   clearSessionCleanup(loginSessionId) {

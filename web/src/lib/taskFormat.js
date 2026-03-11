@@ -3,7 +3,11 @@ export const METRIC_ORDER = [
     '查看人数',
     '种草成交金额',
     '种草成交人数',
-    '商品点击次数'
+    '商品点击次数',
+    '小眼睛数',
+    '点赞数',
+    '收藏数',
+    '评论数'
 ]
 
 const METRIC_ALIASES = {
@@ -11,7 +15,11 @@ const METRIC_ALIASES = {
     查看人数: '内容查看人数',
     种草成交金额: '种草成交金额',
     种草成交人数: '种草成交人数',
-    商品点击次数: '商品点击次数'
+    商品点击次数: '商品点击次数',
+    小眼睛数: 'viewCount',
+    点赞数: 'likeCount',
+    收藏数: 'collectCount',
+    评论数: 'commentCount'
 }
 
 export function resolveMetricPayload(metrics, label) {
@@ -31,7 +39,12 @@ export const TENCENT_DOCS_REQUIRED_HEADERS = [
     '查看人数',
     '种草成交金额',
     '种草成交人数',
-    '商品点击次数'
+    '商品点击次数',
+    '前端小眼睛截图',
+    '小眼睛数',
+    '点赞数',
+    '收藏数',
+    '评论数'
 ]
 
 export function getMissingTencentDocsHeaders(headers) {

@@ -225,7 +225,7 @@ export function BatchTasksWorkspace() {
     }
   }, [applyTencentDocsConfigPayload, addToast])
 
-  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 200, configOverride, persistResolvedTarget = false } = {}) => {
+  const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 200, configOverride, persistResolvedTarget = false, forceRefresh = false } = {}) => {
     const effectiveConfig = configOverride || syncConfig
     const effectiveTarget = target && target.docUrl ? target : undefined
     if (!effectiveConfig.available) {
@@ -275,7 +275,7 @@ export function BatchTasksWorkspace() {
     }))
 
     try {
-      const payload = await api.inspectTencentDocsSheet({ target: effectiveTarget, maxRows })
+      const payload = await api.inspectTencentDocsSheet({ target: effectiveTarget, maxRows, forceRefresh })
       const resolvedTarget = {
         docUrl: effectiveTarget?.docUrl || payload?.target?.docUrl || '',
         sheetName: payload?.target?.sheetName || ''
@@ -388,7 +388,8 @@ export function BatchTasksWorkspace() {
     void runTencentDocsInspect({
       silent: true,
       target: syncConfig.target?.docUrl ? syncConfig.target : undefined,
-      persistResolvedTarget: Boolean(syncConfig.target?.docUrl && !syncConfig.target?.sheetName)
+      persistResolvedTarget: Boolean(syncConfig.target?.docUrl && !syncConfig.target?.sheetName),
+      forceRefresh: false
     })
   }, [runTencentDocsInspect, syncConfig.available, syncConfig.defaultTargetConfigured, syncConfig.enabled, syncConfig.loading, syncConfig.target])
 
@@ -452,7 +453,8 @@ export function BatchTasksWorkspace() {
       await runTencentDocsInspect({
         silent: true,
         configOverride: nextConfig,
-        target: docsConfigDraft.docUrl ? docsConfigDraft : undefined
+        target: docsConfigDraft.docUrl ? docsConfigDraft : undefined,
+        forceRefresh: true
       })
     }
     addToast('success', '任务列表已刷新')
@@ -476,7 +478,8 @@ export function BatchTasksWorkspace() {
         await runTencentDocsInspect({
           target: draftTarget,
           configOverride: nextConfig,
-          persistResolvedTarget: !draftTarget.sheetName
+          persistResolvedTarget: !draftTarget.sheetName,
+          forceRefresh: true
         })
       }
     } catch (nextError) {
@@ -718,7 +721,7 @@ export function BatchTasksWorkspace() {
         docsConfigDraft={docsConfigDraft}
         onDraftChange={(patch) => setDocsConfigDraft((current) => ({ ...current, ...patch }))}
         onSaveConfig={handleSaveTencentDocsConfig}
-        onInspect={() => runTencentDocsInspect({ target: docsConfigDraft.docUrl ? docsConfigDraft : undefined })}
+        onInspect={() => runTencentDocsInspect({ target: docsConfigDraft.docUrl ? docsConfigDraft : undefined, forceRefresh: true })}
         docsDiagnostic={docsDiagnostic}
         docsLoginSession={docsLoginSession}
         onStartLogin={handleStartTencentDocsLogin}
@@ -734,7 +737,7 @@ export function BatchTasksWorkspace() {
         <TencentDocsDiagnosticPanel
           syncConfig={syncConfig}
           diagnostic={docsDiagnostic}
-          onInspect={() => runTencentDocsInspect({ target: docsConfigDraft.docUrl ? docsConfigDraft : undefined })}
+          onInspect={() => runTencentDocsInspect({ target: docsConfigDraft.docUrl ? docsConfigDraft : undefined, forceRefresh: true })}
         />
       ) : null}
 

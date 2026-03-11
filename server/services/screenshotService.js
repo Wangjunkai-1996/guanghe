@@ -5,6 +5,22 @@ async function takePageScreenshot(page, filePath) {
   await page.screenshot({ path: filePath, fullPage: true, timeout: 30000 })
 }
 
+async function takeElementScreenshot(page, rect, filePath) {
+  if (!rect || rect.width <= 0 || rect.height <= 0) return
+  ensureDir(require('path').dirname(filePath))
+  // Add some padding
+  const padding = 10
+  await page.screenshot({
+    path: filePath,
+    clip: {
+      x: Math.max(0, rect.x - padding),
+      y: Math.max(0, rect.y - padding),
+      width: rect.width + padding * 2,
+      height: rect.height + padding * 2
+    }
+  })
+}
+
 async function createSummaryStripScreenshot(context, apiRecord, results, filePath) {
   ensureDir(require('path').dirname(filePath))
   const page = await context.newPage()
@@ -169,6 +185,7 @@ function escapeHtml(value) {
 
 module.exports = {
   takePageScreenshot,
+  takeElementScreenshot,
   createSummaryStripScreenshot,
   buildSummaryStripHtml,
   formatMetricValue,

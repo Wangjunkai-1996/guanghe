@@ -3,11 +3,15 @@ import { formatDateTime, formatMetricValue, getErrorPresentation } from '../lib/
 import { resolveMetricPayload } from '../lib/taskFormat'
 
 const METRIC_ORDER = [
-  '内容查看次数',
-  '内容查看人数',
+  '查看次数',
+  '查看人数',
   '种草成交金额',
   '种草成交人数',
-  '商品点击次数'
+  '商品点击次数',
+  '小眼睛数',
+  '点赞数',
+  '收藏数',
+  '评论数'
 ]
 
 export function ResultPanel({ result, error, loading, activeAccount, onRetryLogin }) {
@@ -84,7 +88,7 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
           <strong>{activeAccount ? '输入内容 ID 后即可开始查询' : '请先选择或新增账号'}</strong>
           <p>
             {activeAccount
-              ? `当前账号为 ${activeAccount.nickname}，查询完成后这里会展示 5 个固定指标和两张截图。`
+              ? `当前账号为 ${activeAccount.nickname}，查询完成后这里会展示 9 个核心指标和两张截图。`
               : '左侧选择一个账号后，再输入内容 ID 发起查询。'}
           </p>
         </div>
@@ -122,7 +126,7 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
 
           <div className="result-actions-row">
             <button className="secondary-btn" type="button" onClick={handleCopy}>
-              {copyState === 'done' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制 5 项数据'}
+              {copyState === 'done' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制全部数据'}
             </button>
             <a className="secondary-btn inline-link-btn" href={result.screenshots?.rawUrl} target="_blank" rel="noreferrer">打开原图</a>
           </div>
@@ -135,17 +139,17 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
                   type="button"
                   onClick={() => setActiveTab('summary')}
                 >
-                  汇总截图
+                  作品分析截图
                 </button>
                 <button
                   className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
                   type="button"
                   onClick={() => setActiveTab('raw')}
                 >
-                  原始截图
+                  作品管理截图
                 </button>
               </div>
-              <small>{activeTab === 'summary' ? '优先查看汇总截图，便于快速读数。' : '原始截图用于校对页面实际结果。'}</small>
+              <small>{activeTab === 'summary' ? '对应“作品分析”页面 30 日汇总数据。' : '对应“内容管理 > 作品管理”页面的单条卡片数据。'}</small>
             </div>
 
             <div className="image-stage">
