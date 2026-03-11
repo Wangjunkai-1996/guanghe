@@ -2,7 +2,8 @@ const path = require('path')
 
 const LOGIN_URL = 'https://creator.guanghe.taobao.com/page?layout=%2Fvelocity%2Flayout%2Findex.vm'
 const WORK_ANALYSIS_URL = 'https://creator.guanghe.taobao.com/page/unify/work-analysis'
-const CONTENT_MANAGE_URL = 'https://creator.guanghe.taobao.com/page/content-manage/works-manage'
+// 作品管理/工作台入口（新路径）
+const CONTENT_MANAGE_URL = 'https://creator.guanghe.taobao.com/page/workspace/tb'
 const DEFAULT_METRICS = [
   '内容查看次数',
   '内容查看人数',

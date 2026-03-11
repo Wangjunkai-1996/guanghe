@@ -223,8 +223,8 @@ describe('tencent docs integration', () => {
         target,
         maxRows,
         tabs: [{ name: '1', selected: true }],
-        columnCount: 15,
-        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        columnCount: 18,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数', '点赞数', '收藏数', '评论数'],
         rowCount: 1,
         rows: [{ sheetRow: 6, nickname: '测试达人', contentId: '554608495125', values: [], cells: { 内容id: '554608495125' } }]
       }),
@@ -235,6 +235,7 @@ describe('tencent docs integration', () => {
     ensureDir(path.join(artifactsRootDir, 'query-no-screens'))
     fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', '04-results.png'), 'raw-image')
     fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', '05-summary-strip.png'), 'summary-image')
+    fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', 'work-card.png'), 'card-image')
     fs.writeFileSync(path.join(artifactsRootDir, 'query-no-screens', 'network-log.json'), '{}')
     writeJson(path.join(artifactsRootDir, 'query-no-screens', 'results.json'), {
       accountId: '1001',
@@ -261,6 +262,7 @@ describe('tencent docs integration', () => {
 
     expect(response.status).toBe(200)
     expect(response.body.patch['查看次数截图']).toBe('https://tool.example.com/api/artifacts/query-no-screens/05-summary-strip.png')
+    expect(response.body.patch['前端小眼睛截图']).toBe('https://tool.example.com/api/artifacts/query-no-screens/work-card.png')
   })
 
   test('handoff sync resolves row by 内容id and writes J~O patch columns', async () => {
@@ -271,8 +273,8 @@ describe('tencent docs integration', () => {
         target,
         maxRows,
         tabs: [{ name: '1', selected: true }],
-        columnCount: 15,
-        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        columnCount: 18,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数', '点赞数', '收藏数', '评论数'],
         rowCount: 1,
         rows: [{
           sheetRow: 6,
@@ -308,14 +310,15 @@ describe('tencent docs integration', () => {
     expect(response.status).toBe(200)
     expect(response.body.match.sheetRow).toBe(6)
     expect(response.body.match.contentId).toBe('554608495125')
-    expect(response.body.columns.map((column) => column.columnLetter)).toEqual(['J', 'K', 'L', 'M', 'N', 'O'])
+    expect(response.body.columns.map((column) => column.columnLetter)).toEqual(['J', 'K', 'L', 'M', 'N', 'O', 'H', 'I', 'P', 'Q', 'R'])
     expect(response.body.patch['查看次数']).toBe('83611')
     expect(response.body.patch['查看次数截图']).toBe('https://tool.example.com/api/artifacts/query-1/05-summary-strip.png')
     expect(response.body.writeSummary.action).toBe('UPDATED')
     expect(calls).toHaveLength(1)
     expect(calls[0].sheetRow).toBe(6)
     expect(calls[0].cells[0].columnName).toBe('查看次数截图')
-    expect(calls[0].cells[5].columnName).toBe('商品点击次数')
+    expect(calls[0].cells[6].columnName).toBe('前端小眼睛截图')
+    expect(calls[0].cells[10].columnName).toBe('评论数')
   })
 
 
@@ -326,8 +329,8 @@ describe('tencent docs integration', () => {
         target,
         maxRows,
         tabs: [{ name: '1', selected: true }],
-        columnCount: 15,
-        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        columnCount: 18,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数', '点赞数', '收藏数', '评论数'],
         rowCount: 1,
         rows: [{ sheetRow: 6, nickname: '测试达人', contentId: '554608495125', values: [], cells: { 内容id: '554608495125' } }]
       }),
@@ -580,11 +583,16 @@ function writeResultPayload(artifactsRootDir, relativePath = 'query-1/results.js
       内容查看人数: { value: '18033', field: 'consumeUv' },
       种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
       种草成交人数: { value: '1', field: 'payBuyerCntZc' },
-      商品点击次数: { value: '3', field: 'ipvPv' }
+      商品点击次数: { value: '3', field: 'ipvPv' },
+      viewCount: '2.28w',
+      likeCount: '313',
+      collectCount: '0',
+      commentCount: '12'
     },
     screenshots: {
       rawUrl: '/api/artifacts/query-1/04-results.png',
-      summaryUrl: '/api/artifacts/query-1/05-summary-strip.png'
+      summaryUrl: '/api/artifacts/query-1/05-summary-strip.png',
+      cardUrl: '/api/artifacts/query-1/work-card.png'
     },
     artifacts: {
       resultUrl: '/api/artifacts/query-1/results.json',
@@ -594,7 +602,12 @@ function writeResultPayload(artifactsRootDir, relativePath = 'query-1/results.js
   }
 
   const fullPath = path.join(artifactsRootDir, relativePath)
+  ensureDir(path.dirname(fullPath))
   writeJson(fullPath, payload)
+  fs.writeFileSync(path.join(path.dirname(fullPath), '04-results.png'), 'raw-image')
+  fs.writeFileSync(path.join(path.dirname(fullPath), '05-summary-strip.png'), 'summary-image')
+  fs.writeFileSync(path.join(path.dirname(fullPath), 'work-card.png'), 'card-image')
+  fs.writeFileSync(path.join(path.dirname(fullPath), 'network-log.json'), '{}')
   return `/api/artifacts/${relativePath.split(path.sep).join('/')}`
 }
 

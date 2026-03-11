@@ -86,9 +86,9 @@ describe('frontend components', () => {
     )
 
     expect(screen.getByAltText('汇总截图预览')).toHaveAttribute('src', '/api/artifacts/summary.png')
-    fireEvent.click(screen.getByRole('button', { name: '原始截图' }))
+    fireEvent.click(screen.getByRole('button', { name: '作品管理截图' }))
     expect(screen.getByAltText('原始截图预览')).toHaveAttribute('src', '/api/artifacts/raw.png')
-    expect(screen.getByRole('button', { name: '复制 5 项数据' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '复制全部数据' })).toBeInTheDocument()
   })
 
   test('result panel renders retry login action for login-required error', () => {

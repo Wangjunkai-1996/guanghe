@@ -7,6 +7,7 @@ describe('tencent docs browser adapter helpers', () => {
     const mouseClick = vi.fn(async () => {})
     const waitForTimeout = vi.fn(async () => {})
     const keyboardPress = vi.fn(async () => {})
+    const keyboardType = vi.fn(async () => {})
     const input = {
       isVisible: vi.fn(async () => true),
       click: vi.fn(async () => {}),
@@ -14,7 +15,7 @@ describe('tencent docs browser adapter helpers', () => {
     }
     const page = {
       locator: vi.fn(() => ({ first: () => input })),
-      keyboard: { press: keyboardPress },
+      keyboard: { press: keyboardPress, type: keyboardType },
       mouse: { click: mouseClick },
       waitForTimeout,
       evaluate: vi.fn(async () => ({ x: 10, y: 20, w: 30, h: 40 }))
@@ -22,7 +23,8 @@ describe('tencent docs browser adapter helpers', () => {
 
     await __private.focusCell(page, { sheetRow: 52, columnIndex: 11, platform: 'darwin' })
 
-    expect(input.fill).toHaveBeenCalledWith('K52')
+    expect(input.click).toHaveBeenCalled()
+    expect(keyboardType).toHaveBeenCalledWith('K52')
     expect(mouseClick).toHaveBeenCalledTimes(1)
   })
 

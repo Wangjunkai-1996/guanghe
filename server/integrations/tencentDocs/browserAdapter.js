@@ -5,6 +5,14 @@ const { ensureDir, writeJson } = require('../../lib/files')
 const { createTencentDocsError, ERROR_CODES } = require('./errors')
 const { parseClipboardTable, normalizeHeaderCell } = require('./sheetClipboard')
 
+const IMAGE_CONVERT_MAX_ATTEMPTS = 4
+const IMAGE_PASTE_POLL_ATTEMPTS = 12
+const IMAGE_PASTE_POLL_INTERVAL_MS = 350
+const IMAGE_PASTE_SETTLE_MS = 700
+const IMAGE_CONVERT_VERIFY_ATTEMPTS = 4
+const IMAGE_CONVERT_VERIFY_INTERVAL_MS = 250
+const DEBUG_TENCENT_DOCS_ARTIFACTS = process.env.DEBUG_TENCENT_DOCS_ARTIFACTS === 'true' || process.env.DEBUG_ARTIFACTS === 'true'
+
 class TencentDocsBrowserAdapter {
   constructor({ browserExecutablePath, profileDir, headless = true, platform = process.platform }) {
     this.browserExecutablePath = browserExecutablePath
@@ -135,7 +143,9 @@ class TencentDocsBrowserAdapter {
       context = await this.launchContext()
       page = context.pages()[0] || await context.newPage()
       await openDocumentPage(page, target.docUrl)
-      await page.screenshot({ path: path.join(artifactDir, 'before-fill.png'), fullPage: true })
+      if (DEBUG_TENCENT_DOCS_ARTIFACTS) {
+        await page.screenshot({ path: path.join(artifactDir, 'before-fill.png'), fullPage: true })
+      }
 
       await assertLoggedIn(page)
       await ensureSheetSelected(page, target.sheetName)
@@ -144,6 +154,13 @@ class TencentDocsBrowserAdapter {
       const orderedCells = (cells || []).slice().sort((left, right) => left.columnIndex - right.columnIndex)
       const imageCells = orderedCells.filter((cell) => isImageCell(cell))
       const textCells = orderedCells.filter((cell) => !isImageCell(cell))
+
+      // Ensure "前端小眼睛截图" is pasted last to avoid UI focus issues
+      const eyeIndex = imageCells.findIndex((cell) => cell.columnName === '前端小眼睛截图')
+      if (eyeIndex >= 0) {
+        const [eyeCell] = imageCells.splice(eyeIndex, 1)
+        imageCells.push(eyeCell)
+      }
 
       for (const group of buildContiguousGroups(textCells)) {
         await focusCell(page, {
@@ -170,6 +187,9 @@ class TencentDocsBrowserAdapter {
 
       for (const cell of imageCells) {
         if (!cell.value) continue
+        const cellRef = `${cell.columnLetter || toColumnLetter(cell.columnIndex)}${sheetRow}`
+        const startedAt = Date.now()
+        console.log(`[TencentDocs] 开始处理图片单元格: ${cellRef} ${cell.columnName}`)
         await focusCell(page, {
           sheetRow,
           columnIndex: cell.columnIndex,
@@ -180,11 +200,14 @@ class TencentDocsBrowserAdapter {
           columnIndex: cell.columnIndex,
           platform: this.platform
         })
+        console.log(`[TencentDocs] 图片单元格处理完成: ${cellRef} ${cell.columnName} ${Date.now() - startedAt}ms`)
         await page.waitForTimeout(250)
       }
 
       await page.waitForTimeout(800)
-      await page.screenshot({ path: path.join(artifactDir, 'after-fill.png'), fullPage: true })
+      if (DEBUG_TENCENT_DOCS_ARTIFACTS) {
+        await page.screenshot({ path: path.join(artifactDir, 'after-fill.png'), fullPage: true })
+      }
 
       return {
         action: 'UPDATED',
@@ -471,6 +494,7 @@ async function writeTextCellsIndividually(page, { sheetRow, group, platform }) {
 }
 
 async function pasteImageIntoFocusedCell(page, imageUrl, { sheetRow, columnIndex, platform }) {
+  const beforeCount = await countImageNodes(page).catch(() => 0)
   const imageBase64 = await fetchImageAsBase64(imageUrl)
   await page.evaluate(async ({ imageBase64 }) => {
     const bytes = Uint8Array.from(atob(imageBase64), (character) => character.charCodeAt(0))
@@ -479,6 +503,8 @@ async function pasteImageIntoFocusedCell(page, imageUrl, { sheetRow, columnIndex
     await navigator.clipboard.write([item])
   }, { imageBase64 })
   await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
+  await waitForImagePaste(page, beforeCount)
+  await page.waitForTimeout(IMAGE_PASTE_SETTLE_MS)
   
   try {
     await convertFloatingImageToCellImage(page, { sheetRow, columnIndex, platform })
@@ -553,7 +579,7 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
   const floatingMenuPattern = /转(?:换)?为浮动图片/
   const cellRef = toColumnLetter(columnIndex) + sheetRow
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < IMAGE_CONVERT_MAX_ATTEMPTS; attempt += 1) {
     if (attempt > 0) {
       console.log(`[TencentDocs] 第 ${attempt + 1} 次尝试转单元格图片 (行:${sheetRow})`)
       await page.keyboard.press('Escape').catch(() => { })
@@ -563,8 +589,14 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
     await jumpToCellReference(page, cellRef)
     await page.waitForTimeout(300)
 
-    const selectionBounds = await getPrimarySelectionBounds(page)
-    if (!selectionBounds) continue
+    let selectionBounds = await getPrimarySelectionBounds(page)
+    if (!selectionBounds) {
+      await focusSheetGrid(page)
+      await jumpToCellReference(page, cellRef)
+      await page.waitForTimeout(200)
+      selectionBounds = await getPrimarySelectionBounds(page)
+      if (!selectionBounds) continue
+    }
 
     const imageBounds = await findFloatingImageBounds(page, selectionBounds)
     const clickTargets = buildImageConversionTargets(selectionBounds, imageBounds)
@@ -575,14 +607,19 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
         floatingMenuPattern
       })
 
+      // If menu already shows "转为浮动图片", it means the image is already a cell image.
+      if (menuState.floatingItem && !menuState.convertItem) {
+        await dismissOpenMenu(page)
+        console.log(`[TencentDocs] 已是单元格图片，无需转换 (行:${sheetRow})`)
+        return
+      }
+
       if (menuState.convertItem) {
         const clicked = await clickVisibleLocator(menuState.convertItem)
         if (!clicked) {
           await dismissOpenMenu(page)
           continue
         }
-        await page.waitForTimeout(1500) // 增加转换等待时间
-
         const converted = await verifyImageConvertedToCellImage(page, {
           cellRef,
           target,
@@ -623,29 +660,39 @@ async function verifyImageConvertedToCellImage(page, {
   convertMenuPattern,
   floatingMenuPattern
 }) {
-  await dismissOpenMenu(page)
-  await jumpToCellReference(page, cellRef)
-  await page.waitForTimeout(200)
+  for (let attempt = 0; attempt < IMAGE_CONVERT_VERIFY_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await page.waitForTimeout(IMAGE_CONVERT_VERIFY_INTERVAL_MS)
+    }
 
-  const selectionBounds = await getPrimarySelectionBounds(page)
-  if (!selectionBounds) {
-    return false
+    await dismissOpenMenu(page)
+    await jumpToCellReference(page, cellRef)
+    await page.waitForTimeout(200)
+
+    const selectionBounds = await getPrimarySelectionBounds(page)
+    if (!selectionBounds) {
+      continue
+    }
+
+    const imageBounds = await findFloatingImageBounds(page, selectionBounds)
+    if (imageBounds && !looksLikeFloatingImage(imageBounds, selectionBounds)) {
+      return true
+    }
+
+    const menuState = await openImageContextMenuAt(page, target, {
+      convertMenuPattern,
+      floatingMenuPattern
+    })
+    const converted = Boolean(menuState.floatingItem)
+      || (!menuState.convertItem && !imageBounds)
+
+    await dismissOpenMenu(page)
+    if (converted) {
+      return true
+    }
   }
 
-  const imageBounds = await findFloatingImageBounds(page, selectionBounds)
-  if (imageBounds && !looksLikeFloatingImage(imageBounds, selectionBounds)) {
-    return true
-  }
-
-  const menuState = await openImageContextMenuAt(page, target, {
-    convertMenuPattern,
-    floatingMenuPattern
-  })
-  const converted = Boolean(menuState.floatingItem)
-    || (!menuState.convertItem && !imageBounds)
-
-  await dismissOpenMenu(page)
-  return converted
+  return false
 }
 
 function looksLikeFloatingImage(imageBounds, selectionBounds) {
@@ -728,6 +775,20 @@ function buildImageConversionTargets(selectionBounds, imageBounds) {
   return targets
 }
 
+async function countImageNodes(page) {
+  return page.evaluate(() => {
+    return document.querySelectorAll('img, canvas, svg, [style*="background-image"], [class*="image"], [class*="Image"]').length
+  })
+}
+
+async function waitForImagePaste(page, beforeCount) {
+  for (let index = 0; index < IMAGE_PASTE_POLL_ATTEMPTS; index += 1) {
+    await page.waitForTimeout(IMAGE_PASTE_POLL_INTERVAL_MS)
+    const count = await countImageNodes(page).catch(() => beforeCount)
+    if (count > beforeCount) return
+  }
+}
+
 async function findFloatingImageBounds(page, selectionBounds) {
   return page.evaluate(({ selectionBounds }) => {
     if (!selectionBounds) return null
@@ -736,25 +797,40 @@ async function findFloatingImageBounds(page, selectionBounds) {
     const right = x + w
     const top = y
     const bottom = y + h
+    const cx = x + w / 2
+    const cy = y + h / 2
+    const maxDistance = Math.max(w, h) * 1.2 + 120
 
     const overlaps = (rect) => rect.right > left && rect.left < right && rect.bottom > top && rect.top < bottom
     const nodes = document.querySelectorAll('img, canvas, svg, [style*="background-image"], [class*="image"], [class*="Image"]')
     const candidates = []
     nodes.forEach((node) => {
       const rect = node.getBoundingClientRect()
-      if (rect.width < 12 || rect.height < 12) return
-      if (!overlaps(rect)) return
+      if (rect.width < 40 || rect.height < 24) return
       candidates.push({
         x: rect.x,
         y: rect.y,
         w: rect.width,
         h: rect.height,
-        area: rect.width * rect.height
+        area: rect.width * rect.height,
+        overlaps: overlaps(rect),
+        dist: Math.hypot(rect.x + rect.width / 2 - cx, rect.y + rect.height / 2 - cy)
       })
     })
 
-    candidates.sort((a, b) => b.area - a.area)
-    return candidates[0] || null
+    const overlapCandidates = candidates.filter((c) => c.overlaps)
+    if (overlapCandidates.length) {
+      overlapCandidates.sort((a, b) => b.area - a.area)
+      return overlapCandidates[0]
+    }
+
+    const nearby = candidates.filter((c) => c.dist <= maxDistance)
+    if (nearby.length) {
+      nearby.sort((a, b) => a.dist - b.dist)
+      return nearby[0]
+    }
+
+    return null
   }, { selectionBounds }).catch(() => null)
 }
 
@@ -880,8 +956,13 @@ async function copySheetSelection(page, { maxRows, platform }) {
 }
 
 async function focusSheetGrid(page) {
-  const canvas = page.locator('canvas').last()
-  const box = await canvas.boundingBox().catch(() => null)
+  const canvasLocator = page.locator('canvas')
+  const canvas = typeof canvasLocator.last === 'function'
+    ? canvasLocator.last()
+    : (typeof canvasLocator.first === 'function' ? canvasLocator.first() : canvasLocator)
+  const box = typeof canvas?.boundingBox === 'function'
+    ? await canvas.boundingBox().catch(() => null)
+    : null
   if (box) {
     await page.mouse.click(Math.round(box.x + Math.min(160, Math.max(box.width - 20, 20))), Math.round(box.y + Math.min(48, Math.max(box.height - 20, 20))))
     await page.waitForTimeout(150)

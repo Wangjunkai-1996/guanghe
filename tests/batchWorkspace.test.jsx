@@ -102,7 +102,22 @@ describe('batch task workspace ui', () => {
         { name: '1', selected: true },
         { name: '2', selected: false }
       ],
-      headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+      headers: [
+        '逛逛昵称',
+        '逛逛ID',
+        '内容id',
+        '查看次数截图',
+        '查看次数',
+        '查看人数',
+        '种草成交金额',
+        '种草成交人数',
+        '商品点击次数',
+        '前端小眼睛截图',
+        '小眼睛数',
+        '点赞数',
+        '收藏数',
+        '评论数'
+      ],
       rowCount: 3,
       columnCount: 9,
       summary: {
@@ -220,7 +235,7 @@ describe('batch task workspace ui', () => {
 
     // Switch to results tab to see results content
     fireEvent.click(within(accordionItem).getByRole('button', { name: '概览与结果' }))
-    expect(within(accordionItem).getByRole('link', { name: '查看汇总图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
+    expect(within(accordionItem).getByRole('link', { name: '查看分析图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
     expect(within(accordionItem).getAllByText('自然卷儿').length).toBeGreaterThan(0)
 
     // Switch to sync tab to see sync content
@@ -237,10 +252,10 @@ describe('batch task workspace ui', () => {
     expect(screen.getByRole('link', { name: '打开诊断 JSON' })).toHaveAttribute('href', '/api/artifacts/tencent-docs/inspect/sheet-preview.json')
     expect(screen.getByRole('heading', { name: '缺数达人列表' })).toBeInTheDocument()
     expect(screen.getByText('达人A')).toBeInTheDocument()
-    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({
+    expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith(expect.objectContaining({
       target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
       maxRows: 200
-    })
+    }))
   })
 
   test('shows live draft validation and counts in task builder', async () => {
@@ -276,7 +291,21 @@ describe('batch task workspace ui', () => {
         { name: '1', selected: true },
         { name: '1.08', selected: false }
       ],
-      headers: ['逛逛昵称', '内容id', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+      headers: [
+        '逛逛昵称',
+        '内容id',
+        '查看次数截图',
+        '查看次数',
+        '查看人数',
+        '种草成交金额',
+        '种草成交人数',
+        '商品点击次数',
+        '前端小眼睛截图',
+        '小眼睛数',
+        '点赞数',
+        '收藏数',
+        '评论数'
+      ],
       rowCount: 1,
       columnCount: 8,
       summary: {
@@ -312,10 +341,10 @@ describe('batch task workspace ui', () => {
 
     await screen.findByRole('heading', { name: '腾讯交接表驱动工作台' })
     await waitFor(() => {
-      expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith({
+      expect(api.inspectTencentDocsSheet).toHaveBeenCalledWith(expect.objectContaining({
         target: { docUrl: 'https://docs.qq.com/sheet/DUmtNbkJQdkV0QVF4?tab=BB08J2', sheetName: '' },
         maxRows: 200
-      })
+      }))
     })
     await waitFor(() => {
       expect(api.updateTencentDocsConfig).toHaveBeenCalledWith({
@@ -450,12 +479,12 @@ describe('batch task workspace ui', () => {
     expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
     expect(screen.queryByText('查询工具条')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开账号查询' }))
+    fireEvent.click(screen.getByRole('button', { name: '账号管理与单条查询' }))
 
     await waitFor(() => {
       expect(screen.getByText('查询工具条')).toBeInTheDocument()
     })
-    expect(screen.getByRole('heading', { name: '账号查询（次级入口）' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '账号库与单条查询' })).toBeInTheDocument()
   })
 })
 

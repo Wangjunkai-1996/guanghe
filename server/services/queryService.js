@@ -8,6 +8,8 @@ const {
   navigateToWorksManagement,
   searchWorkInList,
   extractWorksManagementData,
+  findWorksManagementApiRecord,
+  extractWorksManagementMetrics,
   fillContentId,
   pickDateRange30Days,
   chooseMetrics,
@@ -17,6 +19,8 @@ const {
   settle
 } = require('../lib/guangheUtils')
 const { takePageScreenshot, createSummaryStripScreenshot, takeElementScreenshot } = require('./screenshotService')
+
+const DEBUG_QUERY_ARTIFACTS = process.env.DEBUG_QUERY_ARTIFACTS === 'true' || process.env.DEBUG_ARTIFACTS === 'true'
 
 class GuangheQueryService {
   constructor({ browserManager, accountStore, artifactsRootDir }) {
@@ -38,6 +42,13 @@ class GuangheQueryService {
       const artifactDir = path.join(this.artifactsRootDir, `${formatTimestamp()}-${accountId}-${contentId}`)
       ensureDir(artifactDir)
 
+      const assertAccountLoggedIn = async () => {
+        if (/login\.taobao\.com/i.test(page.url())) {
+          this.accountStore.patch(accountId, { status: 'LOGIN_REQUIRED' })
+          throw new AppError(401, 'ACCOUNT_LOGIN_REQUIRED', '当前账号登录态已失效，请重新扫码登录')
+        }
+      }
+
       try {
         let worksData = null
         let worksPageScreenshotPath = ''
@@ -45,51 +56,92 @@ class GuangheQueryService {
         let apiRecord = null
         let rawScreenshotPath = ''
 
-        // Initial check for login state
-        await page.goto(WORK_ANALYSIS_URL, { waitUntil: 'domcontentloaded' })
-        await settle(page)
-        if (/login\.taobao\.com/i.test(page.url())) {
-          this.accountStore.patch(accountId, { status: 'LOGIN_REQUIRED' })
-          throw new AppError(401, 'ACCOUNT_LOGIN_REQUIRED', '当前账号登录态已失效，请重新扫码登录')
-        }
-
-        await dismissInterferingOverlays(page)
-
         // Phase 1: Works Management (for direct metrics & card screenshot)
         try {
           console.log('[Query] 正在进入作品管理页面...')
           // 使用更稳定的跳转方式
           await page.goto(CONTENT_MANAGE_URL, { waitUntil: 'domcontentloaded' }).catch(() => {})
           await settle(page)
+          await assertAccountLoggedIn()
           await dismissInterferingOverlays(page)
-          
-          // 如果 URL 不对，尝试点侧边栏
-          if (!page.url().includes('works-manage')) {
-             console.log('[Query] 导航失败，尝试从侧边栏进入...')
-             await navigateToWorksManagement(page)
+
+          // 如果 URL 不对或页面是 404，尝试点侧边栏
+          const isNotFound = await page.evaluate(() => {
+            const text = (document.body && document.body.innerText) || ''
+            return /页面找不到|404/.test(text)
+          }).catch(() => false)
+
+          const isWorksManageUrl = /works-manage|page\/workspace\/tb/i.test(page.url())
+          if (!isWorksManageUrl || isNotFound) {
+            console.log('[Query] 导航失败或页面 404，尝试从侧边栏进入作品管理...')
+            const navigated = await navigateToWorksManagement(page)
+            console.log('[Query] 侧边栏进入作品管理结果:', navigated, 'currentUrl=', page.url())
           }
 
-          const searchSucceeded = await searchWorkInList(page, contentId).catch(err => {
+          let searchResult = await searchWorkInList(page, contentId).catch(err => {
             console.warn('[Query] 作品搜索失败:', err.message)
-            return false
+            return { ok: false, reason: 'SEARCH_EXCEPTION' }
           })
 
-          // Debug: 拍一张搜索后的状态图，看看到底搜没搜到
-          const searchDebugPath = path.join(artifactDir, '01-search-debug.png')
-          await takePageScreenshot(page, searchDebugPath)
+          if (searchResult?.reason === 'INPUT_NOT_FOUND') {
+            console.log('[Query] 未找到作品管理搜索框，尝试重新导航后再搜索...')
+            const navigated = await navigateToWorksManagement(page)
+            console.log('[Query] 侧边栏进入作品管理结果(重试):', navigated, 'currentUrl=', page.url())
+            searchResult = await searchWorkInList(page, contentId).catch(err => {
+              console.warn('[Query] 作品搜索失败(重试):', err.message)
+              return { ok: false, reason: 'SEARCH_EXCEPTION' }
+            })
+          }
+          if (searchResult?.ok) {
+            console.log(
+              `[Query] 作品管理搜索完成: trigger=${searchResult.trigger}, foundId=${searchResult.foundId}, rowCount=${searchResult.rowCount}, cellCount=${searchResult.cellCount}`
+            )
+          }
 
-          if (searchSucceeded) {
-            // 给个短等待确保搜索结果渲染
-            await page.waitForTimeout(2000)
-            worksData = await extractWorksManagementData(page, contentId)
-            console.log('[Query] 作品管理数据抓取结果:', !!worksData)
+          if (DEBUG_QUERY_ARTIFACTS) {
+            const searchDebugPath = path.join(artifactDir, '01-search-debug.png')
+            await takePageScreenshot(page, searchDebugPath)
+          }
+
+          if (searchResult?.ok) {
+            const worksApiRecord = findWorksManagementApiRecord(networkLog, contentId)
+            const worksDomData = await extractWorksManagementData(page, contentId)
+            if (worksApiRecord) {
+              const apiMetrics = extractWorksManagementMetrics(worksApiRecord)
+              worksData = {
+                ...apiMetrics,
+                ...(worksDomData?.rect ? { rect: worksDomData.rect } : {}),
+                ...(worksDomData?.cardUrl ? { cardUrl: worksDomData.cardUrl } : {})
+              }
+            } else {
+              worksData = worksDomData
+            }
+            console.log('[Query] 作品管理数据抓取结果:', !!worksData, worksData ? {
+              viewCount: worksData.viewCount,
+              likeCount: worksData.likeCount,
+              collectCount: worksData.collectCount,
+              commentCount: worksData.commentCount,
+              source: worksData.source || ''
+            } : null)
             if (!worksData) {
+               console.warn('[Query] 作品管理未命中数据', {
+                 trigger: searchResult?.trigger,
+                 foundId: searchResult?.foundId,
+                 rowCount: searchResult?.rowCount,
+                 cellCount: searchResult?.cellCount
+               })
                throw new AppError(404, 'WORKS_DATA_NOT_FOUND', '未能在作品管理页找到对应的作品卡片或提取数据')
             }
             if (worksData.rect) {
               await page.waitForTimeout(200)
               const cardScreenshotPath = path.join(artifactDir, 'work-card.png')
-              await takeElementScreenshot(page, worksData.rect, cardScreenshotPath)
+              const clipRect = {
+                x: worksData.rect.x,
+                y: worksData.rect.y,
+                width: Math.max(1, worksData.rect.width / 3),
+                height: worksData.rect.height
+              }
+              await takeElementScreenshot(page, clipRect, cardScreenshotPath)
               worksData.cardUrl = toArtifactUrl(path.relative(this.artifactsRootDir, cardScreenshotPath))
             } else {
               // 如果没有 rect，但 worksData 有数据，说明数据抓到了但截图位置有问题，拍个全图保底
@@ -97,6 +149,7 @@ class GuangheQueryService {
               await takePageScreenshot(page, worksPageScreenshotPath)
             }
           } else {
+             console.warn('[Query] 作品管理搜索失败', searchResult)
              throw new AppError(404, 'SEARCH_FAILED', '作品管理页搜索失败或未找到结果')
           }
         } catch (phase1Error) {
@@ -110,6 +163,7 @@ class GuangheQueryService {
           console.log('[Query] 正在进入作品分析页面...')
           await page.goto(WORK_ANALYSIS_URL, { waitUntil: 'domcontentloaded' }).catch(() => {})
           await settle(page)
+          await assertAccountLoggedIn()
           await dismissInterferingOverlays(page)
           
           if (!page.url().includes('work-analysis')) {
@@ -139,7 +193,6 @@ class GuangheQueryService {
         }
 
         const networkPath = path.join(artifactDir, 'network-log.json')
-        writeJson(networkPath, networkLog)
 
         if (!apiRecord && !worksData) {
           throw new AppError(404, 'NO_DATA', '作品搜索成功，但未能从页面或网络日志中提取到任何数据', {

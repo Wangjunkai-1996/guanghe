@@ -50,6 +50,20 @@ function findApiRecord(networkLog, contentId) {
   return null
 }
 
+function findWorksManagementApiRecord(networkLog, contentId) {
+  for (let index = networkLog.length - 1; index >= 0; index -= 1) {
+    const entry = networkLog[index]
+    if (!/mtop\.taobao\.gcm\.content\.admin\.list/.test(entry.url || '')) continue
+    const parsed = parseJsonpPayload(entry.text || '')
+    const items = (((parsed || {}).data || {}).model || {}).data || []
+    for (const item of items) {
+      const candidateId = String(item?.baseInfo?.id || item?.contentId || item?.id || '')
+      if (candidateId === String(contentId)) return item
+    }
+  }
+  return null
+}
+
 function extractMetricFromApiRecord(metric, apiRecord) {
   const field = METRIC_FIELD_MAP[metric]
   const rawValue = apiRecord?.[field]?.absolute
@@ -57,6 +71,27 @@ function extractMetricFromApiRecord(metric, apiRecord) {
     field,
     value: rawValue === undefined || rawValue === null || rawValue === '' ? null : String(rawValue),
     source: `API (${field})`
+  }
+}
+
+function formatWanValue(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '-'
+  if (numeric >= 10000) {
+    return `${(numeric / 10000).toFixed(2)}w`
+  }
+  return String(numeric)
+}
+
+function extractWorksManagementMetrics(apiRecord) {
+  const interactive = apiRecord?.interactiveInfo || {}
+  const viewRaw = interactive.pvCount ?? interactive.platformPvCount ?? interactive.campaignPvCount
+  return {
+    viewCount: formatWanValue(viewRaw),
+    likeCount: formatWanValue(interactive.likeCount),
+    collectCount: formatWanValue(interactive.collectCount),
+    commentCount: formatWanValue(interactive.commentCount),
+    source: 'api'
   }
 }
 
@@ -284,7 +319,7 @@ async function navigateToWorksManagement(page) {
   await settle(page)
   await dismissInterferingOverlays(page)
 
-  const alreadyThere = /content-manage\/works-manage/i.test(page.url())
+  const alreadyThere = /content-manage\/works-manage|page\/workspace\/tb/i.test(page.url())
   if (alreadyThere) return true
 
   let firstStep = await clickAnyText(page, CONTENT_MANAGE_CANDIDATES)
@@ -306,67 +341,164 @@ async function navigateToWorksManagement(page) {
 async function searchWorkInList(page, contentId) {
   // Wait for the page to be stable
   await settle(page)
-  
+
   const input = await findSearchInput(page)
   if (!input) {
     console.warn('[searchWorkInList] 未找到搜索框')
-    return false
+    return { ok: false, reason: 'INPUT_NOT_FOUND' }
   }
 
   await input.click({ timeout: 5000 })
   await input.fill('')
   await page.keyboard.press('Meta+A').catch(() => { })
   await page.keyboard.press('Backspace').catch(() => { })
-  
+
   // Use pressSequentially to ensure React picks up the value
   await input.pressSequentially(String(contentId), { delay: 50 })
   await page.waitForTimeout(500)
 
+  let trigger = 'enter'
   const clicked = await clickAnyText(page, QUERY_BUTTON_CANDIDATES)
-  if (!clicked) {
+  if (clicked) {
+    trigger = 'button'
+  } else {
     await page.keyboard.press('Enter').catch(() => { })
   }
 
-  // Wait for the table/list to filter
-  await settle(page)
-  await page.waitForTimeout(3000) // Increased wait time for search results
-  return true
+  const debug = await waitForWorksSearchResult(page, contentId)
+    || { hasTextHit: false, rowCount: 0, cellCount: 0 }
+
+  return {
+    ok: true,
+    trigger,
+    foundId: debug.hasTextHit,
+    rowCount: debug.rowCount,
+    cellCount: debug.cellCount
+  }
+}
+
+async function waitForWorksSearchResult(page, contentId, timeoutMs = 4500) {
+  const startedAt = Date.now()
+  let previousSignature = ''
+  let stableRounds = 0
+
+  while (Date.now() - startedAt < timeoutMs) {
+    await settle(page)
+    const snapshot = await page.evaluate((targetId) => {
+      const id = String(targetId || '').trim()
+      const bodyText = (document.body && document.body.innerText) || ''
+      const rowCount = document.querySelectorAll('tr, [role="row"], .next-table-row, [class*="table-row"], [class*="TableRow"], [class*="list-row"], [class*="ListRow"]').length
+      const cellCount = document.querySelectorAll('td, [role="gridcell"], .next-table-cell, [class*="cell"], [class*="Cell"]').length
+      const hasTextHit = !!id && bodyText.includes(id)
+      return {
+        hasTextHit,
+        rowCount,
+        cellCount,
+        signature: `${hasTextHit}:${rowCount}:${cellCount}`
+      }
+    }, String(contentId)).catch(() => null)
+
+    if (!snapshot) {
+      await page.waitForTimeout(200)
+      continue
+    }
+
+    if (snapshot.signature === previousSignature) {
+      stableRounds += 1
+    } else {
+      previousSignature = snapshot.signature
+      stableRounds = 0
+    }
+
+    if (snapshot.hasTextHit || stableRounds >= 1) {
+      return snapshot
+    }
+
+    await page.waitForTimeout(200)
+  }
+
+  return null
 }
 
 async function extractWorksManagementData(page, contentId) {
   return page.evaluate((targetId) => {
     const sid = String(targetId).trim()
-    
-    // 1. 根据截图，找到包含指定 ID 的表格单元格
-    // 兼容多种可能的容器：td, div[role="gridcell"], .next-table-cell
-    const cells = Array.from(document.querySelectorAll('td, [role="gridcell"], .next-table-cell, div'))
-    const targetCell = cells.find(el => {
-      // 检查是否包含 ID
-      const text = (el.innerText || '').replace(/\s+/g, '')
-      const hasId = text.includes('ID:' + sid) || text.includes('ID：' + sid) || text.includes(sid)
-      if (!hasId) return false
-      
-      // 必须有一定尺寸
+    const isValidRect = (r) => r.width > 180 && r.height > 40 && r.width < 2000 && r.height < 800
+    const hasIdText = (text) => {
+      const compact = String(text || '').replace(/\s+/g, '')
+      return compact.includes(`ID:${sid}`) || compact.includes(`ID：${sid}`) || compact.includes(sid)
+    }
+
+    const rowSelectors = [
+      'tr',
+      '[role="row"]',
+      '.next-table-row',
+      '[class*="table-row"]',
+      '[class*="TableRow"]',
+      '[class*="list-row"]',
+      '[class*="ListRow"]',
+      '[class*="card"]',
+      '[class*="Card"]'
+    ].join(',')
+
+    const rows = Array.from(document.querySelectorAll(rowSelectors))
+    let targetCell = rows.find((el) => {
+      const text = el.innerText || ''
+      if (!hasIdText(text)) return false
       const r = el.getBoundingClientRect()
-      return r.width > 100 && r.height > 50
-    })
+      return isValidRect(r)
+    }) || null
 
     if (!targetCell) {
-      console.log('[DEBUG] 未找到包含 ID 的 单元格')
+      // Fallback: cell-level candidates (avoid scanning all divs to reduce false positives)
+      const cellSelectors = [
+        'td',
+        '[role="gridcell"]',
+        '.next-table-cell',
+        '[class*="cell"]',
+        '[class*="Cell"]'
+      ].join(',')
+      const cells = Array.from(document.querySelectorAll(cellSelectors))
+      targetCell = cells.find((el) => {
+        const text = el.innerText || ''
+        if (!hasIdText(text)) return false
+        const r = el.getBoundingClientRect()
+        return isValidRect(r)
+      }) || null
+    }
+
+    if (!targetCell) {
       return null
     }
 
     // 2. 提取数据
-    let stats = { viewCount: '-', likeCount: '-', collectCount: '-', commentCount: '-' }
-    
-    const quantityDiv = targetCell.querySelector('[class*="quantity"], [class*="Quantity"], [class*="stats"], [class*="Stats"]')
-    if (quantityDiv) {
-      const nums = (quantityDiv.innerText || '').match(/[0-9.]+(?:[wW万])?/g) || []
-      if (nums.length >= 4) {
-        stats.viewCount = nums[0]
-        stats.likeCount = nums[1]
-        stats.collectCount = nums[2]
-        stats.commentCount = nums[3]
+    let stats = { viewCount: '-', likeCount: '-', collectCount: '-', commentCount: '-', source: '' }
+
+    const messageNumbers = Array.from(
+      targetCell.querySelectorAll('.messageNumber, [class*="messageNumber"], .message-number, [class*="message-number"]')
+    )
+      .map((node) => (node.textContent || '').trim())
+      .filter((text) => text)
+
+    if (messageNumbers.length >= 4) {
+      stats.viewCount = messageNumbers[0]
+      stats.likeCount = messageNumbers[1]
+      stats.collectCount = messageNumbers[2]
+      stats.commentCount = messageNumbers[3]
+      stats.source = 'messageNumber'
+    }
+
+    if (stats.viewCount === '-') {
+      const quantityDiv = targetCell.querySelector('[class*="quantity"], [class*="Quantity"], [class*="stats"], [class*="Stats"]')
+      if (quantityDiv) {
+        const nums = (quantityDiv.innerText || '').match(/[0-9.]+(?:[wW万])?/g) || []
+        if (nums.length >= 4) {
+          stats.viewCount = nums[0]
+          stats.likeCount = nums[1]
+          stats.collectCount = nums[2]
+          stats.commentCount = nums[3]
+          stats.source = 'quantityText'
+        }
       }
     }
 
@@ -379,6 +511,7 @@ async function extractWorksManagementData(page, contentId) {
         stats.likeCount = nums[1]
         stats.collectCount = nums[2]
         stats.commentCount = nums[3]
+        stats.source = 'afterIdText'
       }
     }
 
@@ -386,10 +519,10 @@ async function extractWorksManagementData(page, contentId) {
     return {
       ...stats,
       rect: {
-         x: rect.left,
-         y: rect.top,
-         width: rect.width,
-         height: rect.height
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
       }
     }
   }, String(contentId))
@@ -550,6 +683,7 @@ async function findSearchInput(page) {
   const searchAreaLocators = [
     '.micro-gg-search-section input:visible',
     '.SearchInput_searchSpace__1QJ4L input:visible',
+    'input[type="search"]:visible',
     'input[type="text"]:visible'
   ]
 
@@ -559,6 +693,19 @@ async function findSearchInput(page) {
       console.log(`[findSearchInput] 匹配到选择器: ${selector}`)
       return loc
     }
+  }
+
+  // Fallback to role-based textbox/searchbox if only one is visible
+  const textbox = page.getByRole('textbox').filter({ visible: true })
+  if (await textbox.count().catch(() => 0) === 1) {
+    console.log('[findSearchInput] 使用唯一可见的 textbox')
+    return textbox.first()
+  }
+
+  const searchbox = page.getByRole('searchbox').filter({ visible: true })
+  if (await searchbox.count().catch(() => 0) === 1) {
+    console.log('[findSearchInput] 使用唯一可见的 searchbox')
+    return searchbox.first()
   }
 
   return null
@@ -594,7 +741,9 @@ module.exports = {
   parseQrGenerateResponse,
   parseJsonpPayload,
   findApiRecord,
+  findWorksManagementApiRecord,
   extractMetricFromApiRecord,
+  extractWorksManagementMetrics,
   waitForLoginState,
   detectLoginStatus,
   extractAccountProfile,

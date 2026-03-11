@@ -351,11 +351,14 @@ class TencentDocsSyncService {
     const relativeDir = path.relative(this.config.artifactsRootDir, path.dirname(resultFile))
     const screenshotRawPath = path.join(path.dirname(resultFile), '04-results.png')
     const screenshotSummaryPath = path.join(path.dirname(resultFile), '05-summary-strip.png')
+    const screenshotCardPath = path.join(path.dirname(resultFile), 'work-card.png')
     const networkLogPath = path.join(path.dirname(resultFile), 'network-log.json')
 
     const screenshots = {
       rawUrl: payload?.screenshots?.rawUrl || (fs.existsSync(screenshotRawPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : ''),
-      summaryUrl: payload?.screenshots?.summaryUrl || (fs.existsSync(screenshotSummaryPath) ? toArtifactUrl(path.join(relativeDir, '05-summary-strip.png')) : '')
+      summaryUrl: payload?.screenshots?.summaryUrl || (fs.existsSync(screenshotSummaryPath) ? toArtifactUrl(path.join(relativeDir, '05-summary-strip.png')) : ''),
+      cardUrl: payload?.screenshots?.cardUrl || payload?.metrics?.cardUrl || (fs.existsSync(screenshotCardPath) ? toArtifactUrl(path.join(relativeDir, 'work-card.png')) : ''),
+      analysisFullUrl: payload?.screenshots?.analysisFullUrl || (fs.existsSync(screenshotRawPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : '')
     }
 
     const artifacts = {
