@@ -307,6 +307,11 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
 
   app.get('/api/artifacts/*', (req, res, next) => {
     try {
+      // 允许跨域，解决同步脚本在 docs.qq.com 下拉取图片的跨域问题
+      res.set('Access-Control-Allow-Origin', '*')
+      res.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
+      res.set('Access-Control-Allow-Headers', 'Content-Type')
+
       const relativePath = req.params[0]
       const decoded = relativePath.split('/').map(decodeURIComponent).join(path.sep)
       const fullPath = path.resolve(config.artifactsRootDir, decoded)

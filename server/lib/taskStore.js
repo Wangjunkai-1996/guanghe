@@ -66,25 +66,42 @@ class TaskStore extends EventEmitter {
     const next = tasks.map((task) => {
       if (isTerminalTask(task)) return task
       changed = true
-      return normalizeTask({
+      
+      const patch = {
         ...task,
-        loginSessionId: '',
-        qrImageUrl: '',
-        updatedAt: now,
-        login: {
-          ...task.login,
-          status: 'INTERRUPTED'
-        },
-        query: {
-          ...task.query,
-          status: ['RUNNING', 'QUEUED'].includes(task.query.status) ? 'FAILED' : task.query.status
-        },
-        error: {
+        updatedAt: now
+      }
+
+      // 如果是登录或查询阶段被中断
+      if (!TERMINAL_QUERY_STATUSES.has(task.query?.status)) {
+        patch.loginSessionId = ''
+        patch.qrImageUrl = ''
+        patch.login = { ...task.login, status: 'INTERRUPTED' }
+        patch.query = { 
+          ...task.query, 
+          status: ['RUNNING', 'QUEUED'].includes(task.query.status) ? 'FAILED' : task.query.status 
+        }
+        patch.error = {
           code: 'TASK_INTERRUPTED',
           message: '服务已重启，请重新生成二维码继续。',
           details: null
         }
-      })
+      }
+
+      // 如果是同步阶段被中断
+      if (task.sync?.status === 'RUNNING') {
+        patch.sync = {
+          ...task.sync,
+          status: 'FAILED',
+          error: {
+            code: 'SYNC_INTERRUPTED',
+            message: '服务器重启导致同步中断，请手动点击重试同步。',
+            details: null
+          }
+        }
+      }
+
+      return normalizeTask(patch)
     })
 
     if (changed) {
@@ -148,6 +165,9 @@ class TaskStore extends EventEmitter {
 }
 
 function isTerminalTask(task) {
+  // 如果同步正在运行中，则说明任务尚未真正结束（即使查询已成功），不能视为终态
+  if (task.sync?.status === 'RUNNING') return false
+  
   if (TERMINAL_QUERY_STATUSES.has(task.query?.status)) return true
   return TERMINAL_SHEET_MATCH_STATUSES.has(task.sheetMatch?.status)
 }

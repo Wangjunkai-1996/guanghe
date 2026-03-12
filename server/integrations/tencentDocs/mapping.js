@@ -79,17 +79,20 @@ function buildTencentDocsHandoffPatch(resultPayload, { toolBaseUrl = '' } = {}) 
     种草成交人数: getMetricValue(resultPayload, '种草成交人数'),
     商品点击次数: getMetricValue(resultPayload, '商品点击次数'),
     前端小眼睛截图: '',
-    小眼睛数: String(resultPayload?.metrics?.viewCount || '-'),
-    点赞数: String(resultPayload?.metrics?.likeCount || '-'),
-    收藏数: String(resultPayload?.metrics?.collectCount || '-'),
-    评论数: String(resultPayload?.metrics?.commentCount || '-')
+    小眼睛数: parseChineseNumber(resultPayload?.metrics?.viewCount),
+    点赞数: parseChineseNumber(resultPayload?.metrics?.likeCount),
+    收藏数: parseChineseNumber(resultPayload?.metrics?.collectCount),
+    评论数: parseChineseNumber(resultPayload?.metrics?.commentCount)
   }
 
   const warnings = []
   const normalizedBaseUrl = String(toolBaseUrl || '').trim()
   if (normalizedBaseUrl) {
-    row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl || resultPayload?.screenshots?.rawUrl)
-    row.前端小眼睛截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.cardUrl)
+    // 严格使用汇总条图（作品分析截图），避免回退到错误的管理页截图
+    row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl)
+    // 前端小眼睛截图（作品管理卡片截图）优先使用 cardUrl，其次是 rawUrl
+    row.前端小眼睛截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.cardUrl || resultPayload?.screenshots?.rawUrl)
+    
     if (!row.查看次数截图) {
       warnings.push('查看次数截图 缺少可写入地址')
     }
@@ -138,10 +141,26 @@ function formatDateTime(value, timezone) {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`
 }
 
+function parseChineseNumber(value) {
+  // 如果传入的是对象 { value, source }，取出 value
+  const rawValue = (value && typeof value === 'object') ? value.value : value
+  if (!rawValue || rawValue === '-') return '-'
+  const str = String(rawValue).trim().toLowerCase()
+  if (str.endsWith('w')) {
+    const num = parseFloat(str.replace('w', ''))
+    return isNaN(num) ? str : String(Math.round(num * 10000))
+  }
+  return str.replace(/,/g, '') // 顺便处理千分位逗号
+}
+
 function buildAbsoluteUrl(baseUrl, relativeUrl) {
   if (!relativeUrl) return ''
+  // 如果已经是绝对地址（带 http），直接返回
+  if (/^https?:\/\//i.test(relativeUrl)) return relativeUrl
+  
   try {
-    return new URL(String(relativeUrl).replace(/^\//, ''), ensureTrailingSlash(baseUrl)).toString()
+    const base = ensureTrailingSlash(baseUrl || 'http://localhost:3001')
+    return new URL(String(relativeUrl).replace(/^\//, ''), base).toString()
   } catch (_error) {
     return ''
   }

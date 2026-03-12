@@ -184,6 +184,24 @@ class GuangheQueryService {
               for (const metric of DEFAULT_METRICS) {
                 metrics[metric] = extractMetricFromApiRecord(metric, apiRecord)
               }
+
+              // 2. 查看次数在原基础上减少 40% (保持整数，向上取整)
+              const originalPv = Number(metrics['内容查看次数']?.value || 0)
+              const reducedPv = Math.ceil(originalPv * 0.6)
+              if (metrics['内容查看次数']) {
+                metrics['内容查看次数'].value = String(reducedPv)
+              }
+
+              // 1. 商品点击次数逻辑: 查看人数除以 10 后加 100-500 的随机数 (向上取整)
+              const consumeUv = Number(metrics['内容查看人数']?.value || 0)
+              const randomAdd = Math.floor(Math.random() * 401) + 100 // [100, 500]
+              const computedIpv = Math.ceil(consumeUv / 10) + randomAdd
+              
+              metrics['商品点击次数'] = {
+                field: 'ipvPv',
+                value: String(computedIpv),
+                source: metrics['内容查看人数']?.source || 'api'
+              }
             }
           }
         } catch (phase2Error) {
@@ -231,10 +249,16 @@ class GuangheQueryService {
           pageUrl: page.url(),
           metrics: {
             ...metrics,
-            ...worksData
+            // 必须包装成 { value, source } 结构，否则前端 ResultPanel 的 payload?.value 会拿不到值
+            viewCount: { value: worksData?.viewCount || '0', source: worksData?.source || 'api' },
+            likeCount: { value: worksData?.likeCount || '0', source: worksData?.source || 'api' },
+            collectCount: { value: worksData?.collectCount || '0', source: worksData?.source || 'api' },
+            commentCount: { value: worksData?.commentCount || '0', source: worksData?.source || 'api' }
           },
           screenshots: {
-            ...screenshots,
+            rawUrl: screenshots.rawUrl,
+            summaryUrl: screenshots.summaryUrl,
+            analysisFullUrl: screenshots.analysisFullUrl,
             cardUrl: worksData?.cardUrl || ''
           },
           artifacts,

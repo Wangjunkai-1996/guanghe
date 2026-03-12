@@ -5,13 +5,16 @@ const { ensureDir, writeJson } = require('../../lib/files')
 const { createTencentDocsError, ERROR_CODES } = require('./errors')
 const { parseClipboardTable, normalizeHeaderCell } = require('./sheetClipboard')
 
-const IMAGE_CONVERT_MAX_ATTEMPTS = 4
-const IMAGE_PASTE_POLL_ATTEMPTS = 12
-const IMAGE_PASTE_POLL_INTERVAL_MS = 350
-const IMAGE_PASTE_SETTLE_MS = 700
-const IMAGE_CONVERT_VERIFY_ATTEMPTS = 4
-const IMAGE_CONVERT_VERIFY_INTERVAL_MS = 250
+const IMAGE_CONVERT_MAX_ATTEMPTS = 3
+const IMAGE_PASTE_POLL_ATTEMPTS = 10
+const IMAGE_PASTE_POLL_INTERVAL_MS = 250
+const IMAGE_PASTE_SETTLE_MS = 400
+const IMAGE_CONVERT_VERIFY_ATTEMPTS = 2
+const IMAGE_CONVERT_VERIFY_INTERVAL_MS = 200
 const DEBUG_TENCENT_DOCS_ARTIFACTS = process.env.DEBUG_TENCENT_DOCS_ARTIFACTS === 'true' || process.env.DEBUG_ARTIFACTS === 'true'
+const SINGLE_CELL_MAX_WIDTH = 420
+const SINGLE_CELL_MAX_HEIGHT = 120
+const SELECTION_GUARD_ATTEMPTS = 3
 
 class TencentDocsBrowserAdapter {
   constructor({ browserExecutablePath, profileDir, headless = true, platform = process.platform }) {
@@ -168,6 +171,8 @@ class TencentDocsBrowserAdapter {
           columnIndex: group[0].columnIndex,
           platform: this.platform
         })
+        const groupStartRef = `${toColumnLetter(group[0].columnIndex)}${sheetRow}`
+        await ensureSingleCellSelection(page, { expectedCellRef: groupStartRef, platform: this.platform })
         await pasteTextIntoFocusedRange(page, group.map((cell) => String(cell.value ?? '')).join('	'), this.platform)
         await page.waitForTimeout(250)
         try {
@@ -357,7 +362,7 @@ async function findExistingRow(page, syncKey, platform) {
 
 async function overwriteCurrentRow(page, row, columns, platform) {
   await moveToRowStart(page, platform)
-  await fillRow(page, row, columns)
+  await fillRow(page, row, columns, platform)
   return {
     action: 'UPDATED',
     matchedBy: ['同步键']
@@ -369,14 +374,15 @@ async function appendRow(page, row, columns, platform) {
   await moveToRowStart(page, platform)
   await page.keyboard.press('ArrowDown')
   await page.waitForTimeout(200)
-  await fillRow(page, row, columns)
+  await fillRow(page, row, columns, platform)
   return {
     action: 'APPENDED',
     matchedBy: ['同步键']
   }
 }
 
-async function fillRow(page, row, columns) {
+async function fillRow(page, row, columns, platform) {
+  await ensureSingleCellSelection(page, { platform })
   const values = columns.map((column) => String(row[column] ?? ''))
 
   for (let index = 0; index < values.length; index += 1) {
@@ -456,9 +462,12 @@ async function pasteTextIntoFocusedRange(page, text, platform) {
     await navigator.clipboard.writeText(text)
   }, { text })
   await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
+  await page.waitForTimeout(120)
+  await page.keyboard.press('Enter').catch(() => { })
+  await page.waitForTimeout(120)
 }
 
-async function writeTextIntoFocusedCell(page, value, platform) {
+async function writeTextIntoFocusedCell(page, value, platform, expectedCellRef) {
   const refocused = await refocusPrimarySelection(page)
   if (!refocused) {
     await focusSheetGrid(page)
@@ -467,13 +476,23 @@ async function writeTextIntoFocusedCell(page, value, platform) {
   // Wait for cell edit mode or focus to settle if UI delays exist
   await page.waitForTimeout(50)
 
-  await page.keyboard.press('Backspace').catch(() => { })
+  await ensureSingleCellSelection(page, { platform, expectedCellRef })
   const normalizedValue = String(value ?? '')
-  if (normalizedValue) {
-    await page.keyboard.insertText(normalizedValue).catch(() => { })
+  if (!normalizedValue) {
+    await page.keyboard.press('Backspace').catch(() => { })
+    await page.waitForTimeout(60)
+    await page.keyboard.press('Enter').catch(() => { })
+    await page.waitForTimeout(80)
+    return
   }
+
+  await page.evaluate(async ({ text }) => {
+    await navigator.clipboard.writeText(text)
+  }, { text: normalizedValue })
+  await page.keyboard.press(`${getShortcutKey(platform)}+v`).catch(() => { })
+  await page.waitForTimeout(120)
   await page.keyboard.press('Enter').catch(() => { })
-  await page.waitForTimeout(50)
+  await page.waitForTimeout(120)
 }
 
 async function writeTextCellsIndividually(page, { sheetRow, group, platform }) {
@@ -483,7 +502,8 @@ async function writeTextCellsIndividually(page, { sheetRow, group, platform }) {
       columnIndex: cell.columnIndex,
       platform
     })
-    await writeTextIntoFocusedCell(page, String(cell.value ?? ''), platform)
+    const cellRef = `${cell.columnLetter || toColumnLetter(cell.columnIndex)}${sheetRow}`
+    await writeTextIntoFocusedCell(page, String(cell.value ?? ''), platform, cellRef)
     await page.waitForTimeout(200)
     await verifyTextGroupWritten(page, {
       sheetRow,
@@ -494,6 +514,7 @@ async function writeTextCellsIndividually(page, { sheetRow, group, platform }) {
 }
 
 async function pasteImageIntoFocusedCell(page, imageUrl, { sheetRow, columnIndex, platform }) {
+  console.log(`[TencentDocs] 正在获取图片字节流: ${imageUrl} (行:${sheetRow} 列:${columnIndex})`)
   const beforeCount = await countImageNodes(page).catch(() => 0)
   const imageBase64 = await fetchImageAsBase64(imageUrl)
   await page.evaluate(async ({ imageBase64 }) => {
@@ -535,6 +556,7 @@ async function verifyTextGroupWritten(page, { sheetRow, group, platform }) {
 
     const actualValues = parseClipboardRowValues(await readClipboardText(page))
     if (clipboardRowMatches(actualValues, expectedValues)) {
+      await page.keyboard.press('Escape').catch(() => { })
       return
     }
 
@@ -598,7 +620,7 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
       if (!selectionBounds) continue
     }
 
-    const imageBounds = await findFloatingImageBounds(page, selectionBounds)
+      const imageBounds = await findFloatingImageBounds(page, selectionBounds)
     const clickTargets = buildImageConversionTargets(selectionBounds, imageBounds)
 
     for (const target of clickTargets) {
@@ -610,7 +632,7 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
       // If menu already shows "转为浮动图片", it means the image is already a cell image.
       if (menuState.floatingItem && !menuState.convertItem) {
         await dismissOpenMenu(page)
-        console.log(`[TencentDocs] 已是单元格图片，无需转换 (行:${sheetRow})`)
+        console.log(`[TencentDocs] 已处于单元格图片状态 (行:${sheetRow})`)
         return
       }
 
@@ -627,12 +649,17 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
           floatingMenuPattern
         })
         if (converted) {
-          console.log(`[TencentDocs] 成功验证第 ${sheetRow} 行截图已转为单元格图片`)
+          console.log(`[TencentDocs] 成功转为单元格图片: ${cellRef}`)
           return
         }
       }
 
       await dismissOpenMenu(page)
+      
+      // 如果已经有点中图片但在当前点没看到菜单，不要在这个循环里继续点其他点浪费时间，除非这个点本身没反应
+      if (imageBounds && target === clickTargets[0]) {
+         // 既然点中了识别到的图片中心还没菜单，说明目标可能偏移了
+      }
     }
     
     // 如果还没转成功，尝试在网格上点一下重新夺回焦点
@@ -644,9 +671,9 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
 
 async function openImageContextMenuAt(page, target, { convertMenuPattern, floatingMenuPattern }) {
   await page.mouse.click(target.x, target.y).catch(() => { })
-  await page.waitForTimeout(150)
+  await page.waitForTimeout(100)
   await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
-  await page.waitForTimeout(400)
+  await page.waitForTimeout(300)
 
   return {
     convertItem: await findVisibleMenuItem(page, convertMenuPattern),
@@ -706,8 +733,9 @@ function looksLikeFloatingImage(imageBounds, selectionBounds) {
 
 async function findVisibleMenuItem(page, pattern) {
   const candidates = [
+    // 增加对通用容器的匹配，有时名字在内部 span 里
+    page.locator('.dui-menu-item, [role="menuitem"]').filter({ hasText: pattern }).first(),
     page.getByRole('menuitem', { name: pattern }).first(),
-    page.locator('[role="menuitem"]').filter({ hasText: pattern }).first(),
     page.getByText(pattern).first()
   ]
 
@@ -742,34 +770,31 @@ async function dismissOpenMenu(page) {
 
 function buildImageConversionTargets(selectionBounds, imageBounds) {
   const targets = []
-  const seen = new Set()
-  const addPoint = (x, y) => {
-    const key = `${x}:${y}`
-    if (seen.has(key)) return
-    seen.add(key)
-    targets.push({ x, y })
-  }
-
   if (imageBounds) {
-    addPoint(
-      Math.round(imageBounds.x + imageBounds.w / 2),
-      Math.round(imageBounds.y + imageBounds.h / 2)
-    )
+    // 既然精确识别到了图片，优先且只点它的中心
+    targets.push({
+      x: Math.round(imageBounds.x + imageBounds.w / 2),
+      y: Math.round(imageBounds.y + imageBounds.h / 2)
+    })
+    // 增加图片四个角稍微往里一点的点，防止中心被其他元素遮挡
+    targets.push({ x: Math.round(imageBounds.x + 10), y: Math.round(imageBounds.y + 10) })
+    targets.push({ x: Math.round(imageBounds.x + imageBounds.w - 10), y: Math.round(imageBounds.y + imageBounds.h - 10) })
   }
 
   const { x, y, w, h } = selectionBounds
   const ratios = [
     [0.5, 0.5],
-    [0.5, 0.3],
-    [0.5, 0.7],
-    [0.3, 0.5],
-    [0.7, 0.5],
     [0.2, 0.2],
     [0.8, 0.8]
   ]
 
   for (const [rx, ry] of ratios) {
-    addPoint(Math.round(x + w * rx), Math.round(y + h * ry))
+    const px = Math.round(x + w * rx)
+    const py = Math.round(y + h * ry)
+    // 避免重复点同一个区域
+    if (!targets.some(t => Math.hypot(t.x - px, t.y - py) < 5)) {
+      targets.push({ x: px, y: py })
+    }
   }
 
   return targets
@@ -858,6 +883,113 @@ async function getPrimarySelectionBounds(page) {
   }).catch(() => null)
 }
 
+async function readNameBoxValue(page) {
+  try {
+    const locator = page.locator('input.bar-label').first()
+    if (!locator) return ''
+    if (typeof locator.inputValue === 'function') {
+      return await locator.inputValue().catch(() => '')
+    }
+    if (typeof locator.evaluate === 'function') {
+      return await locator.evaluate((el) => el.value || el.getAttribute('value') || '').catch(() => '')
+    }
+    if (typeof locator.getAttribute === 'function') {
+      return await locator.getAttribute('value').catch(() => '')
+    }
+    return ''
+  } catch (_error) {
+    return ''
+  }
+}
+
+function normalizeNameBoxValue(value) {
+  return String(value || '').trim().toUpperCase()
+}
+
+function isSingleCellRef(value) {
+  return /^[A-Z]+[0-9]+$/.test(value)
+}
+
+function looksLikeRangeRef(value) {
+  return String(value || '').includes(':')
+}
+
+async function collapseSelection(page, platform) {
+  await focusSheetGrid(page)
+  await page.keyboard.press('Escape').catch(() => { })
+  await page.waitForTimeout(120)
+  await page.keyboard.press('ArrowRight').catch(() => { })
+  await page.keyboard.press('ArrowLeft').catch(() => { })
+  await page.waitForTimeout(120)
+}
+
+async function ensureSingleCellSelection(page, { expectedCellRef, platform } = {}) {
+  const expected = normalizeNameBoxValue(expectedCellRef)
+  let lastNameBox = ''
+
+  for (let attempt = 0; attempt < SELECTION_GUARD_ATTEMPTS; attempt += 1) {
+    lastNameBox = normalizeNameBoxValue(await readNameBoxValue(page))
+
+    if (lastNameBox) {
+      if (isSingleCellRef(lastNameBox)) {
+        if (!expected || lastNameBox === expected) {
+          await assertClipboardSingleCell(page, platform)
+          return
+        }
+
+        // 单元格不一致，尝试重新跳转
+        await jumpToCellReference(page, expected)
+        await page.waitForTimeout(200)
+        continue
+      }
+
+      if (looksLikeRangeRef(lastNameBox)) {
+        await collapseSelection(page, platform)
+        continue
+      }
+    }
+
+    const bounds = await getPrimarySelectionBounds(page)
+    if (bounds && bounds.w <= SINGLE_CELL_MAX_WIDTH && bounds.h <= SINGLE_CELL_MAX_HEIGHT) {
+      await assertClipboardSingleCell(page, platform)
+      return
+    }
+
+    await collapseSelection(page, platform)
+  }
+
+  throw createTencentDocsError(409, ERROR_CODES.SELECTION_UNSAFE, '腾讯文档选区异常，已阻止写入以避免清空整表', {
+    expectedCellRef: expectedCellRef || '',
+    nameBoxValue: lastNameBox || ''
+  })
+}
+
+async function assertClipboardSingleCell(page, platform) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://docs.qq.com' }).catch(() => { })
+  await page.keyboard.press(`${getShortcutKey(platform)}+c`).catch(() => { })
+  await page.waitForTimeout(220)
+
+  let rawTsv = ''
+  try {
+    rawTsv = await readClipboardText(page)
+  } catch (error) {
+    throw createTencentDocsError(409, ERROR_CODES.SELECTION_UNSAFE, '无法确认单元格选区，已阻止写入以避免清空整表', {
+      reason: error?.message || 'clipboard_read_failed'
+    })
+  }
+  const normalized = String(rawTsv || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = normalized.split('\n')
+  const firstLine = lines[0] || ''
+  const hasTab = firstLine.includes('\t')
+  const hasExtraRows = lines.slice(1).some((line) => String(line || '').trim() !== '')
+
+  if (hasTab || hasExtraRows) {
+    throw createTencentDocsError(409, ERROR_CODES.SELECTION_UNSAFE, '检测到多单元格选区，已阻止写入以避免清空整表', {
+      clipboardPreview: normalized.slice(0, 120)
+    })
+  }
+}
+
 async function fetchImageAsBase64(imageUrl) {
   const response = await fetch(imageUrl)
   if (!response.ok) {
@@ -882,6 +1014,7 @@ async function focusCell(page, { sheetRow, columnIndex, platform }) {
       await focusSheetGrid(page)
     }
     await page.waitForTimeout(150)
+    await ensureSingleCellSelection(page, { expectedCellRef: cellReference, platform })
     return
   }
 
@@ -909,6 +1042,7 @@ async function focusCell(page, { sheetRow, columnIndex, platform }) {
   }
 
   await page.waitForTimeout(150)
+  await ensureSingleCellSelection(page, { expectedCellRef: cellReference, platform })
 }
 
 async function readSheetSelection(page, { maxRows, platform }) {
@@ -949,6 +1083,8 @@ async function copySheetSelection(page, { maxRows, platform }) {
   await page.waitForTimeout(300)
   const rawTsv = await readClipboardText(page)
   const parsed = parseClipboardTable(rawTsv)
+  await page.keyboard.press('Escape').catch(() => { })
+  await page.waitForTimeout(120)
   return {
     rawTsv,
     ...parsed
@@ -1029,6 +1165,11 @@ async function jumpToCellReference(page, cellReference) {
     // 强力点击，确保激活输入态
     await locator.click({ force: true, timeout: 2000 })
     await page.waitForTimeout(100)
+
+    const focused = await locator.evaluate((el) => document.activeElement === el).catch(() => false)
+    if (!focused) {
+      return false
+    }
     
     // 全选并删除，确保输入框是空的
     const shortcut = getShortcutKey(process.platform)

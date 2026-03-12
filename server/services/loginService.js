@@ -109,6 +109,9 @@ class GuangheLoginService {
 
         if (status === LOGIN_SESSION_STATUS.WAITING_QR || status === LOGIN_SESSION_STATUS.WAITING_CONFIRM) {
           session.qrImageUrl = await this.captureLoginQrScreenshot({ loginSessionId, page }).catch(() => session.qrImageUrl)
+        } else {
+          // 在其他状态（如短信验证、确认中），捕获全屏截图以便用户看到脚本在做什么
+          session.qrImageUrl = await this.captureFullscreenScreenshot({ loginSessionId, page }).catch(() => session.qrImageUrl)
         }
 
         if (status === LOGIN_SESSION_STATUS.WAITING_SMS) {
@@ -277,6 +280,15 @@ class GuangheLoginService {
       throw new AppError(500, 'QR_ELEMENT_NOT_FOUND', '没有找到登录页二维码区域')
     }
 
+    return toArtifactUrl(relativePath)
+  }
+  
+  async captureFullscreenScreenshot({ loginSessionId, page }) {
+    const relativePath = path.join('login-sessions', loginSessionId, 'full.png')
+    const fullPath = path.join(this.artifactsRootDir, relativePath)
+    ensureDir(path.dirname(fullPath))
+
+    await page.screenshot({ path: fullPath, timeout: 5000 }).catch(() => {})
     return toArtifactUrl(relativePath)
   }
 }

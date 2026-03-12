@@ -532,6 +532,11 @@ class GuangheTaskService {
         sync: createIdleSyncState()
       })
 
+      // 确保任务状态和结果文件已持久化
+      await this.taskStore.flush()
+      // 给磁盘 IO 留一点缓冲时间，确保截图文件完全就绪
+      await new Promise(resolve => setTimeout(resolve, 500))
+
       await this.syncTaskToTencentDocs(taskId, result)
     } catch (error) {
       const patch = {

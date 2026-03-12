@@ -13,10 +13,14 @@ describe('tencent docs browser adapter helpers', () => {
       click: vi.fn(async () => {}),
       fill: vi.fn(async () => {})
     }
+    const context = {
+      grantPermissions: vi.fn(async () => {})
+    }
     const page = {
       locator: vi.fn(() => ({ first: () => input })),
       keyboard: { press: keyboardPress, type: keyboardType },
       mouse: { click: mouseClick },
+      context: () => context,
       waitForTimeout,
       evaluate: vi.fn(async () => ({ x: 10, y: 20, w: 30, h: 40 }))
     }

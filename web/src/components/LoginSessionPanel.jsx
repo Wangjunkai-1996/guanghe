@@ -98,12 +98,20 @@ export function LoginSessionPanel({ loginSession, qrCodeDataUrl, isOpen, onClose
           </div>
         ) : (
           <div className="drawer-qr-card">
-            <div className="qr-wrap drawer-qr-wrap">
-              {qrCodeDataUrl ? <img className="qr-image" src={qrCodeDataUrl} alt="登录二维码" /> : <div className="qr-placeholder">二维码生成中...</div>}
+            <div className={`qr-wrap drawer-qr-wrap ${loginSession.status !== 'WAITING_QR' ? 'full-preview' : ''}`}>
+              {qrCodeDataUrl ? (
+                <img className="qr-image" src={qrCodeDataUrl} alt="登录视图" style={loginSession.status !== 'WAITING_QR' ? { objectFit: 'contain', width: '100%' } : {}} />
+              ) : (
+                <div className="qr-placeholder">视图加载中...</div>
+              )}
             </div>
             <div className="drawer-helper-text">
-              <strong>操作提示</strong>
-              <p>如果二维码过期或登录失败，直接点击下方按钮刷新即可，无需离开页面。</p>
+              <strong>后台实时监控</strong>
+              <p>
+                {loginSession.status === 'WAITING_QR' 
+                  ? '请使用淘宝 App 扫码。' 
+                  : '正在观察后台页面变化，如有验证码请在下方输入。'}
+              </p>
             </div>
           </div>
         )}
@@ -115,6 +123,10 @@ export function LoginSessionPanel({ loginSession, qrCodeDataUrl, isOpen, onClose
             </button>
           ) : null}
           <button className="secondary-btn" type="button" onClick={onClose}>收起抽屉</button>
+        </div>
+        
+        <div className="drawer-footer-note" style={{ fontSize: '11px', color: '#999', padding: '12px 24px', textAlign: 'center' }}>
+          提示：如需查看更详细的后台界面，可设置 <code style={{ background: '#eee', padding: '2px 4px' }}>SHOW_BROWSER=true</code> 启动。
         </div>
       </aside>
     </div>

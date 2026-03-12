@@ -349,16 +349,21 @@ class TencentDocsSyncService {
 
   enrichResultPayloadArtifacts(payload, resultFile) {
     const relativeDir = path.relative(this.config.artifactsRootDir, path.dirname(resultFile))
-    const screenshotRawPath = path.join(path.dirname(resultFile), '04-results.png')
+    const worksManagePath = path.join(path.dirname(resultFile), '01-works-manage-full.png')
+    const analysisFullPath = path.join(path.dirname(resultFile), '04-results.png')
     const screenshotSummaryPath = path.join(path.dirname(resultFile), '05-summary-strip.png')
     const screenshotCardPath = path.join(path.dirname(resultFile), 'work-card.png')
     const networkLogPath = path.join(path.dirname(resultFile), 'network-log.json')
 
     const screenshots = {
-      rawUrl: payload?.screenshots?.rawUrl || (fs.existsSync(screenshotRawPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : ''),
+      // 原始图/作品管理图 (修正文件名为 queryService 实际生成的 -full 后缀)
+      rawUrl: payload?.screenshots?.rawUrl || (fs.existsSync(worksManagePath) ? toArtifactUrl(path.join(relativeDir, '01-works-manage-full.png')) : ''),
+      // 汇总条图
       summaryUrl: payload?.screenshots?.summaryUrl || (fs.existsSync(screenshotSummaryPath) ? toArtifactUrl(path.join(relativeDir, '05-summary-strip.png')) : ''),
+      // 列表卡片小眼睛截图
       cardUrl: payload?.screenshots?.cardUrl || payload?.metrics?.cardUrl || (fs.existsSync(screenshotCardPath) ? toArtifactUrl(path.join(relativeDir, 'work-card.png')) : ''),
-      analysisFullUrl: payload?.screenshots?.analysisFullUrl || (fs.existsSync(screenshotRawPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : '')
+      // 作品分析详情大图
+      analysisFullUrl: payload?.screenshots?.analysisFullUrl || (fs.existsSync(analysisFullPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : '')
     }
 
     const artifacts = {
@@ -528,6 +533,12 @@ class TencentDocsSyncService {
     try {
       const patchPreview = buildTencentDocsHandoffPatch(resultPayload, {
         toolBaseUrl: this.config.toolBaseUrl
+      })
+      
+      console.log(`[TencentDocs] 准备回填行数据 (Operation:${operationId}):`, {
+        contentId: resultPayload.contentId,
+        '查看次数截图': patchPreview.row['查看次数截图'],
+        '前端小眼睛截图': patchPreview.row['前端小眼睛截图']
       })
 
       const resolvedMatch = match
