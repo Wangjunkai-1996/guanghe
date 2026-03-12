@@ -88,8 +88,8 @@ function buildTencentDocsHandoffPatch(resultPayload, { toolBaseUrl = '' } = {}) 
   const warnings = []
   const normalizedBaseUrl = String(toolBaseUrl || '').trim()
   if (normalizedBaseUrl) {
-    // 严格使用汇总条图（作品分析截图），避免回退到错误的管理页截图
-    row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl)
+    // 优先使用汇总条图（作品分析截图），如果缺失则回退到详情大图，确保不会因为单一来源缺失而导致回填为空
+    row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl || resultPayload?.screenshots?.analysisFullUrl)
     // 前端小眼睛截图（作品管理卡片截图）优先使用 cardUrl，其次是 rawUrl
     row.前端小眼睛截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.cardUrl || resultPayload?.screenshots?.rawUrl)
     

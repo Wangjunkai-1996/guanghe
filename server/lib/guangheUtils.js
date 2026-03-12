@@ -199,23 +199,28 @@ async function submitSmsCode(page, code) {
 async function triggerSmsIfNeeded(page) {
   try {
     // 扩大选择器范围，防止淘宝使用 input 标签
-    const getCodeBtn = page.locator('button:has-text("获取短信校验码"), button:has-text("获取验证码"), a:has-text("验证码"), a:has-text("校验码"), input[value*="获取短信校验码"], input[value*="获取验证码"]').first()
+    // 进一步扩大选择器范围，涵盖更多变体文案和可能的容器
+    const getCodeBtn = page.locator('button:has-text("获取短信校验码"), button:has-text("获取验证码"), button:has-text("发送验证码"), button:has-text("发送校验码"), button:has-text("点击获取"), a:has-text("获取验证码"), a:has-text("获取校验码"), a:has-text("发送验证码"), a:has-text("点击获取"), input[value*="获取"], input[value*="发送"]').first()
     
-    if (await getCodeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+    if (await getCodeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       const isDisabled = await getCodeBtn.evaluate((b) => b.disabled || b.classList.contains('disabled')).catch(() => true)
       if (!isDisabled) {
         console.log(`[triggerSmsIfNeeded] 未禁用，开始点击获取验证码按钮... URL: ${page.url()}`)
         await getCodeBtn.click()
         await page.waitForTimeout(1000)
         console.log('[triggerSmsIfNeeded] 点击获取验证码按钮完毕')
+        return true
       } else {
         console.log('[triggerSmsIfNeeded] 验证码按钮处于禁用状态（可能已经发送或倒计时中）')
+        return true // 已经禁用了，视为已触发
       }
     } else {
       console.log('[triggerSmsIfNeeded] 未在当前页面找到"获取短信校验码"按钮')
+      return false
     }
   } catch (err) {
     console.warn('[triggerSmsIfNeeded] 尝试点击获取短信校验码时发生异常:', err.message)
+    return false
   }
 }
 

@@ -118,13 +118,15 @@ class GuangheLoginService {
           // 触发风控，记录 page
           session.page = page
           this.scheduleSessionCleanup(loginSessionId)
-          // 避免重复触发点击获取验证码的逻辑
+          // 只有当没有成功触发过时才尝试。由 triggerSmsIfNeeded 返回是否真正执行了点击或已发送
           if (!session.smsTriggered) {
-            session.smsTriggered = true
             console.log(`[login] session=${loginSessionId} waiting for SMS code, attempting to trigger SMS logic...`)
-            await triggerSmsIfNeeded(page)
+            const triggered = await triggerSmsIfNeeded(page)
+            if (triggered) {
+              session.smsTriggered = true
+              console.log(`[login] session=${loginSessionId} SMS trigger successful or already sent`)
+            }
           }
-          // 重要：切勿 return 挂起轮询！必须继续侦测浏览器状态，以防用户人工在浏览器里成功完成了登录
         } else if (status === LOGIN_SESSION_STATUS.LOGGED_IN) {
           const account = await extractAccountProfile(page)
           await this.persistLoggedInAccount(loginSessionId, account, session.profileDir)
@@ -167,17 +169,21 @@ class GuangheLoginService {
 
   async persistLoggedInAccount(loginSessionId, account, profileDir) {
     const existing = this.accountStore.get(account.accountId)
-    if (existing && existing.profileDir !== profileDir) {
+    const existingAbsolute = existing ? this.browserManager.resolveProfileDir(existing.profileDir) : null
+    
+    if (existingAbsolute && existingAbsolute !== profileDir) {
       await this.browserManager.closeAccount(account.accountId)
-      removeDir(existing.profileDir)
+      removeDir(existingAbsolute)
     }
+
+    const relativeProfileDir = path.relative(this.browserManager.profileRootDir, profileDir)
 
     this.accountStore.upsert({
       accountId: account.accountId,
       nickname: account.nickname,
       avatar: account.avatar,
       certDesc: account.certDesc,
-      profileDir,
+      profileDir: relativeProfileDir,
       status: 'READY',
       lastLoginAt: new Date().toISOString()
     })

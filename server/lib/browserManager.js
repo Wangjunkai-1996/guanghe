@@ -41,12 +41,19 @@ class BrowserManager {
     const existing = this.contexts.get(key)
     if (existing) return existing
 
-    ensureDir(account.profileDir)
-    const context = await this.launchContext(account.profileDir)
-    const entry = { key, context, profileDir: account.profileDir }
+    const absoluteProfileDir = this.resolveProfileDir(account.profileDir)
+    ensureDir(absoluteProfileDir)
+    const context = await this.launchContext(absoluteProfileDir)
+    const entry = { key, context, profileDir: absoluteProfileDir }
     this.contexts.set(key, entry)
     context.on('close', () => this.contexts.delete(key))
     return entry
+  }
+
+  resolveProfileDir(dir) {
+    if (!dir) return dir
+    if (path.isAbsolute(dir)) return dir
+    return path.join(this.profileRootDir, dir)
   }
 
   adoptLoginSession(loginSessionId, accountId) {
@@ -88,7 +95,7 @@ class BrowserManager {
   }
 
   async launchContext(profileDir) {
-    const isHeadless = process.env.SHOW_BROWSER === 'true' ? false : (process.env.PLAYWRIGHT_HEADLESS !== 'false')
+    const isHeadless = process.env.SHOW_BROWSER === 'true' ? false : (process.env.PLAYWRIGHT_HEADLESS === 'true')
     return chromium.launchPersistentContext(profileDir, {
       headless: isHeadless,
       executablePath: this.browserExecutablePath,

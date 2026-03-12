@@ -157,6 +157,8 @@ class TencentDocsBrowserAdapter {
       const orderedCells = (cells || []).slice().sort((left, right) => left.columnIndex - right.columnIndex)
       const imageCells = orderedCells.filter((cell) => isImageCell(cell))
       const textCells = orderedCells.filter((cell) => !isImageCell(cell))
+      
+      console.log(`[TencentDocs] 列分组完成: 图片列=[${imageCells.map(c => c.columnName).join(', ')}], 文本列=[${textCells.map(c => c.columnName).join(', ')}]`)
 
       // Ensure "前端小眼睛截图" is pasted last to avoid UI focus issues
       const eyeIndex = imageCells.findIndex((cell) => cell.columnName === '前端小眼睛截图')
@@ -235,9 +237,10 @@ class TencentDocsBrowserAdapter {
 
   async launchContext() {
     ensureDir(this.profileDir)
+    const isHeadless = process.env.SHOW_BROWSER === 'true' ? false : this.headless
     try {
       return await chromium.launchPersistentContext(this.profileDir, {
-        headless: this.headless,
+        headless: isHeadless,
         executablePath: this.browserExecutablePath,
         viewport: { width: 1728, height: 1117 },
         args: [
@@ -434,7 +437,11 @@ async function pressFirstAvailable(page, candidates) {
 }
 
 function isImageCell(cell) {
-  return /截图/.test(String(cell?.columnName || ''))
+  const name = String(cell?.columnName || '')
+  // 显式匹配已知的截图列名，确保万无一失
+  if (name === '查看次数截图' || name === '前端小眼睛截图') return true
+  // 保留模糊匹配作为保底
+  return /截图/.test(name)
 }
 
 function buildContiguousGroups(cells) {
@@ -624,6 +631,10 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
     const clickTargets = buildImageConversionTargets(selectionBounds, imageBounds)
 
     for (const target of clickTargets) {
+      // 在每一个点位右键前，先左键点一下，增加“激活”图片的概率
+      await page.mouse.click(target.x, target.y).catch(() => { })
+      await page.waitForTimeout(100)
+      
       const menuState = await openImageContextMenuAt(page, target, {
         convertMenuPattern,
         floatingMenuPattern
@@ -670,10 +681,8 @@ async function convertFloatingImageToCellImage(page, { sheetRow, columnIndex, pl
 }
 
 async function openImageContextMenuAt(page, target, { convertMenuPattern, floatingMenuPattern }) {
-  await page.mouse.click(target.x, target.y).catch(() => { })
-  await page.waitForTimeout(100)
   await page.mouse.click(target.x, target.y, { button: 'right' }).catch(() => { })
-  await page.waitForTimeout(300)
+  await page.waitForTimeout(400) // 稍微拉长菜单显示等待时间
 
   return {
     convertItem: await findVisibleMenuItem(page, convertMenuPattern),
@@ -771,14 +780,13 @@ async function dismissOpenMenu(page) {
 function buildImageConversionTargets(selectionBounds, imageBounds) {
   const targets = []
   if (imageBounds) {
-    // 既然精确识别到了图片，优先且只点它的中心
-    targets.push({
-      x: Math.round(imageBounds.x + imageBounds.w / 2),
-      y: Math.round(imageBounds.y + imageBounds.h / 2)
-    })
-    // 增加图片四个角稍微往里一点的点，防止中心被其他元素遮挡
-    targets.push({ x: Math.round(imageBounds.x + 10), y: Math.round(imageBounds.y + 10) })
-    targets.push({ x: Math.round(imageBounds.x + imageBounds.w - 10), y: Math.round(imageBounds.y + imageBounds.h - 10) })
+    const { x, y, w, h } = imageBounds
+    // 既然精确识别到了图片，使用“九宫格/十字”采样法，增加点击成功的概率
+    targets.push({ x: Math.round(x + w / 2), y: Math.round(y + h / 2) }) // 中心
+    targets.push({ x: Math.round(x + 15), y: Math.round(y + 15) })    // 左上偏内
+    targets.push({ x: Math.round(x + w - 15), y: Math.round(y + h - 15) }) // 右下偏内
+    targets.push({ x: Math.round(x + w / 2), y: Math.round(y + 10) })   // 上中偏内
+    targets.push({ x: Math.round(x + w / 2), y: Math.round(y + h - 10) }) // 下中偏内
   }
 
   const { x, y, w, h } = selectionBounds
