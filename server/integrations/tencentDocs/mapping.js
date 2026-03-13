@@ -18,6 +18,7 @@ const HANDOFF_TEMPLATE_COLUMNS = [
   '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数',
   '前端小眼睛截图', '小眼睛数', '点赞数', '收藏数', '评论数'
 ]
+const MONEY_METRICS = new Set(['种草成交金额'])
 
 function buildSyncKey({ accountId, contentId }) {
   return `${accountId}:${contentId}`
@@ -90,8 +91,8 @@ function buildTencentDocsHandoffPatch(resultPayload, { toolBaseUrl = '' } = {}) 
   if (normalizedBaseUrl) {
     // 优先使用汇总条图（作品分析截图），如果缺失则回退到详情大图，确保不会因为单一来源缺失而导致回填为空
     row.查看次数截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.summaryUrl || resultPayload?.screenshots?.analysisFullUrl)
-    // 前端小眼睛截图（作品管理卡片截图）优先使用 cardUrl，其次是 rawUrl
-    row.前端小眼睛截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.cardUrl || resultPayload?.screenshots?.rawUrl)
+    // 前端小眼睛截图优先使用单元格专用图，其次回退到原始卡片图
+    row.前端小眼睛截图 = buildAbsoluteUrl(normalizedBaseUrl, resultPayload?.screenshots?.cardCellUrl || resultPayload?.screenshots?.cardUrl || resultPayload?.screenshots?.rawUrl)
     
     if (!row.查看次数截图) {
       warnings.push('查看次数截图 缺少可写入地址')
@@ -116,7 +117,34 @@ function buildTencentDocsHandoffPatch(resultPayload, { toolBaseUrl = '' } = {}) 
 function getMetricValue(resultPayload, metricName) {
   const value = resultPayload?.metrics?.[metricName]?.value
   if (value === undefined || value === null || value === '') return '-'
+  return normalizeMetricValue(metricName, value)
+}
+
+function normalizeMetricValue(metricName, value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '-'
+
+  const normalized = raw.replace(/,/g, '')
+  const numberValue = Number(normalized)
+  if (!Number.isFinite(numberValue)) {
+    return raw
+  }
+
+  if (MONEY_METRICS.has(metricName)) {
+    return trimTrailingZeros(numberValue.toFixed(2))
+  }
+
+  if (Number.isInteger(numberValue)) {
+    return String(numberValue)
+  }
+
+  return trimTrailingZeros(String(numberValue))
+}
+
+function trimTrailingZeros(value) {
   return String(value)
+    .replace(/(\.\d*?[1-9])0+$/u, '$1')
+    .replace(/\.0+$/u, '')
 }
 
 function formatDateTime(value, timezone) {

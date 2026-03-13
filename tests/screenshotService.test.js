@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-const { buildSummaryStripHtml } = require('../server/services/screenshotService')
+const { buildSummaryStripHtml, buildCellFriendlyCardHtml } = require('../server/services/screenshotService')
 
 describe('screenshotService', () => {
   test('buildSummaryStripHtml renders title and metrics', () => {
@@ -32,5 +32,18 @@ describe('screenshotService', () => {
     expect(html).toContain('¥ 155.13')
     expect(html).toContain('83,611')
     expect(html).toContain('预估额外流量：100')
+    expect(html).toContain('内容总分：')
+    expect(html).toContain('85.0')
+    expect(html).toContain('查看详情')
+    expect(html).toContain('text-size-adjust: 100%')
+    expect(html).toContain('font-size: 22px')
+  })
+
+  test('buildCellFriendlyCardHtml renders isolated canvas shell for card conversion', () => {
+    const html = buildCellFriendlyCardHtml('data:image/png;base64,abc123')
+
+    expect(html).toContain('cell-card-output')
+    expect(html).toContain('source-card')
+    expect(html).toContain('data:image/png;base64,abc123')
   })
 })

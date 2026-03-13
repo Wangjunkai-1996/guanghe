@@ -66,6 +66,63 @@ taskService.start()
 keepAliveService.start()
 const app = createApp({ config, loginService, queryService, taskService, tencentDocsSyncService })
 
+let isShuttingDown = false
+
+async function flushPersistentState() {
+  accountStore.flush()
+  await Promise.allSettled([
+    taskStore.flush(),
+    tencentDocsSyncService.flush ? tencentDocsSyncService.flush() : Promise.resolve()
+  ])
+}
+
+function flushPersistentStateSync() {
+  accountStore.flush()
+  taskStore.writeSync()
+  if (tencentDocsSyncService.flushSync) {
+    tencentDocsSyncService.flushSync()
+  }
+}
+
+async function shutdown(signal, exitCode = 0) {
+  if (isShuttingDown) return
+  isShuttingDown = true
+
+  console.log(`[shutdown] received ${signal}, flushing persistent state...`)
+  keepAliveService.stop()
+  taskService.stop()
+
+  try {
+    await flushPersistentState()
+  } catch (error) {
+    console.error(`[shutdown] flush failed: ${error.message}`)
+  } finally {
+    process.exit(exitCode)
+  }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    void shutdown(signal, 0)
+  })
+}
+
+process.once('exit', () => {
+  keepAliveService.stop()
+  taskService.stop()
+  flushPersistentStateSync()
+})
+
+process.once('uncaughtException', (error) => {
+  console.error('[shutdown] uncaughtException', error)
+  void shutdown('uncaughtException', 1)
+})
+
+process.once('unhandledRejection', (reason) => {
+  console.error('[shutdown] unhandledRejection', reason)
+  void shutdown('unhandledRejection', 1)
+})
+
 app.listen(config.port, config.host, () => {
   console.log(`Guanghe tool server listening on http://${config.host}:${config.port}`)
 })

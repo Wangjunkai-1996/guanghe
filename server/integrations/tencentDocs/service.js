@@ -12,6 +12,8 @@ const { createTencentDocsError, ERROR_CODES, serializeSyncError } = require('./e
 const REQUIRED_HANDOFF_COLUMNS = ['查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数']
 const REQUIRED_DEMAND_COLUMNS = ['查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数']
 const EMPTY_CELL_VALUES = new Set(['', '-', '--'])
+const MATCH_SCAN_BATCH_ROWS = 200
+const MATCH_SCAN_MAX_ROWS = 5000
 
 class TencentDocsSyncService {
   constructor({ config, adapter, jobStore, workspaceStore, loginService }) {
@@ -128,11 +130,11 @@ class TencentDocsSyncService {
     return payload
   }
 
-  async matchDemandByNickname({ nickname, target, maxRows = 200 } = {}) {
+  async matchDemandByNickname({ nickname, target, maxRows } = {}) {
     this.ensureEnabled()
-    const snapshot = await this.readSheetDemandSnapshot({
+    const snapshot = await this.scanSheetDemandSnapshot({
       target,
-      maxRows: this.normalizeInspectMaxRows(maxRows),
+      maxRows: this.normalizeScanMaxRows(maxRows),
       artifactDir: this.getInspectArtifactDir(),
       strict: false
     })
@@ -153,6 +155,32 @@ class TencentDocsSyncService {
     const prepared = await this.prepareHandoffSync({ source, target, maxRows, match })
 
     try {
+      if (prepared.columns.length === 0) {
+        const writeSummary = {
+          action: 'SKIPPED',
+          sheetRow: prepared.match.sheetRow,
+          matchedBy: prepared.match.matchedBy || ['内容id'],
+          columnsUpdated: [],
+          columnIndexes: []
+        }
+
+        writeJson(path.join(prepared.artifactDir, 'handoff-write-log.json'), {
+          operationId: prepared.operationId,
+          source: prepared.source,
+          target: prepared.target,
+          match: prepared.match,
+          patch: prepared.patch,
+          columns: prepared.columns,
+          writeSummary,
+          completedAt: new Date().toISOString()
+        })
+
+        return {
+          ...this.serializeHandoffOperation(prepared),
+          writeSummary
+        }
+      }
+
       const writeSummary = await this.runSerializedBrowserOperation(async () => {
         this.ensureBrowserProfileAvailable()
         return this.adapter.updateRowCells({
@@ -353,6 +381,7 @@ class TencentDocsSyncService {
     const analysisFullPath = path.join(path.dirname(resultFile), '04-results.png')
     const screenshotSummaryPath = path.join(path.dirname(resultFile), '05-summary-strip.png')
     const screenshotCardPath = path.join(path.dirname(resultFile), 'work-card.png')
+    const screenshotCardCellPath = path.join(path.dirname(resultFile), 'work-card-cell.png')
     const networkLogPath = path.join(path.dirname(resultFile), 'network-log.json')
 
     const screenshots = {
@@ -362,6 +391,8 @@ class TencentDocsSyncService {
       summaryUrl: payload?.screenshots?.summaryUrl || (fs.existsSync(screenshotSummaryPath) ? toArtifactUrl(path.join(relativeDir, '05-summary-strip.png')) : ''),
       // 列表卡片小眼睛截图
       cardUrl: payload?.screenshots?.cardUrl || payload?.metrics?.cardUrl || (fs.existsSync(screenshotCardPath) ? toArtifactUrl(path.join(relativeDir, 'work-card.png')) : ''),
+      // 列表卡片单元格专用图
+      cardCellUrl: payload?.screenshots?.cardCellUrl || (fs.existsSync(screenshotCardCellPath) ? toArtifactUrl(path.join(relativeDir, 'work-card-cell.png')) : ''),
       // 作品分析详情大图
       analysisFullUrl: payload?.screenshots?.analysisFullUrl || (fs.existsSync(analysisFullPath) ? toArtifactUrl(path.join(relativeDir, '04-results.png')) : '')
     }
@@ -427,6 +458,16 @@ class TencentDocsSyncService {
     const value = Number(maxRows || 20)
     if (!Number.isFinite(value)) return 20
     return Math.max(1, Math.min(200, Math.floor(value)))
+  }
+
+  normalizeScanMaxRows(maxRows) {
+    if (maxRows === undefined || maxRows === null || maxRows === '') {
+      return MATCH_SCAN_MAX_ROWS
+    }
+
+    const value = Number(maxRows)
+    if (!Number.isFinite(value)) return MATCH_SCAN_MAX_ROWS
+    return Math.max(1, Math.min(MATCH_SCAN_MAX_ROWS, Math.floor(value)))
   }
 
   resolveArtifactFile(resultUrl) {
@@ -514,37 +555,186 @@ class TencentDocsSyncService {
     }
   }
 
+  async readSheetDemandWindow({ target, startRow, maxRows, headers, artifactDir, strict = true }) {
+    const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
+    ensureDir(artifactDir)
+
+    try {
+      const snapshot = await this.runSerializedBrowserOperation(async () => {
+        this.ensureBrowserProfileAvailable()
+
+        if (typeof this.adapter.readSheetWindow === 'function') {
+          return this.adapter.readSheetWindow({
+            target: resolvedTarget,
+            startRow,
+            maxRows,
+            headers,
+            artifactDir,
+            strict
+          })
+        }
+
+        const fallback = await this.adapter.readSheet({
+          target: resolvedTarget,
+          maxRows: Math.max(this.normalizeInspectMaxRows(maxRows), Number(startRow || 2)),
+          artifactDir,
+          strict
+        })
+
+        return {
+          ...fallback,
+          rows: (fallback.rows || []).filter((row) => Number(row.sheetRow) >= Number(startRow || 2)).slice(0, this.normalizeInspectMaxRows(maxRows))
+        }
+      })
+      this.workspaceStore.saveLogin({ status: 'LOGGED_IN', updatedAt: new Date().toISOString(), error: null })
+      if (Number(startRow || 2) > 2 && looksLikeRepeatedHeaderWindow(snapshot)) {
+        return {
+          ...snapshot,
+          rowCount: 0,
+          rows: []
+        }
+      }
+      return snapshot
+    } catch (error) {
+      if (error?.code === ERROR_CODES.LOGIN_REQUIRED) {
+        this.workspaceStore.saveLogin({
+          status: 'FAILED',
+          updatedAt: new Date().toISOString(),
+          error: serializeSyncError(error)
+        })
+      }
+      if (error?.code === ERROR_CODES.SELECTION_UNSAFE && Number(startRow || 2) > 2) {
+        return {
+          target: resolvedTarget,
+          startRow,
+          maxRows,
+          columnCount: Array.isArray(headers) ? headers.length : 0,
+          headers: Array.isArray(headers) ? headers : [],
+          rowCount: 0,
+          rows: []
+        }
+      }
+      throw error
+    }
+  }
+
+  async scanSheetDemandSnapshot({ target, maxRows, artifactDir, strict = true }) {
+    const scanLimit = this.normalizeScanMaxRows(maxRows)
+    const firstBatchSize = Math.min(MATCH_SCAN_BATCH_ROWS, scanLimit)
+    const firstSnapshot = await this.readSheetDemandSnapshot({
+      target,
+      maxRows: firstBatchSize,
+      artifactDir,
+      strict
+    })
+
+    const rows = [...firstSnapshot.rows]
+    let nextStartRow = firstBatchSize + 2
+
+    while (nextStartRow <= scanLimit + 1) {
+      const consumedRows = nextStartRow - 2
+      const remaining = scanLimit - consumedRows
+      if (remaining <= 0) break
+
+      const windowSize = Math.min(MATCH_SCAN_BATCH_ROWS, remaining)
+      const windowSnapshot = await this.readSheetDemandWindow({
+        target: firstSnapshot.target,
+        startRow: nextStartRow,
+        maxRows: windowSize,
+        headers: firstSnapshot.headers,
+        artifactDir,
+        strict
+      })
+
+      if (!windowSnapshot.rows?.length) {
+        break
+      }
+
+      rows.push(...windowSnapshot.rows)
+      nextStartRow += windowSize
+      if (windowSnapshot.rows.length < windowSize) {
+        break
+      }
+    }
+
+    const demands = buildSheetDemands(rows)
+    return {
+      ...firstSnapshot,
+      rows,
+      rowCount: rows.length,
+      maxRows: scanLimit,
+      demands,
+      summary: buildSheetSummary(demands)
+    }
+  }
+
+  async readLockedHandoffSnapshot({ target, sheetRow, artifactDir }) {
+    const headerSnapshot = await this.readSheetDemandSnapshot({
+      target,
+      maxRows: 1,
+      artifactDir,
+      strict: true
+    })
+
+    const rowSnapshot = await this.readSheetDemandWindow({
+      target: headerSnapshot.target,
+      startRow: Math.max(2, Number(sheetRow || 2)),
+      maxRows: 1,
+      headers: headerSnapshot.headers,
+      artifactDir,
+      strict: true
+    })
+
+    return {
+      ...headerSnapshot,
+      rows: rowSnapshot.rows || []
+    }
+  }
+
   async prepareHandoffSync({ source, target, maxRows, match }) {
     this.ensureEnabled()
     const resultPayload = this.loadResultPayload(source)
     const targetConfig = this.resolveTarget(target)
-    const normalizedMaxRows = this.normalizeInspectMaxRows(maxRows || 200)
+    const normalizedMaxRows = this.normalizeScanMaxRows(maxRows)
     const operationId = crypto.randomUUID()
     const artifactDir = this.getHandoffArtifactDir(operationId)
     const artifacts = this.buildHandoffArtifactUrls(operationId)
     ensureDir(artifactDir)
 
-    const sheet = await this.readSheetDemandSnapshot({
-      target: targetConfig,
-      maxRows: normalizedMaxRows,
-      artifactDir
-    })
+    let sheet = null
 
     try {
       const patchPreview = buildTencentDocsHandoffPatch(resultPayload, {
         toolBaseUrl: this.config.toolBaseUrl
       })
-      
+
       console.log(`[TencentDocs] 准备回填行数据 (Operation:${operationId}):`, {
         contentId: resultPayload.contentId,
         '查看次数截图': patchPreview.row['查看次数截图'],
         '前端小眼睛截图': patchPreview.row['前端小眼睛截图']
       })
 
-      const resolvedMatch = match
+      sheet = match?.sheetRow
+        ? await this.readLockedHandoffSnapshot({
+          target: targetConfig,
+          sheetRow: match.sheetRow,
+          artifactDir
+        })
+        : await this.scanSheetDemandSnapshot({
+          target: targetConfig,
+          maxRows: normalizedMaxRows,
+          artifactDir,
+          strict: true
+        })
+
+      const resolvedMatch = match?.sheetRow
         ? this.resolveLockedHandoffMatch(sheet.rows, resultPayload, match)
         : this.matchHandoffRow(sheet.rows, resultPayload)
-      const columns = this.resolveHandoffColumns(sheet.headers, patchPreview.row, patchPreview.columns)
+      const { columns, skippedColumns } = this.resolveHandoffColumns(sheet.headers, patchPreview.row, patchPreview.columns)
+      const warnings = patchPreview.warnings.slice()
+      if (skippedColumns.length > 0) {
+        warnings.push(`为保护交接表，已跳过空值列：${skippedColumns.join('、')}`)
+      }
 
       return {
         operationId,
@@ -560,14 +750,14 @@ class TencentDocsSyncService {
         maxRows: normalizedMaxRows,
         match: resolvedMatch,
         patch: patchPreview.row,
-        warnings: patchPreview.warnings,
+        warnings,
         columns,
         artifacts
       }
     } catch (error) {
       throw enrichHandoffError(error, {
         operationId,
-        target: sheet.target,
+        target: sheet?.target || targetConfig,
         artifacts
       })
     }
@@ -636,7 +826,10 @@ class TencentDocsSyncService {
   }
 
   resolveHandoffColumns(headers, patchRow, orderedColumns) {
-    return orderedColumns.map((columnName) => {
+    const columns = []
+    const skippedColumns = []
+
+    for (const columnName of orderedColumns) {
       const columnIndex = headers.findIndex((header) => header === columnName) + 1
       if (columnIndex <= 0) {
         throw createTencentDocsError(400, ERROR_CODES.COLUMN_NOT_FOUND, `腾讯文档中缺少列：${columnName}`, {
@@ -644,13 +837,24 @@ class TencentDocsSyncService {
         })
       }
 
-      return {
+      const value = String(patchRow[columnName] ?? '')
+      if (!hasWritableHandoffValue(value)) {
+        skippedColumns.push(columnName)
+        continue
+      }
+
+      columns.push({
         columnName,
         columnIndex,
         columnLetter: this.toColumnLetter(columnIndex),
-        value: String(patchRow[columnName] ?? '')
-      }
-    })
+        value
+      })
+    }
+
+    return {
+      columns,
+      skippedColumns
+    }
   }
 
   toColumnLetter(columnIndex) {
@@ -700,6 +904,18 @@ class TencentDocsSyncService {
     return this.jobStore.getJob(jobId)
   }
 
+  async flush() {
+    await Promise.allSettled([
+      this.jobStore.flush(),
+      this.workspaceStore.flush()
+    ])
+  }
+
+  flushSync() {
+    this.jobStore.writeSync()
+    this.workspaceStore.writeSync()
+  }
+
   serializeJob(job) {
     return {
       jobId: job.jobId,
@@ -717,6 +933,19 @@ class TencentDocsSyncService {
       updatedAt: job.updatedAt
     }
   }
+}
+
+function hasWritableHandoffValue(value) {
+  return String(value ?? '').trim() !== ''
+}
+
+function looksLikeRepeatedHeaderWindow(snapshot) {
+  const firstRow = snapshot?.rows?.[0]
+  if (!firstRow) return false
+
+  const nickname = String(firstRow.nickname || firstRow.cells?.['逛逛昵称'] || '').trim()
+  const contentId = String(firstRow.contentId || firstRow.cells?.['内容id'] || firstRow.cells?.['内容ID'] || '').trim()
+  return nickname === '逛逛昵称' || contentId === '内容id' || contentId === '内容ID'
 }
 
 function buildSheetDemands(rows = []) {

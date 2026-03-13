@@ -116,6 +116,18 @@ class TencentDocsJobStore {
     this._isDirty = false
     return this._writePromise
   }
+
+  writeSync() {
+    if (this._writeTimeout) {
+      clearTimeout(this._writeTimeout)
+      this._writeTimeout = null
+    }
+
+    if (this._isDirty) {
+      writeJson(this.jobsFile, { jobs: this._memoryCache })
+      this._isDirty = false
+    }
+  }
 }
 
 module.exports = { TencentDocsJobStore }

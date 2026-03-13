@@ -164,6 +164,13 @@ export TENCENT_DOCS_SHEET_NAME='1'
 - `/artifacts/web`：查询截图和结果文件
 - `/scripts/guanghe-fetch.js`：旧版 CLI 脚本，保留作调试参考
 
+## 账号存储说明
+
+- 账号元数据会写入 `data/accounts.json`，该文件已纳入 Git 跟踪，适合跟随仓库同步。
+- 浏览器登录态保存在 `.cache/profiles`，该目录默认被 Git 忽略，只适合本机持久化。
+- 这意味着：**同一台机器重启服务后，账号不会再凭空丢失；但跨机器拉取仓库时，账号列表虽然还在，本地登录态通常仍需要重新扫码恢复。**
+- 服务启动时如果发现 `accounts.json` 里记录的账号缺少本地 profile，会自动标记为“需重新登录”，而不是直接消失。
+
 ## 环境变量
 
 必填建议：

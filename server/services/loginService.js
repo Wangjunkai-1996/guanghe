@@ -1,4 +1,5 @@
 const crypto = require('crypto')
+const fs = require('fs')
 const path = require('path')
 const { LOGIN_URL, LOGIN_SESSION_STATUS } = require('../lib/constants')
 const { AppError } = require('../lib/errors')
@@ -19,10 +20,31 @@ class GuangheLoginService {
     this.artifactsRootDir = artifactsRootDir
     this.sessions = new Map()
     this.sessionCleanupTimers = new Map()
+    this.sanitizeStoredAccounts()
   }
 
   listAccounts() {
     return this.accountStore.list().map(({ profileDir, ...account }) => account)
+  }
+
+  sanitizeStoredAccounts() {
+    const accounts = this.accountStore.list()
+    let downgradedCount = 0
+
+    for (const account of accounts) {
+      if (account.status !== 'READY') continue
+
+      const absoluteProfileDir = this.browserManager.resolveProfileDir(account.profileDir)
+      if (absoluteProfileDir && fs.existsSync(absoluteProfileDir)) continue
+
+      this.accountStore.patch(account.accountId, { status: 'LOGIN_REQUIRED' })
+      downgradedCount += 1
+    }
+
+    if (downgradedCount > 0) {
+      this.accountStore.flush()
+      console.warn(`[login] detected ${downgradedCount} stored account(s) without local profile; marked as LOGIN_REQUIRED`)
+    }
   }
 
   async createLoginSession() {
@@ -77,6 +99,7 @@ class GuangheLoginService {
     await this.browserManager.closeAccount(accountId)
     removeDir(account.profileDir)
     this.accountStore.remove(accountId)
+    this.accountStore.flush()
   }
 
   async discardLoginSession(loginSessionId) {
@@ -187,6 +210,7 @@ class GuangheLoginService {
       status: 'READY',
       lastLoginAt: new Date().toISOString()
     })
+    this.accountStore.flush()
 
     this.browserManager.adoptLoginSession(loginSessionId, account.accountId)
     const session = this.sessions.get(loginSessionId)

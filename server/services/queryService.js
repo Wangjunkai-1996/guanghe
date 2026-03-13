@@ -18,7 +18,7 @@ const {
   extractMetricFromApiRecord,
   settle
 } = require('../lib/guangheUtils')
-const { takePageScreenshot, createSummaryStripScreenshot, takeElementScreenshot } = require('./screenshotService')
+const { takePageScreenshot, createSummaryStripScreenshot, takeElementScreenshot, createCellFriendlyCardScreenshot } = require('./screenshotService')
 
 const DEBUG_QUERY_ARTIFACTS = process.env.DEBUG_QUERY_ARTIFACTS === 'true' || process.env.DEBUG_ARTIFACTS === 'true'
 
@@ -135,6 +135,7 @@ class GuangheQueryService {
             if (worksData.rect) {
               await page.waitForTimeout(200)
               const cardScreenshotPath = path.join(artifactDir, 'work-card.png')
+              const cardCellScreenshotPath = path.join(artifactDir, 'work-card-cell.png')
               const clipRect = {
                 x: worksData.rect.x,
                 y: worksData.rect.y,
@@ -143,6 +144,14 @@ class GuangheQueryService {
               }
               await takeElementScreenshot(page, clipRect, cardScreenshotPath)
               worksData.cardUrl = toArtifactUrl(path.relative(this.artifactsRootDir, cardScreenshotPath))
+              const createdCellCard = await createCellFriendlyCardScreenshot(context, cardScreenshotPath, cardCellScreenshotPath)
+                .catch((error) => {
+                  console.warn('[Query] 作品管理截图生成单元格专用图失败:', error.message)
+                  return false
+                })
+              if (createdCellCard) {
+                worksData.cardCellUrl = toArtifactUrl(path.relative(this.artifactsRootDir, cardCellScreenshotPath))
+              }
             } else {
               // 如果没有 rect，但 worksData 有数据，说明数据抓到了但截图位置有问题，拍个全图保底
               worksPageScreenshotPath = path.join(artifactDir, '01-works-manage-full.png')
@@ -229,6 +238,8 @@ class GuangheQueryService {
           rawUrl: worksData?.cardUrl || (worksPageScreenshotPath ? toArtifactUrl(path.relative(this.artifactsRootDir, worksPageScreenshotPath)) : ''),
           // summaryUrl 是给“汇总截图/作品分析截图”用的
           summaryUrl: apiRecord ? toArtifactUrl(path.relative(this.artifactsRootDir, summaryPath)) : '',
+          // 前端小眼睛截图的单元格专用版本
+          cardCellUrl: worksData?.cardCellUrl || '',
           // 新增一个 analysisFullUrl 作为备查
           analysisFullUrl: rawScreenshotPath ? toArtifactUrl(path.relative(this.artifactsRootDir, rawScreenshotPath)) : ''
         }
@@ -259,7 +270,8 @@ class GuangheQueryService {
             rawUrl: screenshots.rawUrl,
             summaryUrl: screenshots.summaryUrl,
             analysisFullUrl: screenshots.analysisFullUrl,
-            cardUrl: worksData?.cardUrl || ''
+            cardUrl: worksData?.cardUrl || '',
+            cardCellUrl: screenshots.cardCellUrl
           },
           artifacts,
           apiRecord

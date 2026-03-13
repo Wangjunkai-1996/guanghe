@@ -1,5 +1,7 @@
 const path = require('path')
 
+const REPO_ROOT_DIR = path.resolve(__dirname, '..', '..')
+
 const LOGIN_URL = 'https://creator.guanghe.taobao.com/page?layout=%2Fvelocity%2Flayout%2Findex.vm'
 const WORK_ANALYSIS_URL = 'https://creator.guanghe.taobao.com/page/unify/work-analysis'
 // 作品管理/工作台入口（新路径）
@@ -35,7 +37,7 @@ const LOGIN_SESSION_STATUS = {
   FAILED: 'FAILED'
 }
 
-function getAppPaths(rootDir = process.cwd()) {
+function getAppPaths(rootDir = process.env.APP_ROOT_DIR || REPO_ROOT_DIR) {
   return {
     rootDir,
     dataDir: path.resolve(rootDir, 'data'),

@@ -58,6 +58,61 @@ function parseClipboardTable(rawText) {
   }
 }
 
+function parseClipboardDataRows(rawText, headers = [], { startSheetRow = 2 } = {}) {
+  const normalizedHeaders = Array.isArray(headers)
+    ? headers.map(normalizeHeaderCell)
+    : []
+  const normalizedText = String(rawText || '').replace(/\r\n/g, '\n')
+  const physicalLines = normalizedText.split('\n')
+  const physicalRows = physicalLines
+    .map((line) => line.split('\t'))
+    .filter((cells) => cells.length > 1 || String(cells[0] || '').trim() !== '')
+
+  const columnCount = Math.max(
+    normalizedHeaders.length,
+    physicalRows.reduce((max, cells) => Math.max(max, cells.length), 0)
+  )
+
+  if (!columnCount || normalizedHeaders.length === 0) {
+    return {
+      columnCount,
+      physicalLineCount: physicalRows.length,
+      logicalRowCount: 0,
+      headers: normalizedHeaders,
+      rows: []
+    }
+  }
+
+  const logicalRows = mergePhysicalRows(physicalRows, columnCount)
+    .map((cells) => padCells(cells, columnCount))
+
+  const rows = logicalRows
+    .map((values, index) => {
+      const cells = {}
+      normalizedHeaders.forEach((header, columnIndex) => {
+        if (!header) return
+        cells[header] = values[columnIndex] ?? ''
+      })
+
+      return {
+        sheetRow: Number(startSheetRow) + index,
+        values,
+        cells,
+        nickname: pickCell(normalizedHeaders, values, ['逛逛昵称']),
+        contentId: pickCell(normalizedHeaders, values, ['内容id', '内容ID'])
+      }
+    })
+    .filter((row) => row.values.some((cell) => String(cell || '').trim() !== ''))
+
+  return {
+    columnCount,
+    physicalLineCount: physicalRows.length,
+    logicalRowCount: logicalRows.length,
+    headers: normalizedHeaders,
+    rows
+  }
+}
+
 function mergePhysicalRows(physicalRows, columnCount) {
   const merged = []
   let currentRow = null
@@ -124,5 +179,6 @@ function pickCell(headers, values, candidates) {
 
 module.exports = {
   parseClipboardTable,
+  parseClipboardDataRows,
   normalizeHeaderCell
 }

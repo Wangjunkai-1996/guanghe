@@ -356,8 +356,7 @@ class GuangheTaskService {
     try {
       const response = await this.tencentDocsSyncService.matchDemandByNickname({
         nickname: task.accountNickname,
-        target: task.sheetTarget,
-        maxRows: 200
+        target: task.sheetTarget
       })
       const match = response.match || {}
       const basePatch = {
