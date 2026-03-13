@@ -4,6 +4,7 @@ const path = require('path')
 const { LOGIN_URL, LOGIN_SESSION_STATUS } = require('../lib/constants')
 const { AppError } = require('../lib/errors')
 const { removeDir, ensureDir, toArtifactUrl } = require('../lib/files')
+const { gotoWithFallback, resolveGotoTimeoutMs } = require('../lib/navigation')
 const {
   parseQrGenerateResponse,
   detectLoginStatus,
@@ -51,9 +52,21 @@ class GuangheLoginService {
     const loginSessionId = crypto.randomUUID()
     const { context, profileDir } = await this.browserManager.createLoginSessionContext(loginSessionId)
     const page = context.pages()[0] || await context.newPage()
-    const qrResponsePromise = page.waitForResponse((response) => response.url().includes('qrCode/generate.do'), { timeout: 30000 })
-    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' })
-    const qrResponse = await qrResponsePromise
+    const gotoTimeoutMs = resolveGotoTimeoutMs()
+    const qrResponseOutcomePromise = page
+      .waitForResponse((response) => response.url().includes('qrCode/generate.do'), { timeout: gotoTimeoutMs })
+      .then((response) => ({ response, error: null }))
+      .catch((error) => ({ response: null, error }))
+
+    await gotoWithFallback(page, LOGIN_URL, {
+      timeoutMs: gotoTimeoutMs,
+      canTreatTimeoutAsSuccess: async (currentPage) => /https:\/\/(creator\.guanghe\.taobao\.com|login\.taobao\.com)\//.test(currentPage.url())
+    })
+
+    const { response: qrResponse, error: qrResponseError } = await qrResponseOutcomePromise
+    if (qrResponseError) {
+      throw qrResponseError
+    }
     const qrPayload = parseQrGenerateResponse(await qrResponse.text())
     const qrImageUrl = await this.captureLoginQrScreenshot({ loginSessionId, page })
 

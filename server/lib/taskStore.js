@@ -2,7 +2,7 @@ const { ensureDir, readJson, writeJson, writeJsonAsync, readJsonAsync } = requir
 const EventEmitter = require('events')
 
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
-const TERMINAL_SHEET_MATCH_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
+const TERMINAL_SHEET_MATCH_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'ROW_CHANGED'])
 
 class TaskStore extends EventEmitter {
   constructor({ tasksFile }) {

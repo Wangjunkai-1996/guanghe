@@ -14,6 +14,7 @@ const REQUIRED_DEMAND_COLUMNS = ['查看次数', '查看人数', '种草成交�
 const EMPTY_CELL_VALUES = new Set(['', '-', '--'])
 const MATCH_SCAN_BATCH_ROWS = 200
 const MATCH_SCAN_MAX_ROWS = 5000
+const INSPECT_CACHE_TTL_MS = 15 * 1000
 
 class TencentDocsSyncService {
   constructor({ config, adapter, jobStore, workspaceStore, loginService }) {
@@ -41,6 +42,7 @@ class TencentDocsSyncService {
     })
     this.docQueues = new Map()
     this.browserOperationQueue = Promise.resolve()
+    this._lastInspectCache = null
     this.jobStore.markStaleJobsFailed()
   }
 
@@ -68,6 +70,7 @@ class TencentDocsSyncService {
     }
 
     this.workspaceStore.saveTarget({ docUrl, sheetName })
+    this.invalidateInspectCache()
     return this.getConfig()
   }
 
@@ -96,19 +99,13 @@ class TencentDocsSyncService {
     this.ensureEnabled()
     const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
     const normalizedMaxRows = this.normalizeInspectMaxRows(maxRows)
-    
-    // Check in-memory Cache
-    if (!forceRefresh && this._lastInspectCache) {
-      if (
-        this._lastInspectCache.target.docUrl === resolvedTarget.docUrl &&
-        (!resolvedTarget.sheetName || this._lastInspectCache.target.sheetName === resolvedTarget.sheetName)
-      ) {
-        return this._lastInspectCache.data
-      }
+
+    if (this.hasFreshInspectCache(resolvedTarget, { forceRefresh })) {
+      return this._lastInspectCache.data
     }
 
     const snapshot = await this.readSheetDemandSnapshot({
-      target,
+      target: resolvedTarget,
       maxRows: normalizedMaxRows,
       artifactDir: this.getInspectArtifactDir(),
       strict: false
@@ -120,17 +117,12 @@ class TencentDocsSyncService {
       artifacts: this.buildInspectArtifactUrls()
     }
 
-    // Save in-memory cache
-    this._lastInspectCache = {
-      target: resolvedTarget,
-      data: payload,
-      timestamp: Date.now()
-    }
+    this.saveInspectCache(payload.target || resolvedTarget, payload)
 
     return payload
   }
 
-  async matchDemandByNickname({ nickname, target, maxRows } = {}) {
+  async matchDemandByNickname({ nickname, accountId, target, maxRows } = {}) {
     this.ensureEnabled()
     const snapshot = await this.scanSheetDemandSnapshot({
       target,
@@ -142,7 +134,7 @@ class TencentDocsSyncService {
     return {
       snapshot,
       target: snapshot.target,
-      match: resolveDemandMatch(snapshot.demands, nickname)
+      match: resolveDemandMatch(snapshot.demands, { nickname, accountId })
     }
   }
 
@@ -201,6 +193,16 @@ class TencentDocsSyncService {
         writeSummary,
         completedAt: new Date().toISOString()
       })
+
+      const cacheUpdateState = this.refreshInspectCacheAfterHandoff({
+        target: prepared.target,
+        sheetRow: prepared.match.sheetRow,
+        columns: prepared.columns,
+        writeSummary
+      })
+      if (cacheUpdateState === false) {
+        this.invalidateInspectCache(prepared.target)
+      }
 
       return {
         ...this.serializeHandoffOperation(prepared),
@@ -330,6 +332,8 @@ class TencentDocsSyncService {
         error: null,
         artifacts: this.buildArtifactUrls(jobId)
       })
+
+      this.invalidateInspectCache(runningJob.target)
 
       return completedJob
     } catch (error) {
@@ -522,6 +526,50 @@ class TencentDocsSyncService {
     }
   }
 
+  hasFreshInspectCache(target, { forceRefresh = false } = {}) {
+    if (forceRefresh || !this._lastInspectCache) return false
+
+    const cacheAgeMs = Date.now() - Number(this._lastInspectCache.timestamp || 0)
+    if (!Number.isFinite(cacheAgeMs) || cacheAgeMs > INSPECT_CACHE_TTL_MS) {
+      this._lastInspectCache = null
+      return false
+    }
+
+    return targetsMatch(this._lastInspectCache.target, target)
+  }
+
+  saveInspectCache(target, data) {
+    this._lastInspectCache = {
+      target: {
+        docUrl: String(target?.docUrl || '').trim(),
+        sheetName: String(target?.sheetName || '').trim()
+      },
+      data,
+      timestamp: Date.now()
+    }
+  }
+
+  invalidateInspectCache(target = null) {
+    if (!this._lastInspectCache) return
+    if (!target || targetsMatch(this._lastInspectCache.target, target)) {
+      this._lastInspectCache = null
+    }
+  }
+
+  refreshInspectCacheAfterHandoff({ target, sheetRow, columns, writeSummary } = {}) {
+    if (!this._lastInspectCache || !targetsMatch(this._lastInspectCache.target, target)) return null
+
+    const nextData = applyHandoffSyncToInspectPayload(this._lastInspectCache.data, {
+      sheetRow,
+      columns,
+      writeSummary
+    })
+
+    if (!nextData) return false
+    this.saveInspectCache(target, nextData)
+    return true
+  }
+
   async readSheetDemandSnapshot({ target, maxRows, artifactDir, strict = true }) {
     const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
     ensureDir(artifactDir)
@@ -620,6 +668,42 @@ class TencentDocsSyncService {
 
   async scanSheetDemandSnapshot({ target, maxRows, artifactDir, strict = true }) {
     const scanLimit = this.normalizeScanMaxRows(maxRows)
+
+    if (typeof this.adapter.readSheetBatches === 'function') {
+      const resolvedTarget = this.resolveTarget(target, { allowMissingSheetName: true })
+      ensureDir(artifactDir)
+
+      try {
+        const snapshot = await this.runSerializedBrowserOperation(async () => {
+          this.ensureBrowserProfileAvailable()
+          return this.adapter.readSheetBatches({
+            target: resolvedTarget,
+            maxRows: scanLimit,
+            batchSize: MATCH_SCAN_BATCH_ROWS,
+            artifactDir,
+            strict
+          })
+        })
+        this.workspaceStore.saveLogin({ status: 'LOGGED_IN', updatedAt: new Date().toISOString(), error: null })
+        const demands = buildSheetDemands(snapshot.rows)
+        return {
+          ...snapshot,
+          maxRows: scanLimit,
+          demands,
+          summary: buildSheetSummary(demands)
+        }
+      } catch (error) {
+        if (error?.code === ERROR_CODES.LOGIN_REQUIRED) {
+          this.workspaceStore.saveLogin({
+            status: 'FAILED',
+            updatedAt: new Date().toISOString(),
+            error: serializeSyncError(error)
+          })
+        }
+        throw error
+      }
+    }
+
     const firstBatchSize = Math.min(MATCH_SCAN_BATCH_ROWS, scanLimit)
     const firstSnapshot = await this.readSheetDemandSnapshot({
       target,
@@ -960,6 +1044,13 @@ function buildSheetDemands(rows = []) {
   return demandRows.map((row) => {
     const nickname = String(row.nickname || '').trim()
     const normalizedNickname = normalizeNickname(nickname)
+    const accountId = String(
+      row.accountId
+      || row.cells?.['逛逛ID']
+      || row.cells?.['账号ID']
+      || row.cells?.['账号id']
+      || ''
+    ).trim()
     const contentId = String(row.contentId || '').trim()
     const missingColumns = REQUIRED_DEMAND_COLUMNS.filter((columnName) => !hasCellValue(row.cells?.[columnName]))
     const duplicate = normalizedNickname && nicknameCounts.get(normalizedNickname) > 1
@@ -977,6 +1068,7 @@ function buildSheetDemands(rows = []) {
       sheetRow: Number(row.sheetRow || 0),
       nickname,
       normalizedNickname,
+      accountId,
       contentId,
       missingColumns,
       missingCount: missingColumns.length,
@@ -1001,6 +1093,103 @@ function buildSheetSummary(demands = []) {
   }
 }
 
+function patchDemandFromUpdatedColumns(demand, updatedColumns = []) {
+  if (!demand) return demand
+  if (!['NEEDS_FILL', 'COMPLETE'].includes(String(demand.status || ''))) return demand
+
+  const currentMissingColumns = Array.isArray(demand.missingColumns) ? demand.missingColumns : []
+  const nextMissingColumns = currentMissingColumns.filter((columnName) => !updatedColumns.includes(columnName))
+  const nextStatus = !String(demand.contentId || '').trim()
+    ? 'CONTENT_ID_MISSING'
+    : (nextMissingColumns.length === 0 ? 'COMPLETE' : 'NEEDS_FILL')
+
+  if (nextStatus === demand.status && nextMissingColumns.length === currentMissingColumns.length) {
+    return demand
+  }
+
+  return {
+    ...demand,
+    missingColumns: nextMissingColumns,
+    missingCount: nextMissingColumns.length,
+    status: nextStatus
+  }
+}
+
+function applyHandoffSyncToInspectPayload(payload, { sheetRow, columns = [], writeSummary } = {}) {
+  const resolvedSheetRow = Number(sheetRow || writeSummary?.sheetRow || 0)
+  const normalizedColumns = Array.isArray(columns)
+    ? columns
+      .filter((item) => item && item.columnName)
+      .map((item) => ({
+        columnName: String(item.columnName),
+        value: String(item.value ?? '')
+      }))
+    : []
+  const updatedColumns = normalizedColumns.length > 0
+    ? normalizedColumns.map((item) => item.columnName)
+    : (Array.isArray(writeSummary?.columnsUpdated) ? writeSummary.columnsUpdated.map((item) => String(item)) : [])
+
+  if (!payload || resolvedSheetRow <= 0 || updatedColumns.length === 0) return null
+
+  if (Array.isArray(payload.rows) && payload.rows.length > 0) {
+    const headers = Array.isArray(payload.headers) ? payload.headers : []
+    let rowChanged = false
+    const nextRows = payload.rows.map((row) => {
+      if (Number(row?.sheetRow || 0) !== resolvedSheetRow) return row
+      rowChanged = true
+
+      const nextCells = { ...(row.cells || {}) }
+      normalizedColumns.forEach((item) => {
+        nextCells[item.columnName] = item.value
+      })
+
+      let nextValues = Array.isArray(row.values) ? [...row.values] : row.values
+      if (Array.isArray(nextValues) && headers.length > 0) {
+        normalizedColumns.forEach((item) => {
+          const headerIndex = headers.findIndex((header) => header === item.columnName)
+          if (headerIndex >= 0) nextValues[headerIndex] = item.value
+        })
+      }
+
+      return {
+        ...row,
+        cells: nextCells,
+        values: Array.isArray(nextValues) ? nextValues : row.values
+      }
+    })
+
+    if (rowChanged) {
+      const nextDemands = buildSheetDemands(nextRows)
+      return {
+        ...payload,
+        rows: nextRows,
+        demands: nextDemands,
+        summary: buildSheetSummary(nextDemands)
+      }
+    }
+  }
+
+  if (Array.isArray(payload.demands) && payload.demands.length > 0) {
+    let demandChanged = false
+    const nextDemands = payload.demands.map((item) => {
+      if (Number(item?.sheetRow || 0) !== resolvedSheetRow) return item
+      const nextItem = patchDemandFromUpdatedColumns(item, updatedColumns)
+      if (nextItem !== item) demandChanged = true
+      return nextItem
+    })
+
+    if (demandChanged) {
+      return {
+        ...payload,
+        demands: nextDemands,
+        summary: buildSheetSummary(nextDemands)
+      }
+    }
+  }
+
+  return null
+}
+
 
 function resolveTencentDocsStateFile(config = {}) {
   if (config.stateFile) return config.stateFile
@@ -1009,7 +1198,36 @@ function resolveTencentDocsStateFile(config = {}) {
   return path.resolve(process.cwd(), 'data', 'tencent-docs-state.json')
 }
 
-function resolveDemandMatch(demands = [], nickname) {
+function resolveDemandMatch(demands = [], { nickname, accountId } = {}) {
+  const normalizedAccountId = String(accountId || '').trim()
+  if (normalizedAccountId) {
+    const accountMatches = demands.filter((item) => String(item.accountId || '').trim() === normalizedAccountId)
+    if (accountMatches.length === 1) {
+      return resolveSingleDemandMatch(accountMatches[0], { preferredBy: ['逛逛ID'] })
+    }
+    if (accountMatches.length > 1) {
+      const primary = accountMatches[0]
+      return {
+        status: 'DUPLICATE_ACCOUNT_ID',
+        nickname: primary.nickname,
+        contentId: primary.contentId,
+        sheetRow: primary.sheetRow,
+        missingColumns: primary.missingColumns,
+        matches: accountMatches.map((item) => ({
+          sheetRow: item.sheetRow,
+          nickname: item.nickname,
+          contentId: item.contentId,
+          accountId: item.accountId,
+          status: item.status
+        })),
+        details: {
+          matchedBy: ['逛逛ID'],
+          reason: 'DUPLICATE_ACCOUNT_ID'
+        }
+      }
+    }
+  }
+
   const normalized = normalizeNickname(nickname)
   const matches = demands.filter((item) => item.normalizedNickname && item.normalizedNickname === normalized)
   if (matches.length === 0) {
@@ -1034,27 +1252,61 @@ function resolveDemandMatch(demands = [], nickname) {
         sheetRow: item.sheetRow,
         nickname: item.nickname,
         contentId: item.contentId,
+        accountId: item.accountId,
         status: item.status
-      }))
+      })),
+      details: {
+        matchedBy: ['nickname'],
+        reason: 'DUPLICATE_NICKNAME'
+      }
     }
   }
 
-  if (primary.status === 'COMPLETE') {
+  return resolveSingleDemandMatch(primary, { preferredBy: ['nickname'] })
+}
+
+function resolveSingleDemandMatch(row, { preferredBy = [] } = {}) {
+  const matchedByAccountId = preferredBy.includes('逛逛ID')
+  const base = {
+    nickname: row.nickname,
+    contentId: row.contentId,
+    sheetRow: row.sheetRow,
+    missingColumns: row.status === 'COMPLETE' ? [] : row.missingColumns,
+    details: preferredBy.length > 0 ? { matchedBy: preferredBy } : null
+  }
+
+  if (matchedByAccountId) {
+    if (!String(row.contentId || '').trim()) {
+      return {
+        status: 'CONTENT_ID_MISSING',
+        ...base
+      }
+    }
+
+    if ((row.missingColumns || []).length === 0) {
+      return {
+        status: 'ALREADY_COMPLETE',
+        ...base,
+        missingColumns: []
+      }
+    }
+
+    return {
+      status: 'NEEDS_FILL',
+      ...base
+    }
+  }
+
+  if (row.status === 'COMPLETE') {
     return {
       status: 'ALREADY_COMPLETE',
-      nickname: primary.nickname,
-      contentId: primary.contentId,
-      sheetRow: primary.sheetRow,
-      missingColumns: []
+      ...base
     }
   }
 
   return {
-    status: primary.status,
-    nickname: primary.nickname,
-    contentId: primary.contentId,
-    sheetRow: primary.sheetRow,
-    missingColumns: primary.missingColumns
+    status: row.status,
+    ...base
   }
 }
 
@@ -1065,6 +1317,17 @@ function hasCellValue(value) {
 
 function normalizeNickname(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function targetsMatch(left = {}, right = {}) {
+  const leftDocUrl = String(left?.docUrl || '').trim()
+  const rightDocUrl = String(right?.docUrl || '').trim()
+  if (!leftDocUrl || !rightDocUrl || leftDocUrl !== rightDocUrl) return false
+
+  const leftSheetName = String(left?.sheetName || '').trim()
+  const rightSheetName = String(right?.sheetName || '').trim()
+  if (!leftSheetName || !rightSheetName) return true
+  return leftSheetName === rightSheetName
 }
 
 function enrichHandoffError(error, operation = {}) {

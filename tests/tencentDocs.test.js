@@ -345,6 +345,172 @@ describe('tencent docs integration', () => {
     expect(payload.match.contentId).toBe('554665719069')
   })
 
+  test('matchDemandByNickname prefers 逛逛ID over duplicate nickname', async () => {
+    const adapter = {
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 8,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 2,
+        rows: [
+          {
+            sheetRow: 6,
+            nickname: '重名达人',
+            contentId: '11111',
+            values: ['重名达人', '1001', '11111', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '重名达人',
+              逛逛ID: '1001',
+              内容id: '11111',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          },
+          {
+            sheetRow: 7,
+            nickname: '重名达人',
+            contentId: '22222',
+            values: ['重名达人', '1002', '22222', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '重名达人',
+              逛逛ID: '1002',
+              内容id: '22222',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          }
+        ]
+      }),
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] })
+    }
+
+    const { service } = createService({ adapter })
+    const payload = await service.matchDemandByNickname({ nickname: '重名达人', accountId: '1002' })
+
+    expect(payload.match.status).toBe('NEEDS_FILL')
+    expect(payload.match.sheetRow).toBe(7)
+    expect(payload.match.contentId).toBe('22222')
+    expect(payload.match.details).toEqual({ matchedBy: ['逛逛ID'] })
+  })
+
+  test('matchDemandByNickname returns duplicate accountId when 逛逛ID matches multiple rows', async () => {
+    const adapter = {
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 8,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 2,
+        rows: [
+          {
+            sheetRow: 6,
+            nickname: '达人甲',
+            contentId: '11111',
+            values: ['达人甲', '1001', '11111', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '达人甲',
+              逛逛ID: '1001',
+              内容id: '11111',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          },
+          {
+            sheetRow: 7,
+            nickname: '达人乙',
+            contentId: '22222',
+            values: ['达人乙', '1001', '22222', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '达人乙',
+              逛逛ID: '1001',
+              内容id: '22222',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          }
+        ]
+      }),
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] })
+    }
+
+    const { service } = createService({ adapter })
+    const payload = await service.matchDemandByNickname({ nickname: '达人甲', accountId: '1001' })
+
+    expect(payload.match.status).toBe('DUPLICATE_ACCOUNT_ID')
+    expect(payload.match.details).toEqual({ matchedBy: ['逛逛ID'], reason: 'DUPLICATE_ACCOUNT_ID' })
+    expect(payload.match.matches).toHaveLength(2)
+  })
+
+  test('matchDemandByNickname falls back to duplicate nickname when accountId misses', async () => {
+    const adapter = {
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 8,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 2,
+        rows: [
+          {
+            sheetRow: 6,
+            nickname: '重名达人',
+            contentId: '11111',
+            values: ['重名达人', '1001', '11111', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '重名达人',
+              逛逛ID: '1001',
+              内容id: '11111',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          },
+          {
+            sheetRow: 7,
+            nickname: '重名达人',
+            contentId: '22222',
+            values: ['重名达人', '1002', '22222', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '重名达人',
+              逛逛ID: '1002',
+              内容id: '22222',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          }
+        ]
+      }),
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] })
+    }
+
+    const { service } = createService({ adapter })
+    const payload = await service.matchDemandByNickname({ nickname: '重名达人', accountId: '9999' })
+
+    expect(payload.match.status).toBe('DUPLICATE_NICKNAME')
+    expect(payload.match.details).toEqual({ matchedBy: ['nickname'], reason: 'DUPLICATE_NICKNAME' })
+    expect(payload.match.matches).toHaveLength(2)
+  })
+
   test('handoff preview validates locked row with targeted window reads', async () => {
     const adapter = {
       writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
@@ -659,6 +825,103 @@ describe('tencent docs integration', () => {
     expect(response.body.error.details.match.sheetRow).toBe(6)
     expect(response.body.error.details.artifacts.writeLogUrl).toMatch(/handoff-write-log\.json$/)
   })
+
+  test('inspect cache applies successful handoff sync incrementally', async () => {
+    let phase = 'before'
+    const target = { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
+    let readSheetCount = 0
+    const adapter = {
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] }),
+      readSheet: async ({ maxRows }) => {
+        readSheetCount += 1
+        return {
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 18,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '主页链接', '粉丝数 (w)', '发布长链接', '主页类型', '前端小眼睛截图', '小眼睛数', '查看次数截图', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数', '点赞数', '收藏数', '评论数'],
+        rowCount: 1,
+        rows: [{
+          sheetRow: 6,
+          nickname: '测试账号',
+          contentId: '554608495125',
+          values: [],
+          cells: {
+            逛逛昵称: '测试账号',
+            内容id: '554608495125',
+            查看次数: phase === 'after' ? '83611' : '',
+            查看人数: phase === 'after' ? '18033' : '',
+            种草成交金额: phase === 'after' ? '155.13' : '',
+            种草成交人数: phase === 'after' ? '1' : '',
+            商品点击次数: phase === 'after' ? '3' : ''
+          }
+        }]
+      }
+      },
+      updateRowCells: async (payload) => {
+        phase = 'after'
+        return {
+          action: 'UPDATED',
+          sheetRow: payload.sheetRow,
+          matchedBy: ['内容id'],
+          columnsUpdated: payload.cells.map((cell) => cell.columnName)
+        }
+      }
+    }
+
+    const { service, artifactsRootDir } = createService({ adapter, toolBaseUrl: 'https://tool.example.com' })
+    const resultUrl = writeResultPayload(artifactsRootDir)
+
+    const firstInspect = await service.inspectSheet({ target, maxRows: 20 })
+    expect(firstInspect.summary.needsFillRows).toBe(1)
+    expect(firstInspect.summary.completeRows).toBe(0)
+
+    await service.syncHandoffRow({ source: { resultUrl }, target, maxRows: 20 })
+
+    const readSheetCountAfterSync = readSheetCount
+    const secondInspect = await service.inspectSheet({ target, maxRows: 20 })
+    expect(readSheetCount).toBe(readSheetCountAfterSync)
+    expect(secondInspect.summary.needsFillRows).toBe(0)
+    expect(secondInspect.summary.completeRows).toBe(1)
+  })
+
+  test('matchDemandByNickname prefers adapter batched scan when available', async () => {
+    const adapter = {
+      readSheetBatches: async ({ target, maxRows, batchSize }) => ({
+        target,
+        maxRows,
+        batchSize,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 7,
+        headers: ['逛逛昵称', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        rows: [{
+          sheetRow: 240,
+          nickname: '深层达人',
+          contentId: '554608495125',
+          values: ['深层达人', '554608495125', '', '', '', '', ''],
+          cells: {
+            逛逛昵称: '深层达人',
+            内容id: '554608495125',
+            查看次数: '',
+            查看人数: '',
+            种草成交金额: '',
+            种草成交人数: '',
+            商品点击次数: ''
+          }
+        }]
+      }),
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] })
+    }
+
+    const { service } = createService({ adapter })
+    const payload = await service.matchDemandByNickname({ nickname: '深层达人', maxRows: 800 })
+
+    expect(payload.match.status).toBe('NEEDS_FILL')
+    expect(payload.match.sheetRow).toBe(240)
+    expect(payload.match.contentId).toBe('554608495125')
+  })
+
   test('jobs fail fast when sync is not enabled', async () => {
     const { app, artifactsRootDir } = createTestContext({ enabled: false })
     const agent = await loginAgent(app)

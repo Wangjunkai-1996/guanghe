@@ -22,6 +22,7 @@ import {
     getTaskSheetMatchTone,
     formatTaskSheetMatchStatus,
     getTaskSheetMatchDetail,
+    getTaskSheetMatchSource,
     getTaskSummary,
     getTaskPrimaryActionLabel,
     normalizeStatusTone,
@@ -79,6 +80,7 @@ export const TaskCard = React.memo(function TaskCard({ task, syncConfig, selecte
     const tone = getTaskOverallTone(task)
     const waitingForLogin = ['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS'].includes(task.login.status)
     const waitingForSms = task.login.status === 'WAITING_SMS'
+    const sheetMatchSource = task.taskMode === 'SHEET_DEMAND' ? getTaskSheetMatchSource(task) : ''
 
     return (
         <article
@@ -148,6 +150,7 @@ export const TaskCard = React.memo(function TaskCard({ task, syncConfig, selecte
                             <div className="task-meta-item">
                                 <span>交接表</span>
                                 <strong>{formatTaskSheetMatchStatus(task.sheetMatch?.status)}</strong>
+                                {sheetMatchSource ? <small>{sheetMatchSource}</small> : null}
                             </div>
                         ) : null}
                     </div>

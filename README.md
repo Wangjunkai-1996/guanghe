@@ -283,6 +283,14 @@ npm test
   - `/.cache/profiles`
   - `/artifacts/web`
 
+## 自动部署（Git 推送后服务器自动更新）
+
+- 推荐部署分支：`codex/aliyun-guanghe-deploy`
+- 服务器可通过 `scripts/auto-deploy-from-git.sh` 每分钟轮询一次远端分支
+- 检测到新提交后会自动执行：`git pull --ff-only` → `npm ci` → `npm run build` → `pm2 restart guanghe`
+- 运行时文件 `.env`、`data/accounts.json` 会在服务器侧标记为 `skip-worktree`，避免自动拉取误覆盖账号数据
+- 对应 systemd 模板见：`deploy/systemd/guanghe-auto-deploy.service`、`deploy/systemd/guanghe-auto-deploy.timer`
+
 ## 已验证示例
 
 - 可查 ID：`554608495125`

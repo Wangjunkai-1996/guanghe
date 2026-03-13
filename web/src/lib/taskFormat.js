@@ -153,6 +153,7 @@ export function getTaskSummary(task) {
         if (task.sheetMatch?.status === 'ALREADY_COMPLETE') return '该行已回填，无需重复操作。'
         if (task.sheetMatch?.status === 'NOT_IN_SHEET') return '未在第一波查询记录中找到该达人。'
         if (task.sheetMatch?.status === 'DUPLICATE_NICKNAME') return '该达人存在多行记录，请先在交接表中手动处理重复行。'
+        if (task.sheetMatch?.status === 'DUPLICATE_ACCOUNT_ID') return '该逛逛 ID 对应多行记录，请先在交接表中手动处理重复行。'
         if (task.sheetMatch?.status === 'CONTENT_ID_MISSING') return '该行缺少内容 ID，无法进行查询。'
         if (task.sheetMatch?.status === 'ROW_CHANGED') return '该行内容在云端已被其他人修改，已中止自动处理，请刷新后重试。'
     }
@@ -179,20 +180,31 @@ export function getTaskSummary(task) {
     return '任务已就绪'
 }
 
+export function getTaskSheetMatchSource(task) {
+    const matchedBy = task?.sheetMatch?.details?.matchedBy || []
+    if (matchedBy.includes('逛逛ID')) return '按逛逛ID命中'
+    if (matchedBy.includes('nickname')) return '按昵称命中'
+    return ''
+}
+
 export function getTaskSheetMatchDetail(task) {
     if (!task || task.taskMode !== 'SHEET_DEMAND') return ''
     const m = task.sheetMatch
     if (!m) return '未开始匹配'
 
+    const matchSource = getTaskSheetMatchSource(task)
+    const sourceSuffix = matchSource ? `（${matchSource}）` : ''
+
     switch (m.status) {
-        case 'NOT_IN_SHEET': return `在「第一波查询」工作表中未找到达人：${task.accountNickname || '待确认'}`
-        case 'DUPLICATE_NICKNAME': return `找到多行同名达人：${task.accountNickname || '待确认'}`
-        case 'CONTENT_ID_MISSING': return `目标行缺少内容 ID`
-        case 'ALREADY_COMPLETE': return `所有指标已存在数据，无需重复查询`
-        case 'ROW_CHANGED': return `该行云端数据已变更，触发防冲突保护`
+        case 'NOT_IN_SHEET': return `在「第一波查询」工作表中未找到达人：${task.accountNickname || '待确认'}${sourceSuffix}`
+        case 'DUPLICATE_NICKNAME': return `找到多行同名达人：${task.accountNickname || '待确认'}${sourceSuffix}`
+        case 'DUPLICATE_ACCOUNT_ID': return `找到多行相同逛逛ID：${task.accountId || '待确认'}${sourceSuffix}`
+        case 'CONTENT_ID_MISSING': return `目标行缺少内容 ID${sourceSuffix}`
+        case 'ALREADY_COMPLETE': return `所有指标已存在数据，无需重复查询${sourceSuffix}`
+        case 'ROW_CHANGED': return `该行云端数据已变更，触发防冲突保护${sourceSuffix}`
         case 'NEEDS_FILL': return m.missingColumns && m.missingColumns.length > 0
-            ? `预计可回填记录，但当前模板缺少：${m.missingColumns.join('、')}`
-            : `命中成功，将自动查询并回填`
+            ? `预计可回填记录，但当前模板缺少：${m.missingColumns.join('、')}${sourceSuffix}`
+            : `命中成功，将自动查询并回填${sourceSuffix}`
         default:
             return m.status || '状态未知'
     }
@@ -244,7 +256,7 @@ export function getTaskPrimaryActionLabel(task) {
     if (['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login?.status)) return '立即扫码'
     if (task.login?.status === 'WAITING_SMS') return '输入验证码'
     if (['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)) return '刷新二维码'
-    if (task.taskMode === 'SHEET_DEMAND' && ['NOT_IN_SHEET', 'DUPLICATE_NICKNAME', 'CONTENT_ID_MISSING', 'ROW_CHANGED'].includes(task.sheetMatch?.status)) return '手动干预'
+    if (task.taskMode === 'SHEET_DEMAND' && ['NOT_IN_SHEET', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'CONTENT_ID_MISSING', 'ROW_CHANGED'].includes(task.sheetMatch?.status)) return '手动干预'
     return '查看详情'
 }
 
@@ -258,6 +270,7 @@ export function getTaskRecommendations(task, syncConfig) {
     if (task.taskMode === 'SHEET_DEMAND' && task.sheetMatch?.status) {
         if (task.sheetMatch.status === 'NOT_IN_SHEET') return ['核对腾讯文档内达名人称是否一致', '是否粘贴了其他工作表的达人']
         if (task.sheetMatch.status === 'DUPLICATE_NICKNAME') return ['在腾讯文档中搜索该达人，标记或删除多余重复行', '处理完毕后可在平台上直接点击重连扫码']
+        if (task.sheetMatch.status === 'DUPLICATE_ACCOUNT_ID') return ['在腾讯文档中搜索该逛逛ID，标记或删除多余重复行', '处理完毕后可在平台上直接点击重连扫码']
         if (task.sheetMatch.status === 'CONTENT_ID_MISSING') return ['在腾讯文档对应行上补齐"内容id"列信息']
         if (task.sheetMatch.status === 'ROW_CHANGED') return ['有人刚在腾讯文档修改了这行数据，请刷新任务状态重试']
         if (task.sheetMatch.status === 'ALREADY_COMPLETE') return []
@@ -318,6 +331,7 @@ export function formatTaskSheetMatchStatus(status) {
     if (status === 'ALREADY_COMPLETE') return '数据已全'
     if (status === 'CONTENT_ID_MISSING') return '缺内容ID'
     if (status === 'DUPLICATE_NICKNAME') return '达人重名'
+    if (status === 'DUPLICATE_ACCOUNT_ID') return '逛逛ID重复'
     if (status === 'NOT_IN_SHEET') return '表中无此达人'
     if (status === 'ROW_CHANGED') return '目标行已变更'
     return status || '待匹配'
@@ -326,7 +340,7 @@ export function formatTaskSheetMatchStatus(status) {
 export function getTaskSheetMatchTone(status) {
     if (status === 'ALREADY_COMPLETE') return 'success'
     if (status === 'NEEDS_FILL') return 'warning'
-    if (['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'NOT_IN_SHEET', 'ROW_CHANGED'].includes(status)) return 'danger'
+    if (['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'NOT_IN_SHEET', 'ROW_CHANGED'].includes(status)) return 'danger'
     return 'info'
 }
 
@@ -380,11 +394,11 @@ export function isExceptionalTask(task) {
     return ['NO_DATA', 'FAILED'].includes(task.query?.status)
         || ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task.login?.status)
         || task.sync?.status === 'FAILED'
-        || ['NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'].includes(task.sheetMatch?.status)
+        || ['NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'ROW_CHANGED'].includes(task.sheetMatch?.status)
 }
 
 function isTaskSheetTerminal(task) {
-    return ['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'].includes(task.sheetMatch?.status)
+    return ['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'ROW_CHANGED'].includes(task.sheetMatch?.status)
 }
 
 export function getTaskPriority(task) {

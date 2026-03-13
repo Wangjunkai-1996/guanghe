@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Guanghe auto deploy check every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Unit=guanghe-auto-deploy.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Guanghe auto deploy from Git branch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/www/wwwroot/guanghe
+ExecStart=/www/wwwroot/guanghe/scripts/auto-deploy-from-git.sh

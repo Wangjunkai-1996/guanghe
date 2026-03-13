@@ -64,6 +64,94 @@ const FILTER_OPTIONS = [
   { value: 'finished', label: '已完成', tone: 'success' }
 ]
 
+function matchesTencentDocsTarget(left, right) {
+  const leftDocUrl = String(left?.docUrl || '').trim()
+  const rightDocUrl = String(right?.docUrl || '').trim()
+  if (!leftDocUrl || !rightDocUrl || leftDocUrl !== rightDocUrl) return false
+
+  const leftSheetName = String(left?.sheetName || '').trim()
+  const rightSheetName = String(right?.sheetName || '').trim()
+  if (!leftSheetName || !rightSheetName) return true
+  return leftSheetName === rightSheetName
+}
+
+function buildDiagnosticDemandSummary(demands = []) {
+  return {
+    totalRows: demands.length,
+    completeRows: demands.filter((item) => item.status === 'COMPLETE').length,
+    needsFillRows: demands.filter((item) => item.status === 'NEEDS_FILL').length,
+    missingContentIdRows: demands.filter((item) => item.status === 'CONTENT_ID_MISSING').length,
+    duplicateNicknameRows: demands.filter((item) => item.status === 'DUPLICATE_NICKNAME').length
+  }
+}
+
+function patchDemandByWriteSummary(demand, updatedColumns = []) {
+  if (!demand) return demand
+  if (!['NEEDS_FILL', 'COMPLETE'].includes(String(demand.status || ''))) return demand
+
+  const currentMissingColumns = Array.isArray(demand.missingColumns) ? demand.missingColumns : []
+  const nextMissingColumns = currentMissingColumns.filter((columnName) => !updatedColumns.includes(columnName))
+  const nextStatus = !String(demand.contentId || '').trim()
+    ? 'CONTENT_ID_MISSING'
+    : (nextMissingColumns.length === 0 ? 'COMPLETE' : 'NEEDS_FILL')
+
+  if (nextStatus === demand.status && nextMissingColumns.length === currentMissingColumns.length) {
+    return demand
+  }
+
+  return {
+    ...demand,
+    missingColumns: nextMissingColumns,
+    missingCount: nextMissingColumns.length,
+    status: nextStatus
+  }
+}
+
+function patchTencentDocsDiagnosticState(current, { target, match, writeSummary } = {}) {
+  if (!current?.payload || !matchesTencentDocsTarget(current.payload.target, target)) return current
+
+  const sheetRow = Number(match?.sheetRow || writeSummary?.sheetRow || 0)
+  const updatedColumns = Array.isArray(writeSummary?.columnsUpdated)
+    ? writeSummary.columnsUpdated.map((item) => String(item))
+    : []
+
+  if (sheetRow <= 0 || updatedColumns.length === 0) return current
+
+  let changed = false
+  const nextDemands = (current.payload.demands || []).map((item) => {
+    if (Number(item?.sheetRow || 0) !== sheetRow) return item
+    const nextItem = patchDemandByWriteSummary(item, updatedColumns)
+    if (nextItem !== item) changed = true
+    return nextItem
+  })
+
+  if (!changed) return current
+
+  return {
+    ...current,
+    loading: false,
+    inspected: true,
+    error: null,
+    checkedAt: new Date().toISOString(),
+    payload: {
+      ...current.payload,
+      demands: nextDemands,
+      summary: buildDiagnosticDemandSummary(nextDemands)
+    }
+  }
+}
+
+function buildTaskSyncSuccessKey(task) {
+  return `${task.taskId}:${task.sync?.operationId || task.updatedAt || task.fetchedAt || ''}`
+}
+
+function collectSuccessfulSyncTasks(tasks = [], activeTarget = null) {
+  if (!activeTarget?.docUrl) return []
+  return tasks
+    .filter((task) => task.sync?.status === 'SUCCEEDED')
+    .filter((task) => matchesTencentDocsTarget(task.sync?.target || task.sheetTarget, activeTarget))
+}
+
 export function BatchTasksWorkspace() {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -104,8 +192,16 @@ export function BatchTasksWorkspace() {
   const [syncActionLoading, setSyncActionLoading] = useState({})
   const [docsDiagnostic, setDocsDiagnostic] = useState(createTencentDocsDiagnosticState())
 
+  const activeTencentDocsTarget = useMemo(
+    () => (docsConfigDraft.docUrl ? docsConfigDraft : (syncConfig.target?.docUrl ? syncConfig.target : null)),
+    [docsConfigDraft, syncConfig.target]
+  )
+
   const textareaRef = useRef(null)
   const docsLoginPollingRef = useRef(null)
+  const successfulSyncKeysRef = useRef(new Set())
+  const activeTencentDocsTargetRef = useRef(null)
+  const docsDiagnosticRef = useRef(createTencentDocsDiagnosticState())
 
   const stopDocsLoginPolling = useCallback(() => {
     if (docsLoginPollingRef.current) {
@@ -208,6 +304,18 @@ export function BatchTasksWorkspace() {
     }, 2200)
   }, [])
 
+  const applySyncResultToDocsDiagnostic = useCallback((syncResult) => {
+    if (!syncResult?.target?.docUrl) return
+    setDocsDiagnostic((current) => {
+      const nextState = patchTencentDocsDiagnosticState(current, {
+        target: syncResult.target,
+        match: syncResult.match,
+        writeSummary: syncResult.writeSummary
+      })
+      docsDiagnosticRef.current = nextState
+      return nextState
+    })
+  }, [])
   const persistTencentDocsTarget = useCallback(async (target, { silent = false } = {}) => {
     if (!target?.docUrl || !target?.sheetName) return null
     try {
@@ -323,6 +431,49 @@ export function BatchTasksWorkspace() {
     }
   }, [persistTencentDocsTarget, addToast, syncConfig])
 
+  const processSuccessfulTaskEvents = useCallback((nextTasks) => {
+    const activeTarget = activeTencentDocsTargetRef.current
+    if (!activeTarget?.docUrl) {
+      successfulSyncKeysRef.current = new Set()
+      return
+    }
+
+    const succeededTasks = collectSuccessfulSyncTasks(nextTasks, activeTarget)
+    const nextSuccessKeys = new Set(succeededTasks.map((task) => buildTaskSyncSuccessKey(task)))
+    const newSuccessfulTasks = succeededTasks.filter((task) => !successfulSyncKeysRef.current.has(buildTaskSyncSuccessKey(task)))
+    successfulSyncKeysRef.current = nextSuccessKeys
+
+    if (newSuccessfulTasks.length === 0) return
+
+    let nextDiagnostic = docsDiagnosticRef.current
+    let patched = false
+    newSuccessfulTasks.forEach((task) => {
+      const patchedDiagnostic = patchTencentDocsDiagnosticState(nextDiagnostic, {
+        target: task.sync?.target || task.sheetTarget,
+        match: task.sync?.match || task.sheetMatch,
+        writeSummary: task.sync?.writeSummary || null
+      })
+      if (patchedDiagnostic !== nextDiagnostic) {
+        nextDiagnostic = patchedDiagnostic
+        patched = true
+      }
+    })
+
+    if (patched) {
+      docsDiagnosticRef.current = nextDiagnostic
+      setDocsDiagnostic(nextDiagnostic)
+      return
+    }
+
+    if (!docsDiagnosticRef.current?.payload) return
+
+    void runTencentDocsInspect({
+      silent: true,
+      target: activeTarget,
+      forceRefresh: false
+    }).catch(() => null)
+  }, [runTencentDocsInspect])
+
   const startDocsLoginPolling = useCallback((loginSessionId) => {
     stopDocsLoginPolling()
     docsLoginPollingRef.current = window.setInterval(async () => {
@@ -360,7 +511,22 @@ export function BatchTasksWorkspace() {
     }
   }, [loadSyncConfig, loadTasks, stopDocsLoginPolling])
 
+  useEffect(() => {
+    activeTencentDocsTargetRef.current = activeTencentDocsTarget
+  }, [activeTencentDocsTarget])
+
+  useEffect(() => {
+    docsDiagnosticRef.current = docsDiagnostic
+  }, [docsDiagnostic])
+
+  useEffect(() => {
+    successfulSyncKeysRef.current = new Set(
+      collectSuccessfulSyncTasks(tasks, activeTencentDocsTarget).map((task) => buildTaskSyncSuccessKey(task))
+    )
+  }, [activeTencentDocsTarget, tasks])
+
   useSSE('tasks', (nextTasks) => {
+    processSuccessfulTaskEvents(nextTasks)
     setTasks(nextTasks)
     setLastSyncedAt(new Date().toISOString())
   })
@@ -447,17 +613,17 @@ export function BatchTasksWorkspace() {
     setExpandedTaskId((current) => (current === taskId ? null : taskId))
   }, [])
 
-  const handleRefreshList = async () => {
-    const [, nextConfig] = await Promise.all([loadTasks(), loadSyncConfig()])
-    if (nextConfig?.enabled && (nextConfig?.defaultTargetConfigured || docsConfigDraft.docUrl)) {
+  const handleRefreshList = async ({ inspectAfterRefresh = true, inspectForceRefresh = true, toast = true, reloadConfig = true } = {}) => {
+    const [, nextConfig] = await Promise.all([loadTasks(), reloadConfig ? loadSyncConfig() : Promise.resolve(syncConfig)])
+    if (inspectAfterRefresh && nextConfig?.enabled && (nextConfig?.defaultTargetConfigured || docsConfigDraft.docUrl)) {
       await runTencentDocsInspect({
         silent: true,
         configOverride: nextConfig,
         target: docsConfigDraft.docUrl ? docsConfigDraft : undefined,
-        forceRefresh: true
+        forceRefresh: inspectForceRefresh
       })
     }
-    addToast('success', '任务列表已刷新')
+    if (toast) addToast('success', '任务列表已刷新')
   }
 
   const handleSaveTencentDocsConfig = async () => {
@@ -605,7 +771,7 @@ export function BatchTasksWorkspace() {
 
   const handlePreviewTaskSync = useCallback(async (task) => {
     if (!task?.artifacts?.resultUrl) {
-      addToast('当前任务缺少结果文件，无法预览回填', 'warning')
+      addToast('warning', '当前任务缺少结果文件，无法预览回填')
       return
     }
 
@@ -639,7 +805,7 @@ export function BatchTasksWorkspace() {
           data: payload
         }
       }))
-      addToast('已生成腾讯文档回填预览', 'success')
+      addToast('success', '已生成腾讯文档回填预览')
     } catch (nextError) {
       setSyncPreviewState((current) => ({
         ...current,
@@ -653,7 +819,7 @@ export function BatchTasksWorkspace() {
           }
         }
       }))
-      addToast(nextError.message || '腾讯文档预览失败', 'danger')
+      addToast('danger', nextError.message || '腾讯文档预览失败')
     } finally {
       setSyncActionLoading((current) => ({ ...current, [task.taskId]: '' }))
     }
@@ -661,7 +827,7 @@ export function BatchTasksWorkspace() {
 
   const handleSyncTask = useCallback(async (task) => {
     if (!task?.artifacts?.resultUrl) {
-      addToast('当前任务缺少结果文件，无法同步腾讯文档', 'warning')
+      addToast('warning', '当前任务缺少结果文件，无法同步腾讯文档')
       return
     }
 
@@ -687,8 +853,19 @@ export function BatchTasksWorkspace() {
           data: payload
         }
       }))
-      await handleRefreshList()
-      addToast('腾讯文档已完成回填', 'success')
+      if (payload?.operationId) {
+        successfulSyncKeysRef.current = new Set([...successfulSyncKeysRef.current, `${task.taskId}:${payload.operationId}`])
+      }
+      applySyncResultToDocsDiagnostic(payload)
+      await handleRefreshList({ inspectAfterRefresh: false, toast: false, reloadConfig: false })
+      if (payload?.target?.docUrl) {
+        await runTencentDocsInspect({
+          silent: true,
+          target: payload.target,
+          forceRefresh: false
+        }).catch(() => null)
+      }
+      addToast('success', '腾讯文档已完成回填')
     } catch (nextError) {
       setSyncPreviewState((current) => ({
         ...current,
@@ -702,12 +879,12 @@ export function BatchTasksWorkspace() {
           }
         }
       }))
-      await handleRefreshList()
-      addToast(nextError.message || '腾讯文档同步失败', 'danger')
+      await handleRefreshList({ inspectAfterRefresh: false, toast: false, reloadConfig: false })
+      addToast('danger', nextError.message || '腾讯文档同步失败')
     } finally {
       setSyncActionLoading((current) => ({ ...current, [task.taskId]: '' }))
     }
-  }, [addToast, handleRefreshList])
+  }, [addToast, applySyncResultToDocsDiagnostic, handleRefreshList, runTencentDocsInspect])
 
   const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
   const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
@@ -958,5 +1135,3 @@ function compareTasks(left, right) {
   const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime()
   return rightTime - leftTime
 }
-
-

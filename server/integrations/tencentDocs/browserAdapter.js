@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const { chromium } = require('playwright-core')
 const { ensureDir, writeJson } = require('../../lib/files')
+const { gotoWithFallback, resolveGotoTimeoutMs } = require('../../lib/navigation')
 const { createTencentDocsError, ERROR_CODES } = require('./errors')
 const { parseClipboardTable, parseClipboardDataRows, normalizeHeaderCell } = require('./sheetClipboard')
 
@@ -206,6 +207,123 @@ class TencentDocsBrowserAdapter {
     }
   }
 
+  async readSheetBatches({ target, maxRows = 200, batchSize = 200, artifactDir, strict = true }) {
+    ensureDir(artifactDir)
+
+    let context = null
+    let page = null
+
+    try {
+      context = await this.launchContext()
+      page = context.pages()[0] || await context.newPage()
+      await openDocumentPage(page, target.docUrl)
+      await page.screenshot({ path: path.join(artifactDir, 'before-read.png'), fullPage: true })
+
+      await assertLoggedIn(page)
+      const selectedSheetName = await ensureSheetSelected(page, target.sheetName, { strict })
+      const tabs = await readVisibleSheetTabs(page)
+
+      const totalRows = Math.max(1, Math.floor(Number(maxRows || 20)))
+      const windowBatchSize = normalizeMaxRows(batchSize)
+      const firstBatchSize = Math.min(windowBatchSize, totalRows)
+      const firstRawTsv = await readSheetSelection(page, {
+        maxRows: firstBatchSize,
+        platform: this.platform
+      })
+      const firstParsed = parseClipboardTable(firstRawTsv)
+      if (firstParsed.headers.length === 0) {
+        throw createTencentDocsError(500, ERROR_CODES.READ_FAILED, '未能从腾讯文档读取到表格内容')
+      }
+
+      const rows = firstParsed.rows.slice(0, firstBatchSize)
+      const rawTsvFile = path.join(artifactDir, 'sheet-selection.tsv')
+      const parsedFile = path.join(artifactDir, 'sheet-preview.json')
+      fs.writeFileSync(rawTsvFile, firstRawTsv, 'utf8')
+
+      let nextStartRow = firstBatchSize + 2
+      while (nextStartRow <= totalRows + 1) {
+        const consumedRows = nextStartRow - 2
+        const remaining = totalRows - consumedRows
+        if (remaining <= 0) break
+
+        const currentWindowSize = Math.min(windowBatchSize, remaining)
+        const rawWindowTsv = await readSheetSelectionWindow(page, {
+          startRow: nextStartRow,
+          rowCount: currentWindowSize,
+          columnCount: firstParsed.headers.length,
+          platform: this.platform
+        })
+        const windowParsed = parseClipboardDataRows(rawWindowTsv, firstParsed.headers, {
+          startSheetRow: nextStartRow
+        })
+
+        const windowPayload = {
+          target: {
+            docUrl: target.docUrl,
+            sheetName: selectedSheetName || target.sheetName || ''
+          },
+          startRow: nextStartRow,
+          maxRows: currentWindowSize,
+          columnCount: windowParsed.columnCount,
+          headers: firstParsed.headers,
+          rowCount: windowParsed.rows.length,
+          rows: windowParsed.rows
+        }
+        fs.writeFileSync(path.join(artifactDir, `sheet-window-${nextStartRow}.tsv`), rawWindowTsv, 'utf8')
+        writeJson(path.join(artifactDir, `sheet-window-${nextStartRow}.json`), windowPayload)
+
+        if (looksLikeRepeatedHeaderRows(windowParsed.rows)) {
+          break
+        }
+        if (!windowParsed.rows.length) {
+          break
+        }
+
+        rows.push(...windowParsed.rows)
+        nextStartRow += currentWindowSize
+        if (windowParsed.rows.length < currentWindowSize) {
+          break
+        }
+      }
+
+      const previewPayload = {
+        target: {
+          docUrl: target.docUrl,
+          sheetName: selectedSheetName || target.sheetName || ''
+        },
+        maxRows: totalRows,
+        tabs,
+        columnCount: firstParsed.columnCount,
+        headers: firstParsed.headers,
+        rowCount: rows.length,
+        rows
+      }
+      writeJson(parsedFile, previewPayload)
+
+      await page.waitForTimeout(500)
+      await page.screenshot({ path: path.join(artifactDir, 'after-read.png'), fullPage: true })
+
+      return {
+        ...previewPayload,
+        artifacts: {
+          beforeReadPath: path.join(artifactDir, 'before-read.png'),
+          afterReadPath: path.join(artifactDir, 'after-read.png'),
+          selectionTsvPath: rawTsvFile,
+          previewJsonPath: parsedFile
+        }
+      }
+    } catch (error) {
+      if (page) {
+        await page.screenshot({ path: path.join(artifactDir, 'error.png'), fullPage: true }).catch(() => { })
+      }
+      throw error
+    } finally {
+      if (context) {
+        await context.close().catch(() => { })
+      }
+    }
+  }
+
   async updateRowCells({ target, sheetRow, cells, artifactDir }) {
     ensureDir(artifactDir)
 
@@ -347,8 +465,11 @@ function mapTencentDocsBrowserError(error) {
 }
 
 async function openDocumentPage(page, docUrl) {
-  await page.goto(docUrl, { waitUntil: 'domcontentloaded' })
-  await page.waitForTimeout(1500)
+  await gotoWithFallback(page, docUrl, {
+    timeoutMs: resolveGotoTimeoutMs(),
+    settleMs: 1500,
+    canTreatTimeoutAsSuccess: async (currentPage) => /^https:\/\/docs\.qq\.com\//.test(currentPage.url())
+  })
 }
 
 async function assertLoggedIn(page) {
@@ -1585,6 +1706,15 @@ function normalizeMaxRows(maxRows) {
   const value = Number(maxRows || 20)
   if (!Number.isFinite(value)) return 20
   return Math.max(1, Math.min(200, Math.floor(value)))
+}
+
+function looksLikeRepeatedHeaderRows(rows = []) {
+  const firstRow = rows[0]
+  if (!firstRow) return false
+
+  const nickname = String(firstRow.nickname || firstRow.cells?.['逛逛昵称'] || '').trim()
+  const contentId = String(firstRow.contentId || firstRow.cells?.['内容id'] || firstRow.cells?.['内容ID'] || '').trim()
+  return nickname === '逛逛昵称' || contentId === '内容id' || contentId === '内容ID'
 }
 
 function getRequiredTemplateColumns(columns) {

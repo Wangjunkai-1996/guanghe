@@ -5,8 +5,8 @@ const ACTIVE_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'WAITING
 const TRACKED_LOGIN_STATUSES = new Set(['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS', 'LOGGED_IN'])
 const TERMINAL_QUERY_STATUSES = new Set(['SUCCEEDED', 'NO_DATA', 'FAILED'])
 const BUSY_QUERY_STATUSES = new Set(['QUEUED', 'RUNNING'])
-const TERMINAL_SHEET_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'ROW_CHANGED'])
-const SHEET_DEMAND_RETRYABLE_STATUSES = new Set(['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'NOT_IN_SHEET', 'ROW_CHANGED', 'ALREADY_COMPLETE', 'NEEDS_FILL'])
+const TERMINAL_SHEET_STATUSES = new Set(['ALREADY_COMPLETE', 'NOT_IN_SHEET', 'CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'ROW_CHANGED'])
+const SHEET_DEMAND_RETRYABLE_STATUSES = new Set(['CONTENT_ID_MISSING', 'DUPLICATE_NICKNAME', 'DUPLICATE_ACCOUNT_ID', 'NOT_IN_SHEET', 'ROW_CHANGED', 'ALREADY_COMPLETE', 'NEEDS_FILL'])
 
 class GuangheTaskService {
   constructor({ taskStore, loginService, queryService, tencentDocsSyncService = null, maxActiveLoginSessions = 5, maxConcurrentQueries = 2, pollIntervalMs = 2000 }) {
@@ -356,6 +356,7 @@ class GuangheTaskService {
     try {
       const response = await this.tencentDocsSyncService.matchDemandByNickname({
         nickname: task.accountNickname,
+        accountId: task.accountId,
         target: task.sheetTarget
       })
       const match = response.match || {}
@@ -372,7 +373,12 @@ class GuangheTaskService {
           contentId: match.contentId || '',
           missingColumns: match.missingColumns || [],
           matchedAt: new Date().toISOString(),
-          details: match.matches ? { matches: match.matches } : null
+          details: (match.matches || match.details)
+            ? {
+                ...(match.details || {}),
+                ...(match.matches ? { matches: match.matches } : {})
+              }
+            : null
         }
       }
 
@@ -402,6 +408,16 @@ class GuangheTaskService {
             code: 'CONTENT_ID_MISSING',
             message: '交接表已命中该达人，但内容 ID 为空，请先补齐内容 ID。',
             details: null
+          }
+        })
+      } else if (match.status === 'DUPLICATE_ACCOUNT_ID') {
+        nextTask = this.taskStore.patch(taskId, {
+          ...basePatch,
+          contentId: '',
+          error: {
+            code: 'DUPLICATE_ACCOUNT_ID',
+            message: '交接表中存在重复逛逛ID，当前版本不自动决策，请先人工处理。',
+            details: basePatch.sheetMatch.details
           }
         })
       } else if (match.status === 'DUPLICATE_NICKNAME') {

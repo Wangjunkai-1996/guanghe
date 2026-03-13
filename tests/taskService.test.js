@@ -185,6 +185,106 @@ describe('taskService', () => {
     expect(saved.sync.writeSummary.action).toBe('UPDATED')
     expect(saved.sync.artifacts.writeLogUrl).toBe('/api/artifacts/tencent-docs/handoff/write-log.json')
   })
+
+  test('sheet demand matching passes accountId to tencent docs service', async () => {
+    const calls = []
+    const harness = createHarness({
+      tencentDocsSyncService: {
+        async matchDemandByNickname(payload) {
+          calls.push(payload)
+          return {
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            match: {
+              status: 'NEEDS_FILL',
+              sheetRow: 12,
+              nickname: payload.nickname,
+              contentId: '554608495125',
+              missingColumns: ['查看次数'],
+              details: { matchedBy: ['逛逛ID'] }
+            }
+          }
+        },
+        getConfig() {
+          return {
+            enabled: true,
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
+          }
+        }
+      }
+    })
+
+    const payload = await harness.service.createSheetDemandTasksBatch(1)
+    const task = payload.tasks[0]
+    harness.loginService.setSession(task.loginSessionId, {
+      status: 'LOGGED_IN',
+      account: {
+        accountId: '1001',
+        nickname: '自然卷儿'
+      }
+    })
+
+    await harness.service.pollOnce()
+    await harness.service.waitForIdle()
+
+    expect(calls).toEqual([
+      {
+        nickname: '自然卷儿',
+        accountId: '1001',
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
+      }
+    ])
+    expect(harness.taskStore.get(task.taskId).sheetMatch.details).toEqual({ matchedBy: ['逛逛ID'] })
+  })
+
+  test('sheet demand duplicate accountId is stored as terminal manual-intervention state', async () => {
+    const harness = createHarness({
+      tencentDocsSyncService: {
+        async matchDemandByNickname() {
+          return {
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            match: {
+              status: 'DUPLICATE_ACCOUNT_ID',
+              sheetRow: 12,
+              nickname: '自然卷儿',
+              contentId: '554608495125',
+              missingColumns: ['查看次数'],
+              details: { matchedBy: ['逛逛ID'], reason: 'DUPLICATE_ACCOUNT_ID' },
+              matches: [
+                { sheetRow: 12, nickname: '自然卷儿', contentId: '554608495125', accountId: '1001', status: 'NEEDS_FILL' },
+                { sheetRow: 18, nickname: '自然卷儿-重复', contentId: '554608495126', accountId: '1001', status: 'NEEDS_FILL' }
+              ]
+            }
+          }
+        },
+        getConfig() {
+          return {
+            enabled: true,
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
+          }
+        }
+      }
+    })
+
+    const payload = await harness.service.createSheetDemandTasksBatch(1)
+    const task = payload.tasks[0]
+    harness.loginService.setSession(task.loginSessionId, {
+      status: 'LOGGED_IN',
+      account: {
+        accountId: '1001',
+        nickname: '自然卷儿'
+      }
+    })
+
+    await harness.service.pollOnce()
+    await harness.service.waitForIdle()
+
+    const saved = harness.taskStore.get(task.taskId)
+    expect(saved.sheetMatch.status).toBe('DUPLICATE_ACCOUNT_ID')
+    expect(saved.error.code).toBe('DUPLICATE_ACCOUNT_ID')
+    expect(saved.error.message).toContain('重复逛逛ID')
+    expect(saved.contentId).toBe('')
+  })
+
   test('stores no-data result and artifact links', async () => {
     const harness = createHarness({
       queryImpl: async ({ accountId, contentId }) => {

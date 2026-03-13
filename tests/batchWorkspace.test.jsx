@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('../web/src/api', () => {
   const api = {
@@ -31,15 +31,29 @@ vi.mock('../web/src/api', () => {
 })
 
 class MockEventSource {
+  static instances = []
+
   constructor(url) {
     this.url = url
-    this.cleanup = []
+    this.listeners = []
+    MockEventSource.instances.push(this)
   }
+
   addEventListener(event, cb) {
-    this.cleanup.push({ event, cb })
+    this.listeners.push({ event, cb })
   }
+
   close() {
-    this.cleanup = []
+    this.listeners = []
+  }
+
+  static emit(event, payload) {
+    const serializedPayload = JSON.stringify(payload)
+    MockEventSource.instances.forEach((instance) => {
+      instance.listeners
+        .filter((listener) => listener.event === event)
+        .forEach((listener) => listener.cb({ data: serializedPayload }))
+    })
   }
 }
 vi.stubGlobal('EventSource', MockEventSource)
@@ -410,6 +424,101 @@ describe('batch task workspace ui', () => {
     expect(await screen.findByAltText('腾讯文档登录二维码')).toHaveAttribute('src', '/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png')
   })
 
+
+  test('shows sheet match source when task is matched by 逛逛ID', async () => {
+    api.listTasks.mockResolvedValue({
+      tasks: [
+        createTask({
+          taskId: 'task-match-source',
+          taskMode: 'SHEET_DEMAND',
+          remark: '达人E',
+          contentId: '554608495125',
+          accountId: '1001',
+          accountNickname: '测试账号',
+          sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+          sheetMatch: {
+            status: 'NEEDS_FILL',
+            sheetRow: 9,
+            nickname: '达人E',
+            contentId: '554608495125',
+            missingColumns: ['查看次数'],
+            matchedAt: '2026-03-09T01:00:00.000Z',
+            details: { matchedBy: ['逛逛ID'] }
+          },
+          login: { status: 'LOGGED_IN' },
+          query: { status: 'IDLE' }
+        })
+      ]
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    const taskQueueList = await waitFor(() => {
+      const element = document.querySelector('.task-queue-list')
+      expect(element).not.toBeNull()
+      return element
+    })
+    expect(within(taskQueueList).getByText('按逛逛ID命中')).toBeInTheDocument()
+
+    fireEvent.click(within(taskQueueList).getByText('达人E'))
+
+    const expandedPill = await screen.findByText('收起详情')
+    const accordionItem = expandedPill.closest('.task-accordion-item')
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
+
+    expect(within(accordionItem).getAllByText('按逛逛ID命中').length).toBeGreaterThan(0)
+    expect(within(accordionItem).getByText('命中依据')).toBeInTheDocument()
+  })
+
+  test('shows duplicate accountId sheet match as manual-intervention status', async () => {
+    api.listTasks.mockResolvedValue({
+      tasks: [
+        createTask({
+          taskId: 'task-duplicate-account-id',
+          taskMode: 'SHEET_DEMAND',
+          remark: '达人F',
+          accountId: '1001',
+          accountNickname: '测试账号',
+          sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+          sheetMatch: {
+            status: 'DUPLICATE_ACCOUNT_ID',
+            sheetRow: 9,
+            nickname: '达人F',
+            contentId: '554608495125',
+            missingColumns: ['查看次数'],
+            matchedAt: '2026-03-09T01:00:00.000Z',
+            details: { matchedBy: ['逛逛ID'], reason: 'DUPLICATE_ACCOUNT_ID' },
+            matches: [
+              { sheetRow: 9, nickname: '达人F', contentId: '554608495125', accountId: '1001', status: 'NEEDS_FILL' },
+              { sheetRow: 18, nickname: '达人F-重复', contentId: '554608495126', accountId: '1001', status: 'NEEDS_FILL' }
+            ]
+          },
+          login: { status: 'LOGGED_IN' },
+          query: { status: 'IDLE' }
+        })
+      ]
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    const taskQueueList = await waitFor(() => {
+      const element = document.querySelector('.task-queue-list')
+      expect(element).not.toBeNull()
+      return element
+    })
+    expect(within(taskQueueList).getByText('逛逛ID重复')).toBeInTheDocument()
+    expect(within(taskQueueList).getByText('按逛逛ID命中')).toBeInTheDocument()
+
+    fireEvent.click(within(taskQueueList).getByText('达人F'))
+
+    const expandedPill = await screen.findByText('收起详情')
+    const accordionItem = expandedPill.closest('.task-accordion-item')
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
+
+    expect(within(accordionItem).getAllByText('逛逛ID重复').length).toBeGreaterThan(0)
+    expect(within(accordionItem).getByText(/找到多行相同逛逛ID/)).toBeInTheDocument()
+  })
+
   test('shows sync failure guidance and supports manual resync actions', async () => {
     api.listTasks.mockResolvedValue({
       tasks: [
@@ -473,7 +582,298 @@ describe('batch task workspace ui', () => {
     })
   })
 
+  test('patches tencent docs inspect summary immediately after task SSE sync success', async () => {
+    api.listTasks.mockResolvedValue({
+      tasks: [
+        createTask({
+          taskId: 'task-sync-sse-refresh',
+          taskMode: 'SHEET_DEMAND',
+          remark: '达人SSE',
+          contentId: '554608495125',
+          accountId: '1001',
+          accountNickname: '测试账号',
+          sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+          sheetMatch: {
+            status: 'NEEDS_FILL',
+            sheetRow: 6,
+            nickname: '达人SSE',
+            contentId: '554608495125',
+            missingColumns: ['查看次数'],
+            matchedAt: '2026-03-09T01:00:00.000Z'
+          },
+          login: { status: 'LOGGED_IN' },
+          query: { status: 'SUCCEEDED' },
+          sync: {
+            status: 'FAILED',
+            operationId: 'handoff-sse-old',
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            match: { sheetRow: 6, contentId: '554608495125', matchedBy: ['内容id'] },
+            writeSummary: null,
+            artifacts: null,
+            error: { code: 'TENCENT_DOCS_LOGIN_REQUIRED', message: '腾讯文档当前未登录，请先完成登录', details: null }
+          },
+          metrics: {
+            内容查看次数: { value: '83611', field: 'consumePv' },
+            内容查看人数: { value: '18033', field: 'consumeUv' },
+            种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
+            种草成交人数: { value: '1', field: 'payBuyerCntZc' },
+            商品点击次数: { value: '3', field: 'ipvPv' }
+          },
+          screenshots: { rawUrl: '/api/artifacts/raw.png', summaryUrl: '/api/artifacts/summary.png' },
+          artifacts: { resultUrl: '/api/artifacts/results.json', networkLogUrl: '/api/artifacts/network-log.json' }
+        })
+      ]
+    })
+
+    api.inspectTencentDocsSheet.mockResolvedValueOnce({
+      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      tabs: [{ name: '1', selected: true }],
+      headers: ['逛逛昵称', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+      rowCount: 1,
+      columnCount: 7,
+      summary: {
+        totalRows: 1,
+        completeRows: 0,
+        needsFillRows: 1,
+        missingContentIdRows: 0,
+        duplicateNicknameRows: 0
+      },
+      demands: [{ sheetRow: 6, nickname: '达人SSE', contentId: '554608495125', status: 'NEEDS_FILL', missingColumns: ['查看次数'], missingCount: 1 }],
+      rows: [{ sheetRow: 6, contentId: '554608495125' }],
+      artifacts: {}
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    const getSummaryCard = (label) => screen.getAllByText(label).map((node) => node.closest('.diagnostic-card')).find(Boolean)
+
+    await waitFor(() => {
+      expect(within(getSummaryCard('待补数')).getByText('1')).toBeInTheDocument()
+      expect(within(getSummaryCard('已完整')).getByText('0')).toBeInTheDocument()
+    })
+
+    const inspectCallCountBeforeEvent = api.inspectTencentDocsSheet.mock.calls.length
+
+    await act(async () => {
+      MockEventSource.emit('tasks', {
+        tasks: [
+          createTask({
+            taskId: 'task-sync-sse-refresh',
+            taskMode: 'SHEET_DEMAND',
+            remark: '达人SSE',
+            contentId: '554608495125',
+            accountId: '1001',
+            accountNickname: '测试账号',
+            sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            sheetMatch: {
+              status: 'NEEDS_FILL',
+              sheetRow: 6,
+              nickname: '达人SSE',
+              contentId: '554608495125',
+              missingColumns: ['查看次数'],
+              matchedAt: '2026-03-09T01:00:00.000Z'
+            },
+            login: { status: 'LOGGED_IN' },
+            query: { status: 'SUCCEEDED' },
+            sync: {
+              status: 'SUCCEEDED',
+              operationId: 'sync-sse-refresh',
+              target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+              match: { sheetRow: 6, contentId: '554608495125', matchedBy: ['内容id'] },
+              writeSummary: { action: 'UPDATED', columnsUpdated: ['查看次数'] },
+              artifacts: { writeLogUrl: '/api/artifacts/tencent-docs/handoff/write-log.json' },
+              error: null
+            },
+            metrics: {
+              内容查看次数: { value: '83611', field: 'consumePv' },
+              内容查看人数: { value: '18033', field: 'consumeUv' },
+              种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
+              种草成交人数: { value: '1', field: 'payBuyerCntZc' },
+              商品点击次数: { value: '3', field: 'ipvPv' }
+            },
+            screenshots: { rawUrl: '/api/artifacts/raw.png', summaryUrl: '/api/artifacts/summary.png' },
+            artifacts: { resultUrl: '/api/artifacts/results.json', networkLogUrl: '/api/artifacts/network-log.json' }
+          })
+        ]
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(getSummaryCard('待补数')).getByText('0')).toBeInTheDocument()
+      expect(within(getSummaryCard('已完整')).getByText('1')).toBeInTheDocument()
+    })
+    expect(api.inspectTencentDocsSheet).toHaveBeenCalledTimes(inspectCallCountBeforeEvent)
+    expect(api.inspectTencentDocsSheet.mock.calls.some(([payload]) => payload?.forceRefresh === true)).toBe(false)
+  })
+
+  test('patches tencent docs inspect summary after manual sync succeeds without full re-inspect', async () => {
+    api.listTasks
+      .mockResolvedValueOnce({
+        tasks: [
+          createTask({
+            taskId: 'task-sync-refresh',
+            taskMode: 'SHEET_DEMAND',
+            remark: '达人D',
+            contentId: '554608495125',
+            accountId: '1001',
+            accountNickname: '测试账号',
+            sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            sheetMatch: {
+              status: 'NEEDS_FILL',
+              sheetRow: 6,
+              nickname: '达人D',
+              contentId: '554608495125',
+              missingColumns: ['查看次数'],
+              matchedAt: '2026-03-09T01:00:00.000Z'
+            },
+            login: { status: 'LOGGED_IN' },
+            query: { status: 'SUCCEEDED' },
+            sync: {
+              status: 'FAILED',
+              operationId: 'handoff-old',
+              target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+              match: { sheetRow: 6, contentId: '554608495125', matchedBy: ['内容id'] },
+              writeSummary: null,
+              artifacts: null,
+              error: { code: 'TENCENT_DOCS_LOGIN_REQUIRED', message: '腾讯文档当前未登录，请先完成登录', details: null }
+            },
+            metrics: {
+              内容查看次数: { value: '83611', field: 'consumePv' },
+              内容查看人数: { value: '18033', field: 'consumeUv' },
+              种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
+              种草成交人数: { value: '1', field: 'payBuyerCntZc' },
+              商品点击次数: { value: '3', field: 'ipvPv' }
+            },
+            screenshots: { rawUrl: '/api/artifacts/raw.png', summaryUrl: '/api/artifacts/summary.png' },
+            artifacts: { resultUrl: '/api/artifacts/results.json', networkLogUrl: '/api/artifacts/network-log.json' }
+          })
+        ]
+      })
+      .mockResolvedValueOnce({
+        tasks: [
+          createTask({
+            taskId: 'task-sync-refresh',
+            taskMode: 'SHEET_DEMAND',
+            remark: '达人D',
+            contentId: '554608495125',
+            accountId: '1001',
+            accountNickname: '测试账号',
+            sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            sheetMatch: {
+              status: 'NEEDS_FILL',
+              sheetRow: 6,
+              nickname: '达人D',
+              contentId: '554608495125',
+              missingColumns: ['查看次数'],
+              matchedAt: '2026-03-09T01:00:00.000Z'
+            },
+            login: { status: 'LOGGED_IN' },
+            query: { status: 'SUCCEEDED' },
+            sync: {
+              status: 'SUCCEEDED',
+              operationId: 'sync-refresh',
+              target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+              match: { sheetRow: 6, contentId: '554608495125', matchedBy: ['内容id'] },
+              writeSummary: { action: 'UPDATED', columnsUpdated: ['查看次数'] },
+              artifacts: { writeLogUrl: '/api/artifacts/tencent-docs/handoff/write-log.json' },
+              error: null
+            },
+            metrics: {
+              内容查看次数: { value: '83611', field: 'consumePv' },
+              内容查看人数: { value: '18033', field: 'consumeUv' },
+              种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
+              种草成交人数: { value: '1', field: 'payBuyerCntZc' },
+              商品点击次数: { value: '3', field: 'ipvPv' }
+            },
+            screenshots: { rawUrl: '/api/artifacts/raw.png', summaryUrl: '/api/artifacts/summary.png' },
+            artifacts: { resultUrl: '/api/artifacts/results.json', networkLogUrl: '/api/artifacts/network-log.json' }
+          })
+        ]
+      })
+
+    api.inspectTencentDocsSheet
+      .mockResolvedValueOnce({
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        tabs: [{ name: '1', selected: true }],
+        headers: ['逛逛昵称', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        columnCount: 7,
+        summary: {
+          totalRows: 1,
+          completeRows: 0,
+          needsFillRows: 1,
+          missingContentIdRows: 0,
+          duplicateNicknameRows: 0
+        },
+        demands: [{ sheetRow: 6, nickname: '达人D', contentId: '554608495125', status: 'NEEDS_FILL', missingColumns: ['查看次数'], missingCount: 1 }],
+        rows: [{ sheetRow: 6, contentId: '554608495125' }],
+        artifacts: {}
+      })
+      .mockResolvedValueOnce({
+        target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+        tabs: [{ name: '1', selected: true }],
+        headers: ['逛逛昵称', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 1,
+        columnCount: 7,
+        summary: {
+          totalRows: 1,
+          completeRows: 1,
+          needsFillRows: 0,
+          missingContentIdRows: 0,
+          duplicateNicknameRows: 0
+        },
+        demands: [{ sheetRow: 6, nickname: '达人D', contentId: '554608495125', status: 'COMPLETE', missingColumns: [], missingCount: 0 }],
+        rows: [{ sheetRow: 6, contentId: '554608495125' }],
+        artifacts: {}
+      })
+
+    api.syncTencentDocsHandoff.mockResolvedValueOnce({
+      operationId: 'sync-refresh',
+      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      match: { sheetRow: 6, contentId: '554608495125', matchedBy: ['内容id'] },
+      writeSummary: { action: 'UPDATED', columnsUpdated: ['查看次数'] },
+      artifacts: { writeLogUrl: '/api/artifacts/tencent-docs/handoff/write-log.json' }
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    const getSummaryCard = (label) => screen.getAllByText(label).map((node) => node.closest('.diagnostic-card')).find(Boolean)
+
+    const taskQueueList = await waitFor(() => {
+      const element = document.querySelector('.task-queue-list')
+      expect(element).not.toBeNull()
+      return element
+    })
+    await waitFor(() => {
+      expect(within(getSummaryCard('待补数')).getByText('1')).toBeInTheDocument()
+      expect(within(getSummaryCard('已完整')).getByText('0')).toBeInTheDocument()
+    })
+
+    fireEvent.click(within(taskQueueList).getByText('达人D'))
+
+    const expandedPill = await screen.findByText('收起详情')
+    const accordionItem = expandedPill.closest('.task-accordion-item')
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
+    fireEvent.click(within(accordionItem).getByRole('button', { name: '立即同步' }))
+
+    await waitFor(() => {
+      expect(api.syncTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
+        taskId: 'task-sync-refresh',
+        resultUrl: '/api/artifacts/results.json'
+      }))
+    })
+    await waitFor(() => {
+      expect(api.inspectTencentDocsSheet).toHaveBeenCalledTimes(2)
+    }, { timeout: 3000 })
+    await waitFor(() => {
+      expect(within(getSummaryCard('待补数')).getByText('0')).toBeInTheDocument()
+    }, { timeout: 3000 })
+    expect(within(getSummaryCard('已完整')).getByText('1')).toBeInTheDocument()
+    expect(api.inspectTencentDocsSheet.mock.calls.some(([payload]) => payload?.forceRefresh === true)).toBe(false)
+  })
+
   test('app defaults to task workspace and reveals manual query on demand', async () => {
+
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
