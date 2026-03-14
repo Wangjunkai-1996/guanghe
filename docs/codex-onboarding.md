@@ -2,7 +2,7 @@
 
 这份文档是给另一台电脑上的 Codex 用的，目标不是解释所有实现细节，而是让它能在 **10 分钟内判断项目定位、主业务链路、关键文件和推荐技能**，避免一上来走偏。
 
-> 前端 UI 重构 V1 完成记录见 `docs/frontend-ui-refactor-plan.md`。第二轮品牌化视觉升级完成记录见 `docs/frontend-ui-visual-v2-plan.md`。第三轮前端性能优化记录见 `docs/frontend-performance-v3-plan.md`。第四轮视觉收口与交互打磨完成记录见 `docs/frontend-ui-v4-plan.md`；当前如果继续做前端页面优化，优先以 V4 作为最新基线，V1/V2/V3 视为历史档案。
+> 前端 UI 重构 V1 完成记录见 `docs/frontend-ui-refactor-plan.md`。第二轮视觉升级完成记录见 `docs/frontend-ui-visual-v2-plan.md`。第三轮前端性能优化记录见 `docs/frontend-performance-v3-plan.md`。第四轮视觉收口与交互打磨完成记录见 `docs/frontend-ui-v4-plan.md`；当前如果继续做前端页面优化，优先以 V4 作为最新基线，V1/V2/V3 视为历史档案。
 
 ## 0. 先纠偏
 

@@ -2,7 +2,6 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { api } from './api'
 import { LoginForm } from './components/LoginForm'
 import { PageHeader } from './components/ui/PageHeader'
-import { DashboardIcon } from './components/ui/ShellIcons'
 import { useAccounts } from './hooks/useAccounts'
 import { useLoginSession } from './hooks/useLoginSession'
 
@@ -120,11 +119,9 @@ export default function App() {
   return (
     <div className="workspace-page">
       <PageHeader
-        eyebrow="品牌运营控制台"
-        badge="Brand Ops"
-        icon={DashboardIcon}
-        title="光合品牌运营工作台"
-        description="围绕腾讯交接表闭环、达人扫码任务和单条内容验证建立统一运营控制台，突出首页层级、状态主线与执行节奏。"
+        eyebrow="工作台总览"
+        title="光合平台查询工作台"
+        description="围绕腾讯交接表闭环、达人扫码任务和单条内容验证组织日常操作，保持清晰的信息层级、状态主线与执行节奏。"
         actions={(
           <div className="page-header-action-cluster">
             <div className="page-header-status-strip">

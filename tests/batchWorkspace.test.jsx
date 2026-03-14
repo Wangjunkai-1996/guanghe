@@ -260,7 +260,7 @@ describe('batch task workspace ui', () => {
     expect(within(accordionItem).getByText('腾讯文档同步')).toBeInTheDocument()
   })
 
-  test('renders branded batch hero summary with core actions', async () => {
+  test('renders batch hero summary with core actions', async () => {
     api.listTasks.mockResolvedValue({ tasks: [] })
 
     render(<BatchTasksWorkspace />)

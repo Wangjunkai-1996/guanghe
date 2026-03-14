@@ -1,11 +1,7 @@
-import { DashboardIcon } from './ShellIcons'
-
 export function PageHeader({
   eyebrow,
   title,
   description,
-  icon: IconComponent = DashboardIcon,
-  badge = '',
   variant = 'hero',
   actions = null,
   stats = [],
@@ -16,15 +12,7 @@ export function PageHeader({
   return (
     <header className={`${classes} page-header-enter`}>
       <div className="workspace-hero-copy page-header-copy">
-        <div className="page-header-brandline">
-          <div className="page-header-brand-mark">
-            {IconComponent ? <IconComponent /> : null}
-          </div>
-          <div className="page-header-brand-copy">
-            {eyebrow ? <span className="section-eyebrow">{eyebrow}</span> : null}
-            {badge ? <span className="page-header-badge">{badge}</span> : null}
-          </div>
-        </div>
+        {eyebrow ? <div className="page-header-kicker"><span className="section-eyebrow">{eyebrow}</span></div> : null}
         <h1>{title}</h1>
         {description ? <p className="page-header-description">{description}</p> : null}
       </div>

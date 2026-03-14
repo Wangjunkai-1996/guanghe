@@ -2569,7 +2569,7 @@
 .manual-entry-kicker,
 .result-panel-kicker,
 .login-stage-kicker,
-.page-header-brandline {
+.page-header-kicker {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -2630,8 +2630,6 @@
 }
 
 .ui-stat-card-icon-wrap,
-.page-header-brand-mark,
-.login-drawer-brandmark,
 .ui-empty-state-icon-wrap,
 .ui-inline-notice-icon-wrap {
   display: grid;
@@ -2743,7 +2741,6 @@
 .page-header h1,
 .page-header h2,
 .page-header strong,
-.page-header .page-header-badge,
 .page-header .section-eyebrow {
   color: var(--text-inverse);
 }
@@ -2762,37 +2759,8 @@
   align-items: stretch;
 }
 
-.page-header-brand-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.page-header-brand-mark,
-.login-drawer-brandmark {
-  background: rgba(255, 248, 236, 0.1);
-  color: var(--text-inverse);
-  border: 1px solid rgba(255, 248, 236, 0.16);
-}
-
-.page-header-brand-mark svg,
-.login-drawer-brandmark svg {
-  width: 18px;
-  height: 18px;
-}
-
-.page-header-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid rgba(255, 248, 236, 0.14);
-  background: rgba(255, 248, 236, 0.08);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.page-header-kicker {
+  margin-bottom: 6px;
 }
 
 .page-header-meta,
@@ -3586,11 +3554,9 @@
   overflow-y: auto;
 }
 
-.login-drawer-brandline {
+.login-drawer-kicker {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
   margin-bottom: 8px;
 }
 

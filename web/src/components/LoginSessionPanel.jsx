@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { CircleCheckBig, QrCode, ShieldCheck, Smartphone, Sparkles, Waypoints, X } from 'lucide-react'
+import { CircleCheckBig, QrCode, ShieldCheck, Smartphone, Sparkles, X } from 'lucide-react'
 import { buildFallbackAvatar, formatLoginStatus } from '../lib/ui'
 import { InlineNotice } from './ui/InlineNotice'
 import { SectionCard } from './ui/SectionCard'
@@ -161,12 +161,8 @@ export function LoginSessionPanel({
         >
         <header className="login-drawer-header">
           <div className="login-drawer-title-block">
-            <div className="login-drawer-brandline">
-              <div className="login-drawer-brandmark">
-                <Waypoints size={18} aria-hidden="true" />
-              </div>
+            <div className="login-drawer-kicker">
               <span className="section-eyebrow">新增账号</span>
-              <span className="page-header-badge">Login Flow</span>
             </div>
             <div className="login-drawer-title-row">
               <h2 id={titleId}>扫码登录淘宝账号</h2>
