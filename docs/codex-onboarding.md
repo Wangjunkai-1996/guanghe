@@ -149,7 +149,7 @@ Express API（server/app.js）
    - `EXPIRED`
    - `FAILED`
 5. 一旦登录成功，提取账号昵称、头像、账号 ID，并把临时登录 context “转正”为账号专属 profile。
-6. 账号信息写入 `data/accounts.json`，后续可复用登录态，不需要重复扫码。
+6. 账号信息写入运行时文件 `data/accounts.json`，后续可复用登录态，不需要重复扫码。
 
 ### 5.3 手动账号查询
 
@@ -341,7 +341,7 @@ Express API（server/app.js）
 ## 7. 关键持久化与产物目录
 
 - `data/accounts.json`
-  - 已保存账号元数据。
+  - 已保存账号元数据，属于运行时文件，默认不纳入 Git。
 - `data/tasks.json`
   - 批量任务状态持久化。
 - `data/tencent-docs-jobs.json`
@@ -451,4 +451,4 @@ Express API（server/app.js）
 6. 如果联调出问题，先看：
    - `artifacts/web/`
    - `data/tasks.json`
-   - `data/accounts.json`
+   - `data/accounts.json`（运行时文件）

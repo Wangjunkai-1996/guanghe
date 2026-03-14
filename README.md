@@ -158,18 +158,17 @@ export TENCENT_DOCS_SHEET_NAME='1'
 
 - `/server`：后端接口、登录管理、查询服务、任务编排服务、截图服务
 - `/web`：前端单页应用
-- `/data/accounts.json`：已保存账号元数据
-- `/data/tasks.json`：批量任务持久化数据
+- `/data/`：运行时持久化数据目录（如账号元数据、批量任务状态等，默认不纳入 Git）
 - `/.cache/profiles`：Playwright 持久化登录态
 - `/artifacts/web`：查询截图和结果文件
 - `/scripts/guanghe-fetch.js`：旧版 CLI 脚本，保留作调试参考
 
 ## 账号存储说明
 
-- 账号元数据会写入 `data/accounts.json`，该文件已纳入 Git 跟踪，适合跟随仓库同步。
+- 账号元数据会写入 `data/accounts.json`，该文件默认作为运行时数据保存在本机或服务器上，不再纳入 Git 跟踪。
 - 浏览器登录态保存在 `.cache/profiles`，该目录默认被 Git 忽略，只适合本机持久化。
-- 这意味着：**同一台机器重启服务后，账号不会再凭空丢失；但跨机器拉取仓库时，账号列表虽然还在，本地登录态通常仍需要重新扫码恢复。**
-- 服务启动时如果发现 `accounts.json` 里记录的账号缺少本地 profile，会自动标记为“需重新登录”，而不是直接消失。
+- 这意味着：**同一台机器重启服务后，只要保留本机 `/data` 和 `/.cache/profiles`，账号不会凭空丢失；但跨机器拉取仓库时，账号数据和登录态通常不会随仓库一起同步。**
+- 如果 `accounts.json` 不存在，服务会以空账号列表启动；如果文件里记录的账号缺少本地 profile，会自动标记为“需重新登录”。
 
 ## 环境变量
 
@@ -288,7 +287,7 @@ npm test
 - 推荐部署分支：`codex/aliyun-guanghe-deploy`
 - 服务器可通过 `scripts/auto-deploy-from-git.sh` 每分钟轮询一次远端分支
 - 检测到新提交后会自动执行：`git pull --ff-only` → `npm ci` → `npm run build` → `pm2 restart guanghe`
-- 运行时文件 `.env`、`data/accounts.json` 会在服务器侧标记为 `skip-worktree`，避免自动拉取误覆盖账号数据
+- 运行时配置文件 `.env` 会在服务器侧标记为 `skip-worktree`；`/data` 与 `/.cache/profiles` 建议持久化保留在服务器本地
 - 对应 systemd 模板见：`deploy/systemd/guanghe-auto-deploy.service`、`deploy/systemd/guanghe-auto-deploy.timer`
 
 ## 已验证示例

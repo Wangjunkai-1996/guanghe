@@ -41,7 +41,7 @@ run_in_app_dir() {
 
 mark_runtime_paths_skip_worktree() {
   local path
-  for path in ".env" "data/accounts.json" "data/accounts.json.bak.20260313-123636"; do
+  for path in ".env"; do
     run_in_app_dir "git ls-files --error-unmatch ${path@Q} >/dev/null 2>&1 && git update-index --skip-worktree ${path@Q} || true"
   done
 }

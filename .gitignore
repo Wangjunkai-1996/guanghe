@@ -3,6 +3,6 @@ dist/
 artifacts/
 .cache/
 data/*.json
-!data/accounts.json
+data/accounts.json.bak.*
 output/
 midscene_run/
