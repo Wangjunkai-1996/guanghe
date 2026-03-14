@@ -3,6 +3,8 @@ import '@testing-library/jest-dom/vitest'
 import React from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { AccountList } from '../web/src/components/AccountList'
+import { ConfirmDialog } from '../web/src/components/ui/ConfirmDialog'
 import { LoginForm } from '../web/src/components/LoginForm'
 import { QueryForm } from '../web/src/components/QueryForm'
 import { LoginSessionPanel } from '../web/src/components/LoginSessionPanel'
@@ -162,5 +164,81 @@ describe('frontend components', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '重新扫码登录' }))
     expect(onRetryLogin).toHaveBeenCalled()
+  })
+
+  test('result panel keeps existing data visible during refresh loading', () => {
+    render(
+      <ResultPanel
+        loading
+        error={null}
+        activeAccount={{ accountId: '1001', nickname: '测试账号' }}
+        onRetryLogin={vi.fn()}
+        result={{
+          accountId: '1001',
+          nickname: '测试账号',
+          contentId: '554608495125',
+          fetchedAt: '2026-03-08T15:00:00.000Z',
+          metrics: {
+            内容查看次数: { value: '83611', field: 'consumePv' },
+            内容查看人数: { value: '18033', field: 'consumeUv' },
+            种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
+            种草成交人数: { value: '1', field: 'payBuyerCntZc' },
+            商品点击次数: { value: '3', field: 'ipvPv' }
+          },
+          screenshots: {
+            rawUrl: '/api/artifacts/raw.png',
+            summaryUrl: '/api/artifacts/summary.png'
+          }
+        }}
+      />
+    )
+
+    expect(screen.getAllByText('测试账号').length).toBeGreaterThan(0)
+    expect(screen.getByText('正在刷新当前结果，已有数据暂时保留在页面上。')).toBeInTheDocument()
+    expect(screen.getByAltText('汇总截图预览')).toHaveAttribute('src', '/api/artifacts/summary.png')
+  })
+
+  test('account list exposes icon action button with accessible name', () => {
+    render(
+      <AccountList
+        accounts={[{ accountId: '1001', nickname: '自然卷儿', status: 'READY', lastLoginAt: '2026-03-11T00:29:00.000Z' }]}
+        selectedAccountId="1001"
+        loading={false}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '自然卷儿 更多操作' }))
+    expect(screen.getByRole('menuitem', { name: '删除账号' })).toBeInTheDocument()
+  })
+
+  test('confirm dialog still renders in reduced motion environments', () => {
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn()
+    }))
+
+    render(
+      <ConfirmDialog
+        open
+        title="确认删除账号"
+        description="删除后需要重新扫码登录。"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('alertdialog', { name: '确认删除账号' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '关闭确认弹窗' })).toBeInTheDocument()
+
+    window.matchMedia = originalMatchMedia
   })
 })

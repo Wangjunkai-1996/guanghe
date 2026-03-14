@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MoreHorizontal, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { buildFallbackAvatar, formatAccountStatus, formatDateTime } from '../lib/ui'
 import { EmptyState } from './ui/EmptyState'
 import { SectionCard } from './ui/SectionCard'
@@ -8,7 +9,7 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
   const [menuOpenId, setMenuOpenId] = useState('')
 
   return (
-    <SectionCard className="sidebar-panel stack-md">
+    <SectionCard className="sidebar-panel stack-md" variant="feature">
       <div className="sidebar-panel-header">
         <div>
           <h2>账号侧栏</h2>
@@ -16,7 +17,8 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
         </div>
         <div className="account-list-actions">
           <button className="primary-btn" type="button" onClick={onCreate} disabled={loading}>
-            {loading ? '创建中...' : '新增账号'}
+            <Plus size={18} aria-hidden="true" />
+            <span>{loading ? '创建中...' : '新增账号'}</span>
           </button>
         </div>
       </div>
@@ -24,6 +26,9 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
       {accounts.length === 0 ? (
         <EmptyState
           className="sidebar-empty-card"
+          eyebrow="账号资源"
+          tone="neutral"
+          icon={UserRound}
           title="还没有已保存账号"
           description="先新增一个光合账号，后续就能直接切换并查询。"
           actionLabel="立即扫码登录"
@@ -49,7 +54,11 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
                   <div className="account-copy">
                     <div className="account-title-row">
                       <strong className="account-name">{account.nickname || '未命名账号'}</strong>
-                      <StatusBadge tone={account.status === 'READY' ? 'success' : 'warning'}>
+                      <StatusBadge
+                        tone={account.status === 'READY' ? 'success' : 'warning'}
+                        emphasis={selected ? 'solid' : 'soft'}
+                        icon={account.status === 'READY' ? ShieldCheck : UserRound}
+                      >
                         {formatAccountStatus(account.status)}
                       </StatusBadge>
                     </div>
@@ -68,7 +77,7 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
                     aria-controls={isMenuOpen ? `account-menu-${account.accountId}` : undefined}
                     onClick={() => setMenuOpenId(isMenuOpen ? '' : account.accountId)}
                   >
-                    ⋯
+                    <MoreHorizontal size={18} aria-hidden="true" />
                   </button>
                   {isMenuOpen ? (
                     <div className="popover-menu" role="menu" id={`account-menu-${account.accountId}`} aria-label={`${account.nickname || account.accountId} 操作菜单`}>
@@ -81,7 +90,8 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
                           onDelete(account.accountId)
                         }}
                       >
-                        删除账号
+                        <Trash2 size={16} aria-hidden="true" />
+                        <span>删除账号</span>
                       </button>
                     </div>
                   ) : null}

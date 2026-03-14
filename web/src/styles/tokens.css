@@ -1,40 +1,105 @@
 :root {
   color-scheme: light;
-  --font-sans: 'Avenir Next', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --bg-page: #f4f7fb;
-  --bg-panel: rgba(255, 255, 255, 0.96);
-  --bg-soft: #f8fafc;
-  --bg-emphasis: #eef4ff;
-  --text-primary: #111827;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --border-default: #dbe3ef;
-  --border-soft: #e5e7eb;
-  --shadow-panel: 0 18px 48px rgba(15, 23, 42, 0.08);
-  --shadow-drawer: -18px 0 42px rgba(15, 23, 42, 0.16);
-  --shadow-floating: 0 18px 42px rgba(15, 23, 42, 0.14);
-  --radius-xl: 22px;
-  --radius-lg: 18px;
-  --radius-md: 14px;
-  --radius-sm: 10px;
+
+  --font-sans: 'Avenir Next', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-display: 'Avenir Next', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-numeric: 'DIN Alternate', 'Bahnschrift', 'Avenir Next', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Menlo', monospace;
+
+  --brand-ink-950: #162036;
+  --brand-ink-900: #202d46;
+  --brand-ink-800: #2c3b5e;
+  --brand-ink-700: #425277;
+  --brand-ivory: #f8f2e8;
+  --brand-paper: rgba(255, 251, 245, 0.92);
+  --brand-sand-100: #f4e9d7;
+  --brand-sand-200: #e8d7bc;
+  --brand-sand-300: #d7c09d;
+  --brand-gold-500: #c58a2d;
+  --brand-gold-400: #d3a44d;
+  --brand-gold-100: #fff2d8;
+  --brand-coral-500: #cf6d52;
+  --brand-coral-100: #fde4dc;
+  --brand-mist: #e8edf4;
+  --brand-blue-soft: #d9e3f2;
+  --brand-success-500: #1c8b61;
+  --brand-success-100: #dbf5ea;
+  --brand-warning-500: #a96512;
+  --brand-warning-100: #fff2d7;
+  --brand-danger-500: #c1493c;
+  --brand-danger-100: #fde3de;
+
+  --bg-page-solid: #f6efe4;
+  --bg-page: linear-gradient(180deg, rgba(255, 248, 239, 0.96) 0%, rgba(243, 235, 221, 0.9) 100%);
+  --bg-panel: rgba(255, 251, 245, 0.88);
+  --bg-soft: rgba(250, 244, 236, 0.88);
+  --bg-emphasis: rgba(243, 231, 213, 0.76);
+  --bg-hero: linear-gradient(140deg, rgba(22, 32, 54, 0.98) 0%, rgba(44, 59, 94, 0.96) 52%, rgba(197, 138, 45, 0.22) 100%);
+  --bg-hero-sheen: linear-gradient(135deg, rgba(255, 224, 168, 0.22), rgba(255, 255, 255, 0));
+  --bg-card-strong: linear-gradient(180deg, rgba(255, 252, 246, 0.98), rgba(247, 239, 228, 0.94));
+  --bg-card-accent: linear-gradient(180deg, rgba(248, 241, 226, 0.98), rgba(242, 230, 210, 0.94));
+
+  --text-primary: #1d2740;
+  --text-secondary: #5d6a82;
+  --text-muted: #8b96aa;
+  --text-inverse: #fff8ef;
+  --text-gold: #8e5b13;
+
+  --border-default: rgba(77, 94, 123, 0.16);
+  --border-soft: rgba(77, 94, 123, 0.1);
+  --border-strong: rgba(22, 32, 54, 0.24);
+  --border-glow: rgba(197, 138, 45, 0.26);
+
+  --shadow-panel: 0 24px 60px rgba(30, 39, 60, 0.1);
+  --shadow-panel-strong: 0 30px 80px rgba(18, 26, 44, 0.14);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.56);
+  --shadow-drawer: -24px 0 52px rgba(19, 25, 40, 0.2);
+  --shadow-floating: 0 20px 44px rgba(23, 31, 50, 0.14);
+  --shadow-focus: 0 0 0 3px rgba(197, 138, 45, 0.18);
+
+  --radius-2xl: 34px;
+  --radius-xl: 28px;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
+
+  --space-0: 0;
   --space-1: 8px;
   --space-2: 12px;
   --space-3: 16px;
   --space-4: 20px;
   --space-5: 24px;
-  --space-6: 28px;
+  --space-6: 32px;
+  --space-7: 40px;
+  --space-8: 48px;
+
+  --duration-instant: 120ms;
   --duration-fast: 160ms;
-  --duration-normal: 220ms;
+  --duration-normal: 240ms;
+  --duration-slow: 320ms;
   --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
-  --blue-500: #2563eb;
-  --blue-600: #1d4ed8;
-  --blue-100: #dbeafe;
-  --green-600: #15803d;
-  --green-100: #dcfce7;
-  --amber-700: #b45309;
-  --amber-100: #fef3c7;
-  --red-600: #dc2626;
-  --red-100: #fee2e2;
+  --ease-emphasized: cubic-bezier(0.18, 0.8, 0.24, 1);
+
+  --overlay-scrim: rgba(17, 24, 39, 0.42);
+  --focus-ring: 0 0 0 3px rgba(197, 138, 45, 0.22);
+
+  --z-base: 1;
+  --z-overlay: 30;
+  --z-dialog: 60;
+  --z-toast: 90;
+
+  --breakpoint-desktop: 1440px;
   --breakpoint-tablet: 1024px;
   --breakpoint-mobile: 720px;
+
+  --blue-500: var(--brand-ink-800);
+  --blue-600: var(--brand-ink-900);
+  --blue-100: var(--brand-blue-soft);
+  --green-600: var(--brand-success-500);
+  --green-100: var(--brand-success-100);
+  --amber-700: var(--brand-warning-500);
+  --amber-100: var(--brand-warning-100);
+  --red-600: var(--brand-danger-500);
+  --red-100: var(--brand-danger-100);
 }

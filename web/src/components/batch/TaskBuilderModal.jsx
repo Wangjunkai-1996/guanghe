@@ -1,3 +1,6 @@
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { CircleAlert, ClipboardList, SendHorizontal, X } from 'lucide-react'
+
 export function TaskBuilderModal({
   draftLines,
   draftValidation,
@@ -10,18 +13,40 @@ export function TaskBuilderModal({
   onChange,
   onSubmit
 }) {
-  return (
-    <div className="builder-modal-root" role="dialog" aria-modal="true" aria-labelledby="batch-builder-title">
-      <div className="builder-modal-backdrop" onClick={onClose} />
+  const shouldReduceMotion = useReducedMotion()
 
-      <section className="panel builder-modal-panel stack-md">
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="builder-modal-root"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="batch-builder-title"
+        initial={shouldReduceMotion ? undefined : { opacity: 0 }}
+        animate={shouldReduceMotion ? undefined : { opacity: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+      >
+        <div className="builder-modal-backdrop" onClick={onClose} />
+
+        <motion.section
+          className="panel builder-modal-panel stack-md"
+          initial={shouldReduceMotion ? undefined : { opacity: 0, y: 20, scale: 0.98 }}
+          animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0, y: 20, scale: 0.98 }}
+          transition={{ duration: 0.2, ease: [0.2, 0, 0.2, 1] }}
+        >
         <div className="task-detail-header">
           <div className="compact-panel-header">
-            <span className="section-eyebrow">批量导入</span>
+            <div className="v2-panel-badge">
+              <ClipboardList size={18} aria-hidden="true" />
+              <span>批量导入</span>
+            </div>
             <h2 id="batch-builder-title">新建批量任务</h2>
             <p>先看可创建数量和错误，再一次性发出二维码任务，避免一边粘贴一边来回切页面。</p>
           </div>
-          <button className="icon-btn" type="button" onClick={onClose} aria-label="关闭新建任务">×</button>
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="关闭新建任务">
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
 
         <div className="task-builder-stats">
@@ -61,6 +86,7 @@ export function TaskBuilderModal({
             <div className="inline-error stack-sm">
               {displayBatchErrors.map((item, index) => (
                 <div key={`${item.line}-${index}`}>
+                  <CircleAlert size={16} aria-hidden="true" />
                   {item.line > 0 ? `第 ${item.line} 行：` : ''}
                   {item.message}
                 </div>
@@ -71,19 +97,24 @@ export function TaskBuilderModal({
           {serverBatchErrors && serverBatchErrors.length > 0 ? (
             <div className="inline-error stack-sm">
               {serverBatchErrors.map((err, index) => (
-                <div key={index}>{err.message || '未知服务器错误'}</div>
+                <div key={index}>
+                  <CircleAlert size={16} aria-hidden="true" />
+                  {err.message || '未知服务器错误'}
+                </div>
               ))}
             </div>
           ) : null}
 
           <div className="task-composer-actions">
             <button className="primary-btn" type="submit" disabled={submitting}>
-              {submitting ? '创建中...' : '批量创建二维码任务'}
+              <SendHorizontal size={18} aria-hidden="true" />
+              <span>{submitting ? '创建中...' : '批量创建二维码任务'}</span>
             </button>
             <small>创建后系统会自动进入扫码跟进流程。</small>
           </div>
         </form>
-      </section>
-    </div>
+        </motion.section>
+      </motion.div>
+    </AnimatePresence>
   )
 }

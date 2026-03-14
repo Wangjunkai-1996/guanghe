@@ -116,3 +116,126 @@ body {
     flex: 1 1 150px;
   }
 }
+
+@media (max-width: 1200px) {
+  .page-header,
+  .batch-hero-shell,
+  .result-stage-header,
+  .result-stage-subgrid,
+  .manual-entry-bar,
+  .image-panel-header {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .page-header {
+    display: grid;
+  }
+
+  .page-header-status-strip,
+  .manual-entry-actions {
+    justify-items: stretch;
+  }
+
+  .page-header-status-pill,
+  .workspace-segmented-control,
+  .workspace-summary-chip,
+  .batch-hero-actions-panel,
+  .page-header-actions {
+    width: 100%;
+  }
+
+  .page-header-stats,
+  .batch-hero-grid,
+  .task-stage-grid,
+  .task-metric-capsule-row,
+  .result-stage-subgrid,
+  .task-builder-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .handoff-demand-row,
+  .task-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .query-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .query-submit-btn,
+  .hero-primary-btn,
+  .hero-secondary-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-shell,
+  .workspace-page {
+    padding: var(--space-4);
+  }
+
+  .page-header-stats,
+  .batch-hero-grid,
+  .task-stage-grid,
+  .task-metric-capsule-row,
+  .secondary-metrics-grid,
+  .task-builder-stats,
+  .handoff-demand-row,
+  .task-meta-grid,
+  .result-stage-subgrid,
+  .batch-hero-inline-highlights {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-segmented-control {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header,
+  .manual-entry-strip,
+  .batch-hero-summary,
+  .builder-modal-panel {
+    padding: var(--space-4);
+  }
+
+  .page-header-status-pill,
+  .workspace-summary-chip {
+    min-width: 0;
+  }
+
+  .toast-stack {
+    left: 16px;
+    right: 16px;
+    top: 16px;
+  }
+
+  .toast-card {
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+  }
+
+  .confirm-dialog-panel,
+  .builder-modal-panel {
+    width: 100%;
+  }
+
+  .login-drawer-panel {
+    width: 100%;
+    padding: var(--space-4);
+  }
+
+  .task-queue-card {
+    padding: 20px 18px 20px 24px;
+  }
+
+  .task-card-rail {
+    left: 10px;
+  }
+
+  .image-stage {
+    min-height: 220px;
+  }
+}

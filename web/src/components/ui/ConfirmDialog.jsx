@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { ToneIcon } from './ToneIcon'
 
 export function ConfirmDialog({
   open,
@@ -15,6 +17,7 @@ export function ConfirmDialog({
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useRef(null)
+  const shouldReduceMotion = useReducedMotion()
 
   useEffect(() => {
     if (!open) return undefined
@@ -72,41 +75,56 @@ export function ConfirmDialog({
     }
   }, [open, onCancel])
 
-  if (!open) return null
-
   return (
-    <div className="confirm-dialog-root">
-      <button
-        className="confirm-dialog-backdrop"
-        type="button"
-        onClick={onCancel}
-        aria-label="关闭确认弹窗"
-      />
-      <div
-        ref={panelRef}
-        className={`panel confirm-dialog-panel tone-${tone}`}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
-        tabIndex={-1}
-      >
-        <div className="confirm-dialog-copy">
-          <h2 id={titleId}>{title}</h2>
-          {description ? <p id={descriptionId}>{description}</p> : null}
-        </div>
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          className="confirm-dialog-root"
+          initial={shouldReduceMotion ? undefined : { opacity: 0 }}
+          animate={shouldReduceMotion ? undefined : { opacity: 1 }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+        >
+          <button
+            className="confirm-dialog-backdrop"
+            type="button"
+            onClick={onCancel}
+            aria-label="关闭确认弹窗"
+          />
+          <motion.div
+            ref={panelRef}
+            className={`panel confirm-dialog-panel tone-${tone}`}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={description ? descriptionId : undefined}
+            tabIndex={-1}
+            initial={shouldReduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.98 }}
+            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.2, 0, 0.2, 1] }}
+          >
+            <div className="confirm-dialog-copy">
+              <div className="confirm-dialog-kicker">
+                <ToneIcon tone={tone} className="confirm-dialog-kicker-icon" />
+                <span className="section-eyebrow">重要确认</span>
+              </div>
+              <h2 id={titleId}>{title}</h2>
+              {description ? <p id={descriptionId}>{description}</p> : null}
+            </div>
 
-        {children ? <div className="confirm-dialog-body">{children}</div> : null}
+            {children ? <div className="confirm-dialog-body">{children}</div> : null}
 
-        <div className="confirm-dialog-actions">
-          <button className="secondary-btn" type="button" onClick={onCancel} disabled={loading}>
-            {cancelLabel}
-          </button>
-          <button className="primary-btn" type="button" onClick={onConfirm} disabled={loading}>
-            {loading ? '处理中...' : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+            <div className="confirm-dialog-actions">
+              <button className="secondary-btn" type="button" onClick={onCancel} disabled={loading}>
+                {cancelLabel}
+              </button>
+              <button className="primary-btn" type="button" onClick={onConfirm} disabled={loading}>
+                {loading ? '处理中...' : confirmLabel}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }

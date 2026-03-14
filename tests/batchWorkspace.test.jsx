@@ -260,6 +260,17 @@ describe('batch task workspace ui', () => {
     expect(within(accordionItem).getByText('腾讯文档同步')).toBeInTheDocument()
   })
 
+  test('renders branded batch hero summary with core actions', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [] })
+
+    render(<BatchTasksWorkspace />)
+
+    expect(await screen.findByRole('heading', { name: '品牌化批量任务主控台' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '手工建任务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新列表' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '展开高级排障' })).toBeInTheDocument()
+  })
+
   test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
     render(<BatchTasksWorkspace />)
 

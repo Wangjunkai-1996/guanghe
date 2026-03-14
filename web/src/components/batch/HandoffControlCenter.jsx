@@ -1,3 +1,4 @@
+import { FileStack, QrCode, ScanSearch, Settings2, ShieldCheck, Waypoints } from 'lucide-react'
 import {
   formatDateTime,
   formatTencentDocsLoginStatus,
@@ -5,6 +6,7 @@ import {
   getTencentDocsLoginTone
 } from '../../lib/ui'
 import { SectionCard } from '../ui/SectionCard'
+import { StatusBadge } from '../ui/StatusBadge'
 
 export function HandoffControlCenter({
   syncConfig,
@@ -23,7 +25,7 @@ export function HandoffControlCenter({
   const urlTabToken = readTencentDocsTabToken(docsConfigDraft.docUrl)
 
   return (
-    <SectionCard className="batch-control-center stack-lg">
+    <SectionCard className="batch-control-center stack-lg" variant="feature">
       <div className="panel-split-header">
         <div className="compact-panel-header">
           <span className="section-eyebrow">交接表控制区</span>
@@ -31,14 +33,21 @@ export function HandoffControlCenter({
           <p>先锁定交接表和腾讯文档登录态，再让缺数达人列表和二维码任务队列保持同一个节奏。</p>
         </div>
         <div className="task-sync-meta">
+          <StatusBadge tone={getTencentDocsLoginTone(loginStatus)} emphasis="glass">
+            {formatTencentDocsLoginStatus(loginStatus)}
+          </StatusBadge>
           <strong>{getHubHeadline(docsDiagnostic.payload?.summary, loginStatus, docsConfigDraft)}</strong>
           <small>{docsDiagnostic.checkedAt ? `最近检查：${formatDateTime(docsDiagnostic.checkedAt)}` : '尚未检查交接表'}</small>
         </div>
       </div>
 
       <div className="handoff-hub-grid batch-control-grid">
-        <section className="panel handoff-config-panel stack-md">
+        <section className="panel handoff-config-panel stack-md v2-console-card">
           <div className="compact-panel-header">
+            <div className="v2-panel-badge">
+              <FileStack size={18} aria-hidden="true" />
+              <span>目标与模板</span>
+            </div>
             <h3>交接表配置</h3>
             <p>输入腾讯文档链接，检查工作表后手动选定交接表，配置会保存在本地。</p>
           </div>
@@ -69,10 +78,12 @@ export function HandoffControlCenter({
           </label>
           <div className="task-actions-inline">
             <button className="primary-btn" type="button" onClick={onSaveConfig} disabled={!docsConfigDraft.docUrl}>
-              保存交接表
+              <Settings2 size={18} aria-hidden="true" />
+              <span>保存交接表</span>
             </button>
             <button className="secondary-btn" type="button" onClick={onInspect} disabled={!docsConfigDraft.docUrl || docsDiagnostic.loading}>
-              {docsDiagnostic.loading ? '检查中...' : '检查工作表'}
+              <ScanSearch size={18} aria-hidden="true" />
+              <span>{docsDiagnostic.loading ? '检查中...' : '检查工作表'}</span>
             </button>
           </div>
           <div className="task-summary-grid diagnostic-summary-grid">
@@ -94,8 +105,12 @@ export function HandoffControlCenter({
           {docsDiagnostic.error ? <div className="inline-error">{docsDiagnostic.error.message}</div> : null}
         </section>
 
-        <section className="panel handoff-login-panel stack-md">
+        <section className="panel handoff-login-panel stack-md v2-console-card accent-card">
           <div className="compact-panel-header">
+            <div className="v2-panel-badge">
+              <Waypoints size={18} aria-hidden="true" />
+              <span>登录与授权</span>
+            </div>
             <h3>腾讯文档扫码登录</h3>
             <p>登录一次后会长期保存编辑态；读表或写表提示失效时，再重新生成二维码即可。</p>
           </div>
@@ -105,7 +120,8 @@ export function HandoffControlCenter({
           </div>
           <div className="task-actions-inline">
             <button className="primary-btn" type="button" onClick={onStartLogin} disabled={!docsConfigDraft.docUrl}>
-              {showLoginQr ? '重新生成腾讯文档二维码' : '腾讯文档扫码登录'}
+              <QrCode size={18} aria-hidden="true" />
+              <span>{showLoginQr ? '重新生成腾讯文档二维码' : '腾讯文档扫码登录'}</span>
             </button>
           </div>
           <div className="qr-wrap handoff-login-qr-wrap">
@@ -113,6 +129,7 @@ export function HandoffControlCenter({
               <img className="qr-image" src={qrImageUrl} alt="腾讯文档登录二维码" />
             ) : (
               <div className="task-qr-placeholder">
+                <ShieldCheck size={22} aria-hidden="true" />
                 <strong>
                   {loginStatus === 'LOGGED_IN'
                     ? '已登录腾讯文档'

@@ -1,12 +1,20 @@
+import { Suspense, lazy } from 'react'
 import { BatchHeroSummary } from './batch/BatchHeroSummary'
 import { DemandBoard } from './batch/DemandBoard'
 import { DiagnosticsPanel } from './batch/DiagnosticsPanel'
 import { HandoffControlCenter } from './batch/HandoffControlCenter'
 import { TaskBoard } from './batch/TaskBoard'
-import { TaskBuilderModal } from './batch/TaskBuilderModal'
-import { ConfirmDialog } from './ui/ConfirmDialog'
-import { ToastViewport } from './ui/ToastViewport'
 import { useBatchTasksWorkspace } from '../hooks/useBatchTasksWorkspace'
+
+const TaskBuilderModal = lazy(() =>
+  import('./batch/TaskBuilderModal').then((module) => ({ default: module.TaskBuilderModal }))
+)
+const ConfirmDialog = lazy(() =>
+  import('./ui/ConfirmDialog').then((module) => ({ default: module.ConfirmDialog }))
+)
+const ToastViewport = lazy(() =>
+  import('./ui/ToastViewport').then((module) => ({ default: module.ToastViewport }))
+)
 
 export function BatchTasksWorkspace() {
   const workspace = useBatchTasksWorkspace()
@@ -102,54 +110,78 @@ export function BatchTasksWorkspace() {
         />
 
         {workspace.isBuilderOpen ? (
-          <TaskBuilderModal
-            draftLines={workspace.draftLines}
-            draftValidation={workspace.draftValidation}
-            displayBatchErrors={workspace.displayBatchErrors}
-            batchInput={workspace.batchInput}
-            submitting={workspace.submitting}
-            textareaRef={workspace.textareaRef}
-            serverBatchErrors={workspace.serverBatchErrors}
-            onClose={workspace.handleBuilderClose}
-            onChange={workspace.handleBatchInputChange}
-            onSubmit={workspace.handleSubmit}
-          />
+          <Suspense fallback={<DeferredPanelFallback title="正在准备新建任务面板" description="正在载入批量建任务弹窗与校验面板。" />}>
+            <TaskBuilderModal
+              draftLines={workspace.draftLines}
+              draftValidation={workspace.draftValidation}
+              displayBatchErrors={workspace.displayBatchErrors}
+              batchInput={workspace.batchInput}
+              submitting={workspace.submitting}
+              textareaRef={workspace.textareaRef}
+              serverBatchErrors={workspace.serverBatchErrors}
+              onClose={workspace.handleBuilderClose}
+              onChange={workspace.handleBatchInputChange}
+              onSubmit={workspace.handleSubmit}
+            />
+          </Suspense>
         ) : null}
 
-        <ToastViewport toasts={workspace.toasts} />
+        {workspace.toasts.length ? (
+          <Suspense fallback={null}>
+            <ToastViewport toasts={workspace.toasts} />
+          </Suspense>
+        ) : null}
       </section>
 
-      <ConfirmDialog
-        open={workspace.accountTaskConfirmState.open}
-        tone="warning"
-        title="确认为匹配账号创建批量任务"
-        description={`将为 ${workspace.accountTaskConfirmState.accounts.length} 个已匹配的 READY 账号创建交接表回填任务，后续扫码、查询和回填进度都会在批量页持续追踪。`}
-        confirmLabel="创建批量任务"
-        cancelLabel="暂不创建"
-        loading={workspace.creatingMatchedAccountTasks}
-        onConfirm={workspace.handleConfirmCreateTasksFromAccounts}
-        onCancel={() => workspace.setAccountTaskConfirmState({ open: false, accounts: [] })}
-      >
-        <div className="confirm-dialog-list">
-          {workspace.accountTaskConfirmState.accounts.map((account) => (
-            <span key={account.accountId} className="task-meta-chip">
-              {account.nickname || account.accountId}
-            </span>
-          ))}
-        </div>
-      </ConfirmDialog>
+      {workspace.accountTaskConfirmState.open ? (
+        <Suspense fallback={null}>
+          <ConfirmDialog
+            open={workspace.accountTaskConfirmState.open}
+            tone="warning"
+            title="确认为匹配账号创建批量任务"
+            description={`将为 ${workspace.accountTaskConfirmState.accounts.length} 个已匹配的 READY 账号创建交接表回填任务，后续扫码、查询和回填进度都会在批量页持续追踪。`}
+            confirmLabel="创建批量任务"
+            cancelLabel="暂不创建"
+            loading={workspace.creatingMatchedAccountTasks}
+            onConfirm={workspace.handleConfirmCreateTasksFromAccounts}
+            onCancel={() => workspace.setAccountTaskConfirmState({ open: false, accounts: [] })}
+          >
+            <div className="confirm-dialog-list">
+              {workspace.accountTaskConfirmState.accounts.map((account) => (
+                <span key={account.accountId} className="task-meta-chip">
+                  {account.nickname || account.accountId}
+                </span>
+              ))}
+            </div>
+          </ConfirmDialog>
+        </Suspense>
+      ) : null}
 
-      <ConfirmDialog
-        open={workspace.taskDeleteState.open}
-        tone="warning"
-        title="确认删除批量任务"
-        description={`删除后将移除任务 ${workspace.taskDeleteState.label} 的二维码跟踪与结果记录。`}
-        confirmLabel="删除任务"
-        cancelLabel="暂不删除"
-        loading={Boolean(workspace.actionLoading[workspace.taskDeleteState.taskId])}
-        onConfirm={workspace.handleConfirmDeleteTask}
-        onCancel={() => workspace.setTaskDeleteState({ open: false, taskId: '', label: '' })}
-      />
+      {workspace.taskDeleteState.open ? (
+        <Suspense fallback={null}>
+          <ConfirmDialog
+            open={workspace.taskDeleteState.open}
+            tone="warning"
+            title="确认删除批量任务"
+            description={`删除后将移除任务 ${workspace.taskDeleteState.label} 的二维码跟踪与结果记录。`}
+            confirmLabel="删除任务"
+            cancelLabel="暂不删除"
+            loading={Boolean(workspace.actionLoading[workspace.taskDeleteState.taskId])}
+            onConfirm={workspace.handleConfirmDeleteTask}
+            onCancel={() => workspace.setTaskDeleteState({ open: false, taskId: '', label: '' })}
+          />
+        </Suspense>
+      ) : null}
     </>
+  )
+}
+
+function DeferredPanelFallback({ title, description }) {
+  return (
+    <div className="workspace-module-fallback deferred-panel-fallback" role="status" aria-live="polite">
+      <span className="section-eyebrow">模块载入中</span>
+      <strong>{title}</strong>
+      <p>{description}</p>
+    </div>
   )
 }

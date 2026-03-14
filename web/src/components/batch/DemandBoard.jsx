@@ -1,5 +1,7 @@
+import { CircleAlert, CircleCheckBig, Search, SendHorizontal, SquareChartGantt, Users, WandSparkles } from 'lucide-react'
 import { formatDateTime } from '../../lib/ui'
 import { SectionCard } from '../ui/SectionCard'
+import { StatCard } from '../ui/StatCard'
 import { StatusBadge } from '../ui/StatusBadge'
 
 const SHEET_FILTER_OPTIONS = [
@@ -55,16 +57,16 @@ export function DemandBoard({
   )
 
   return (
-    <SectionCard className="batch-demand-board stack-lg">
+    <SectionCard className="batch-demand-board stack-lg" variant="feature">
       <div className="task-summary-grid handoff-summary-grid">
-        <SummaryCard label="总行数" value={summary.totalRows} helper="已扫描交接表数据行" tone="info" />
-        <SummaryCard label="待补数" value={summary.needsFillRows} helper="可自动查数并回填" tone="warning" />
-        <SummaryCard label="缺内容ID" value={summary.missingContentIdRows} helper="需先补内容 ID" tone="danger" />
-        <SummaryCard label="重名异常" value={summary.duplicateNicknameRows} helper="同名达人需人工处理" tone="danger" />
-        <SummaryCard label="已完整" value={summary.completeRows} helper="无需重复发码" tone="success" />
+        <SummaryCard label="总行数" value={summary.totalRows} helper="已扫描交接表数据行" tone="info" icon={SquareChartGantt} />
+        <SummaryCard label="待补数" value={summary.needsFillRows} helper="可自动查数并回填" tone="warning" icon={WandSparkles} />
+        <SummaryCard label="缺内容ID" value={summary.missingContentIdRows} helper="需先补内容 ID" tone="danger" icon={CircleAlert} />
+        <SummaryCard label="重名异常" value={summary.duplicateNicknameRows} helper="同名达人需人工处理" tone="danger" icon={Users} />
+        <SummaryCard label="已完整" value={summary.completeRows} helper="无需重复发码" tone="success" icon={CircleCheckBig} />
       </div>
 
-      <section className="panel handoff-account-match-panel stack-md">
+      <section className="panel handoff-account-match-panel stack-md v2-console-card">
         <div className="panel-split-header">
           <div className="compact-panel-header">
             <span className="section-eyebrow">账号库联动</span>
@@ -73,7 +75,8 @@ export function DemandBoard({
           </div>
           <div className="tasks-toolbar-actions">
             <button className="secondary-btn" type="button" onClick={onMatchAccounts} disabled={matchingAccounts || accountsLoading}>
-              {matchingAccounts ? '匹配中...' : '匹配账号库'}
+              <Search size={18} aria-hidden="true" />
+              <span>{matchingAccounts ? '匹配中...' : '匹配账号库'}</span>
             </button>
             <button
               className="primary-btn"
@@ -81,7 +84,8 @@ export function DemandBoard({
               onClick={onCreateTasksFromAccounts}
               disabled={creatingMatchedAccountTasks || matchedReadyAccounts.length === 0}
             >
-              {creatingMatchedAccountTasks ? '创建中...' : '为匹配账号创建任务'}
+              <SendHorizontal size={18} aria-hidden="true" />
+              <span>{creatingMatchedAccountTasks ? '创建中...' : '为匹配账号创建任务'}</span>
             </button>
           </div>
         </div>
@@ -114,7 +118,7 @@ export function DemandBoard({
         )}
       </section>
 
-      <section className="panel handoff-demand-panel stack-md">
+      <section className="panel handoff-demand-panel stack-md v2-console-card">
         <div className="panel-split-header">
           <div className="compact-panel-header">
             <span className="section-eyebrow">交接表需求区</span>
@@ -123,13 +127,16 @@ export function DemandBoard({
           </div>
           <div className="tasks-toolbar-actions">
             <button className="secondary-btn" type="button" onClick={() => onCreateSheetTasks(1)} disabled={!canCreateSheetTasks || creatingSheetTasks === 1}>
-              生成 1 个光合二维码
+              <SendHorizontal size={18} aria-hidden="true" />
+              <span>生成 1 个光合二维码</span>
             </button>
             <button className="secondary-btn" type="button" onClick={() => onCreateSheetTasks(2)} disabled={!canCreateSheetTasks || creatingSheetTasks === 2}>
-              生成 2 个光合二维码
+              <SendHorizontal size={18} aria-hidden="true" />
+              <span>生成 2 个光合二维码</span>
             </button>
             <button className="secondary-btn" type="button" onClick={() => onCreateSheetTasks(5)} disabled={!canCreateSheetTasks || creatingSheetTasks === 5}>
-              生成 5 个光合二维码
+              <SendHorizontal size={18} aria-hidden="true" />
+              <span>生成 5 个光合二维码</span>
             </button>
           </div>
         </div>
@@ -173,7 +180,7 @@ export function DemandBoard({
               <span>最近检查</span>
             </div>
             {filteredDemands.map((item) => (
-              <div key={`${item.sheetRow}-${item.nickname}-${item.contentId}`} className="handoff-demand-row" role="row">
+              <div key={`${item.sheetRow}-${item.nickname}-${item.contentId}`} className={`handoff-demand-row tone-${getDemandTone(item.status)}`} role="row">
                 <strong>{item.nickname || '未填写达人名'}</strong>
                 <span className="mono-cell">{item.contentId || '-'}</span>
                 <StatusBadge tone={getDemandTone(item.status)}>{formatDemandStatus(item.status)}</StatusBadge>
@@ -188,13 +195,17 @@ export function DemandBoard({
   )
 }
 
-function SummaryCard({ label, value, helper, tone }) {
+function SummaryCard({ label, value, helper, tone, icon }) {
   return (
-    <div className={`meta-card compact-meta-card diagnostic-card tone-${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{helper}</small>
-    </div>
+    <StatCard
+      label={label}
+      value={value}
+      detail={helper}
+      tone={tone}
+      icon={icon}
+      emphasis="hero"
+      className="meta-card compact-meta-card diagnostic-card"
+    />
   )
 }
 

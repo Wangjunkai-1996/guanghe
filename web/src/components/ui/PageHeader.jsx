@@ -1,19 +1,31 @@
+import { LayoutPanelTop } from 'lucide-react'
 import { StatCard } from './StatCard'
 
 export function PageHeader({
   eyebrow,
   title,
   description,
+  icon: IconComponent = LayoutPanelTop,
+  badge = '',
+  variant = 'hero',
   actions = null,
   stats = [],
   className = ''
 }) {
-  const classes = ['panel', 'workspace-hero', 'page-header', className].filter(Boolean).join(' ')
+  const classes = ['panel', 'workspace-hero', 'page-header', `page-header-${variant}`, className].filter(Boolean).join(' ')
 
   return (
-    <header className={classes}>
+    <header className={`${classes} page-header-enter`}>
       <div className="workspace-hero-copy page-header-copy">
-        {eyebrow ? <span className="section-eyebrow">{eyebrow}</span> : null}
+        <div className="page-header-brandline">
+          <div className="page-header-brand-mark">
+            {IconComponent ? <IconComponent /> : null}
+          </div>
+          <div className="page-header-brand-copy">
+            {eyebrow ? <span className="section-eyebrow">{eyebrow}</span> : null}
+            {badge ? <span className="page-header-badge">{badge}</span> : null}
+          </div>
+        </div>
         <h1>{title}</h1>
         {description ? <p className="page-header-description">{description}</p> : null}
       </div>
@@ -29,6 +41,9 @@ export function PageHeader({
                 value={item.value}
                 detail={item.detail}
                 tone={item.tone}
+                eyebrow={item.eyebrow}
+                icon={item.icon}
+                emphasis={item.emphasis}
               />
             ))}
           </div>

@@ -1,7 +1,11 @@
+import { ToneIcon } from './ToneIcon'
+
 export function InlineNotice({
   tone = 'info',
   title,
   description,
+  eyebrow = '',
+  icon = null,
   actionLabel,
   onAction,
   action,
@@ -14,7 +18,11 @@ export function InlineNotice({
 
   return (
     <div className={classes} role={role} aria-live={tone === 'danger' ? 'assertive' : 'polite'} aria-atomic="true">
+      <div className="ui-inline-notice-icon-wrap">
+        <ToneIcon tone={tone} icon={icon} className="ui-inline-notice-icon" />
+      </div>
       <div className="ui-inline-notice-copy">
+        {eyebrow ? <span className="section-eyebrow">{eyebrow}</span> : null}
         <strong>{title}</strong>
         {description ? <p>{description}</p> : null}
       </div>

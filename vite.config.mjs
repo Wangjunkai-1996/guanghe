@@ -13,7 +13,24 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve('dist'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (
+            id.includes('/react-dom/')
+            || id.includes('/react/')
+            || id.includes('/scheduler/')
+          ) {
+            return 'react-vendor'
+          }
+          if (id.includes('/motion/')) return 'motion-vendor'
+          if (id.includes('/lucide-react/')) return 'icon-vendor'
+          return undefined
+        }
+      }
+    }
   },
   test: {
     environment: 'node',

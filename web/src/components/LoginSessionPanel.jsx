@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { CircleCheckBig, QrCode, ShieldCheck, Smartphone, Sparkles, Waypoints, X } from 'lucide-react'
 import { buildFallbackAvatar, formatLoginStatus } from '../lib/ui'
 import { InlineNotice } from './ui/InlineNotice'
 import { SectionCard } from './ui/SectionCard'
@@ -32,6 +34,7 @@ export function LoginSessionPanel({
   const panelRef = useRef(null)
   const closeButtonRef = useRef(null)
   const smsInputRef = useRef(null)
+  const shouldReduceMotion = useReducedMotion()
 
   useEffect(() => {
     if (!loginSession || !isOpen) return
@@ -129,26 +132,42 @@ export function LoginSessionPanel({
   }
 
   return (
-    <div className="login-drawer-root">
-      <button
-        className="login-drawer-backdrop"
-        type="button"
-        onClick={onClose}
-        aria-label="关闭登录抽屉"
-      />
-
-      <aside
-        ref={panelRef}
-        className="login-drawer-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        tabIndex={-1}
+    <AnimatePresence>
+      <motion.div
+        className="login-drawer-root"
+        initial={shouldReduceMotion ? undefined : { opacity: 0 }}
+        animate={shouldReduceMotion ? undefined : { opacity: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0 }}
       >
+        <button
+          className="login-drawer-backdrop"
+          type="button"
+          onClick={onClose}
+          aria-label="关闭登录抽屉"
+        />
+
+        <motion.aside
+          ref={panelRef}
+          className="login-drawer-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          tabIndex={-1}
+          initial={shouldReduceMotion ? undefined : { x: 48, opacity: 0 }}
+          animate={shouldReduceMotion ? undefined : { x: 0, opacity: 1 }}
+          exit={shouldReduceMotion ? undefined : { x: 48, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.2, 0, 0.2, 1] }}
+        >
         <header className="login-drawer-header">
           <div className="login-drawer-title-block">
-            <span className="section-eyebrow">新增账号</span>
+            <div className="login-drawer-brandline">
+              <div className="login-drawer-brandmark">
+                <Waypoints size={18} aria-hidden="true" />
+              </div>
+              <span className="section-eyebrow">新增账号</span>
+              <span className="page-header-badge">Login Flow</span>
+            </div>
             <div className="login-drawer-title-row">
               <h2 id={titleId}>扫码登录淘宝账号</h2>
               <StatusBadge tone={tone}>{formatLoginStatus(loginSession.status)}</StatusBadge>
@@ -163,7 +182,7 @@ export function LoginSessionPanel({
             onClick={onClose}
             aria-label="关闭抽屉"
           >
-            ×
+            <X size={18} aria-hidden="true" />
           </button>
         </header>
 
@@ -214,6 +233,7 @@ export function LoginSessionPanel({
             <ol className="login-drawer-stepper" aria-label="登录进度">
               {STEP_LABELS.map((label, index) => {
                 const state = getStepState(loginSession.status, index)
+                const StepIcon = getStepIcon(index)
                 return (
                   <li
                     key={label}
@@ -221,7 +241,7 @@ export function LoginSessionPanel({
                     aria-current={state === 'active' ? 'step' : undefined}
                   >
                     <span className="login-drawer-step-index" aria-hidden="true">
-                      {index + 1}
+                      <StepIcon size={16} aria-hidden="true" />
                     </span>
                     <div className="login-drawer-step-copy">
                       <strong>{label}</strong>
@@ -254,7 +274,8 @@ export function LoginSessionPanel({
           <div className="login-drawer-actions">
             {showRefreshAction ? (
               <button className="secondary-btn" type="button" onClick={onRefresh}>
-                {loginSession.status === 'EXPIRED' ? '刷新二维码' : '重新生成二维码'}
+                <QrCode size={18} aria-hidden="true" />
+                <span>{loginSession.status === 'EXPIRED' ? '刷新二维码' : '重新生成二维码'}</span>
               </button>
             ) : null}
             <button className="secondary-btn" type="button" onClick={onClose}>
@@ -268,8 +289,9 @@ export function LoginSessionPanel({
             {' '}启动。
           </p>
         </footer>
-      </aside>
-    </div>
+        </motion.aside>
+      </motion.div>
+    </AnimatePresence>
   )
 }
 
@@ -289,6 +311,10 @@ function renderStage({
     return (
       <SectionCard as="section" className="login-drawer-stage-card">
         <div className="login-drawer-section-header">
+          <div className="login-stage-kicker">
+            <CircleCheckBig size={18} aria-hidden="true" />
+            <span className="section-eyebrow">账号已接入</span>
+          </div>
           <h3>登录完成</h3>
           <p>账号已进入可用状态，后续可以直接在手工页或批量页继续查询。</p>
         </div>
@@ -313,6 +339,10 @@ function renderStage({
     return (
       <SectionCard as="section" className="login-drawer-stage-card">
         <div className="login-drawer-section-header">
+          <div className="login-stage-kicker">
+            <Smartphone size={18} aria-hidden="true" />
+            <span className="section-eyebrow">短信验证</span>
+          </div>
           <h3>输入短信验证码</h3>
           <p>检测到风控验证，请查收手机短信并提交验证码，登录流程会自动继续。</p>
         </div>
@@ -367,6 +397,10 @@ function renderStage({
   return (
     <SectionCard as="section" className="login-drawer-stage-card">
       <div className="login-drawer-section-header">
+        <div className="login-stage-kicker">
+          <QrCode size={18} aria-hidden="true" />
+          <span className="section-eyebrow">阶段说明</span>
+        </div>
         <h3>{getVisualTitle(loginSession.status)}</h3>
         <p>{getVisualDescription(loginSession.status)}</p>
       </div>
@@ -510,6 +544,13 @@ function getStepDescription(state) {
   if (state === 'done') return '该阶段已完成，可继续往后推进。'
   if (state === 'active') return '当前正在处理这个阶段。'
   return '等待前置步骤完成后自动进入。'
+}
+
+function getStepIcon(index) {
+  if (index === 0) return QrCode
+  if (index === 1) return ShieldCheck
+  if (index === 2) return Smartphone
+  return Sparkles
 }
 
 function getVisualTitle(status) {

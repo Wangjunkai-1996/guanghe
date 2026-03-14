@@ -2,7 +2,7 @@
 
 这份文档是给另一台电脑上的 Codex 用的，目标不是解释所有实现细节，而是让它能在 **10 分钟内判断项目定位、主业务链路、关键文件和推荐技能**，避免一上来走偏。
 
-> 前端 UI 重构主计划见 `docs/frontend-ui-refactor-plan.md`。后续如需继续这个专项任务，优先更新那一份文件中的 checklist 和 `Execution Log`。
+> 前端 UI 重构 V1 完成记录见 `docs/frontend-ui-refactor-plan.md`。第二轮品牌化视觉升级计划见 `docs/frontend-ui-visual-v2-plan.md`；后续如需继续这个专项任务，优先更新 V2 文件中的 checklist 和 `Execution Log`。
 
 ## 0. 先纠偏
 

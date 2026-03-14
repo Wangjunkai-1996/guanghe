@@ -1,15 +1,21 @@
-import { useMemo, useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
+import { ArrowUpRight, SearchCheck, Sparkles, Users } from 'lucide-react'
 import { api } from '../api'
 import { AccountList } from './AccountList'
 import { QueryForm } from './QueryForm'
 import { ResultPanel } from './ResultPanel'
 import { formatLoginStatus } from '../lib/ui'
 import { useToastQueue } from '../hooks/useToastQueue'
-import { ConfirmDialog } from './ui/ConfirmDialog'
 import { InlineNotice } from './ui/InlineNotice'
 import { SectionCard } from './ui/SectionCard'
 import { StatusBadge } from './ui/StatusBadge'
-import { ToastViewport } from './ui/ToastViewport'
+
+const ConfirmDialog = lazy(() =>
+  import('./ui/ConfirmDialog').then((module) => ({ default: module.ConfirmDialog }))
+)
+const ToastViewport = lazy(() =>
+  import('./ui/ToastViewport').then((module) => ({ default: module.ToastViewport }))
+)
 
 const LOGIN_SESSION_PENDING_STATUSES = ['WAITING_QR', 'WAITING_CONFIRM', 'WAITING_SMS']
 
@@ -35,7 +41,6 @@ export function ManualWorkspace({
     if (!activeAccount?.accountId) return
     setQueryLoading(true)
     setQueryError(null)
-    setQueryResult(null)
     try {
       const payload = await api.queryContent({ accountId: activeAccount.accountId, contentId })
       setQueryResult(payload)
@@ -108,29 +113,43 @@ export function ManualWorkspace({
 
   return (
     <>
-      <SectionCard className="manual-entry-strip open">
+      <SectionCard className="manual-entry-strip open" variant="hero" emphasis="strong">
         <div className="manual-entry-bar">
           <div className="compact-panel-header">
+            <div className="manual-entry-kicker">
+              <SearchCheck size={18} aria-hidden="true" />
+              <span className="section-eyebrow">手工验证工作台</span>
+            </div>
             <h2>账号库与单条查询</h2>
             <p>管理所有授权的光合账号，或者输入单条内容 ID 进行即时的数据验证。</p>
           </div>
-        <div className="manual-entry-actions">
-          <button className="secondary-btn" type="button" onClick={onRequestBatchTab}>
-            前往批量闭环
-          </button>
-          {manualEntryStatus ? <StatusBadge tone="info">{manualEntryStatus}</StatusBadge> : null}
-          <div className="workspace-summary-chip">
-            <span>已保存账号</span>
-            <strong>{accounts.length}</strong>
-            <small>{manualEntryStatus ? '当前仍有登录流程进行中' : '单条查询与账号切换都可在这里完成'}</small>
+          <div className="manual-entry-actions">
+            <button className="secondary-btn" type="button" onClick={onRequestBatchTab}>
+              <ArrowUpRight size={18} aria-hidden="true" />
+              <span>前往批量闭环</span>
+            </button>
+            {manualEntryStatus ? (
+              <StatusBadge tone="info" emphasis="glass" icon={Sparkles}>
+                {manualEntryStatus}
+              </StatusBadge>
+            ) : null}
+            <div className="workspace-summary-chip">
+              <span>
+                <Users size={16} aria-hidden="true" />
+                <span>已保存账号</span>
+              </span>
+              <strong>{accounts.length}</strong>
+              <small>{manualEntryStatus ? '当前仍有登录流程进行中' : '单条查询与账号切换都可在这里完成'}</small>
+            </div>
           </div>
-        </div>
         </div>
 
         <div className="manual-query-shell stack-lg">
           {activeLoginBanner ? (
             <InlineNotice
               tone={activeLoginBanner.tone}
+              eyebrow="登录流程提示"
+              icon={Sparkles}
               title={activeLoginBanner.title}
               description={activeLoginBanner.description}
               actionLabel={activeLoginBanner.actionLabel}
@@ -175,21 +194,29 @@ export function ManualWorkspace({
             </main>
           </div>
 
-          <ToastViewport toasts={toasts} />
+          {toasts.length ? (
+            <Suspense fallback={null}>
+              <ToastViewport toasts={toasts} />
+            </Suspense>
+          ) : null}
         </div>
       </SectionCard>
 
-      <ConfirmDialog
-        open={accountDeleteState.open}
-        tone="warning"
-        title="确认删除账号"
-        description={`删除后将移除账号 ${accountDeleteState.label} 的本地登录记录，后续需要重新扫码登录。`}
-        confirmLabel="删除账号"
-        cancelLabel="暂不删除"
-        loading={accountDeleteState.loading}
-        onConfirm={handleConfirmDeleteAccount}
-        onCancel={() => setAccountDeleteState({ open: false, accountId: '', label: '', loading: false })}
-      />
+      {accountDeleteState.open ? (
+        <Suspense fallback={null}>
+          <ConfirmDialog
+            open={accountDeleteState.open}
+            tone="warning"
+            title="确认删除账号"
+            description={`删除后将移除账号 ${accountDeleteState.label} 的本地登录记录，后续需要重新扫码登录。`}
+            confirmLabel="删除账号"
+            cancelLabel="暂不删除"
+            loading={accountDeleteState.loading}
+            onConfirm={handleConfirmDeleteAccount}
+            onCancel={() => setAccountDeleteState({ open: false, accountId: '', label: '', loading: false })}
+          />
+        </Suspense>
+      ) : null}
     </>
   )
 }
