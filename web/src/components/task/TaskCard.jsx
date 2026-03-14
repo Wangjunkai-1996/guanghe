@@ -29,8 +29,6 @@ export const TaskCard = React.memo(function TaskCard({
   selected,
   recommended,
   onSelect,
-  expanded,
-  onToggleExpand,
   onCopyQr,
   onRefreshLogin,
   onSubmitSmsCode,
@@ -58,17 +56,14 @@ export const TaskCard = React.memo(function TaskCard({
 
   return (
     <article
-      className={`task-queue-card tone-${tone} ${selected || expanded ? 'selected' : ''} ${waitingForLogin ? 'has-qr-peek' : ''}`}
+      className={`task-queue-card tone-${tone} ${selected ? 'selected' : ''} ${waitingForLogin ? 'has-qr-peek' : ''}`}
       role="button"
       tabIndex={0}
-      onClick={() => (onToggleExpand ? onToggleExpand(task.taskId) : onSelect(task.taskId))}
+      aria-pressed={selected}
+      onClick={() => onSelect(task.taskId)}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
         event.preventDefault()
-        if (onToggleExpand) {
-          onToggleExpand(task.taskId)
-          return
-        }
         onSelect(task.taskId)
       }}
     >
@@ -94,10 +89,10 @@ export const TaskCard = React.memo(function TaskCard({
           <small>{getTaskSummary(task)}</small>
         </div>
         <div className="task-row-actions">
-          {expanded ? (
+          {selected ? (
             <span className="row-focus-pill active">
               <CircleCheckBig size={15} aria-hidden="true" />
-              <span>收起详情</span>
+              <span>详情已展开</span>
             </span>
           ) : (
             <span className="row-focus-pill">

@@ -11,6 +11,7 @@ const SHEET_FILTER_OPTIONS = [
   { value: 'all', label: '查看全部' },
   { value: 'complete', label: '已完整' }
 ]
+const SHEET_TASK_COUNT_OPTIONS = [1, 2, 5]
 
 export function DemandBoard({
   accounts,
@@ -24,6 +25,8 @@ export function DemandBoard({
   matchedAccountCount,
   matchedReadyAccounts,
   onCreateSheetTasks,
+  sheetTaskCount,
+  onSheetTaskCountChange,
   onMatchAccounts,
   onCreateTasksFromAccounts,
   creatingSheetTasks,
@@ -58,6 +61,34 @@ export function DemandBoard({
       && (docsConfigDraft.sheetName || syncConfig.target?.sheetName)
       && loginStatus === 'LOGGED_IN'
   )
+
+  const handleCountPickerKeyDown = (event, currentCount) => {
+    const currentIndex = SHEET_TASK_COUNT_OPTIONS.indexOf(currentCount)
+    if (currentIndex === -1) return
+
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % SHEET_TASK_COUNT_OPTIONS.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + SHEET_TASK_COUNT_OPTIONS.length) % SHEET_TASK_COUNT_OPTIONS.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = SHEET_TASK_COUNT_OPTIONS.length - 1
+    } else {
+      return
+    }
+
+    event.preventDefault()
+    const nextCount = SHEET_TASK_COUNT_OPTIONS[nextIndex]
+    const countPicker = event.currentTarget.parentElement
+    onSheetTaskCountChange(nextCount)
+    window.requestAnimationFrame(() => {
+      countPicker
+        ?.querySelector(`[data-count="${nextCount}"]`)
+        ?.focus()
+    })
+  }
 
   return (
     <SectionCard className="batch-demand-board stack-lg" variant="feature">
@@ -151,20 +182,34 @@ export function DemandBoard({
           <div className="compact-panel-header">
             <span className="section-eyebrow">交接表需求区</span>
             <h2>缺数达人列表</h2>
-            <p>默认只看需要补数和异常达人，发码前先确认内容 ID 和目标行是否正确。</p>
+            <p>先确认内容 ID、目标行和异常项，再用单一主动作下发二维码，避免多按钮并列打断节奏。</p>
           </div>
-        <div className="tasks-toolbar-actions">
-            <button className="primary-btn" type="button" onClick={() => onCreateSheetTasks(1)} disabled={!canCreateSheetTasks || creatingSheetTasks === 1}>
+          <div className="sheet-task-command">
+            <div className="sheet-task-count-picker" role="radiogroup" aria-label="生成二维码数量">
+              {SHEET_TASK_COUNT_OPTIONS.map((count) => (
+                <button
+                  key={count}
+                  className={`secondary-btn compact-btn ${sheetTaskCount === count ? 'is-active' : ''}`}
+                  type="button"
+                  role="radio"
+                  data-count={count}
+                  aria-checked={sheetTaskCount === count}
+                  tabIndex={sheetTaskCount === count ? 0 : -1}
+                  onClick={() => onSheetTaskCountChange(count)}
+                  onKeyDown={(event) => handleCountPickerKeyDown(event, count)}
+                >
+                  {count} 个
+                </button>
+              ))}
+            </div>
+            <button
+              className="primary-btn"
+              type="button"
+              onClick={() => onCreateSheetTasks(sheetTaskCount)}
+              disabled={!canCreateSheetTasks || creatingSheetTasks > 0}
+            >
               <SendHorizontal size={18} aria-hidden="true" />
-              <span>生成 1 个光合二维码</span>
-            </button>
-            <button className="secondary-btn ghost-btn" type="button" onClick={() => onCreateSheetTasks(2)} disabled={!canCreateSheetTasks || creatingSheetTasks === 2}>
-              <SendHorizontal size={18} aria-hidden="true" />
-              <span>生成 2 个光合二维码</span>
-            </button>
-            <button className="secondary-btn ghost-btn" type="button" onClick={() => onCreateSheetTasks(5)} disabled={!canCreateSheetTasks || creatingSheetTasks === 5}>
-              <SendHorizontal size={18} aria-hidden="true" />
-              <span>生成 5 个光合二维码</span>
+              <span>{creatingSheetTasks > 0 ? '生成中...' : `生成 ${sheetTaskCount} 个光合二维码`}</span>
             </button>
           </div>
         </div>
@@ -196,6 +241,7 @@ export function DemandBoard({
         {showDeferredState ? (
           <div className="handoff-demand-list handoff-demand-list-loading" role="status" aria-live="polite">
             <div className="handoff-demand-row handoff-demand-head" role="row">
+              <span>目标行</span>
               <span>达人名</span>
               <span>内容 ID</span>
               <span>状态</span>
@@ -204,6 +250,7 @@ export function DemandBoard({
             </div>
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="handoff-demand-row tone-info skeleton-demand-row" role="row">
+                <div className="skeleton-line short" />
                 <div className="skeleton-line medium" />
                 <div className="skeleton-line short" />
                 <div className="skeleton-line short" />
@@ -220,6 +267,7 @@ export function DemandBoard({
         ) : (
           <div className="handoff-demand-list" role="table" aria-label="缺数达人列表">
             <div className="handoff-demand-row handoff-demand-head" role="row">
+              <span>目标行</span>
               <span>达人名</span>
               <span>内容 ID</span>
               <span>状态</span>
@@ -228,6 +276,7 @@ export function DemandBoard({
             </div>
             {filteredDemands.map((item) => (
               <div key={`${item.sheetRow}-${item.nickname}-${item.contentId}`} className={`handoff-demand-row tone-${getDemandTone(item.status)}`} role="row">
+                <span className="mono-cell handoff-row-index">#{item.sheetRow || '-'}</span>
                 <strong>{item.nickname || '未填写达人名'}</strong>
                 <span className="mono-cell">{item.contentId || '-'}</span>
                 <StatusBadge tone={getDemandTone(item.status)}>{formatDemandStatus(item.status)}</StatusBadge>

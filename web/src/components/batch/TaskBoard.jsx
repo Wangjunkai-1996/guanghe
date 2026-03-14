@@ -1,7 +1,17 @@
+import { useEffect, useId, useRef } from 'react'
 import { CircleAlert, CircleCheckBig, LoaderCircle, QrCode, Search, Sparkles, Workflow } from 'lucide-react'
 import { formatDateTime } from '../../lib/ui'
-import { getFilterDescription, getTaskPriority, getWorkspaceHeadline, isExceptionalTask, isFinishedTask, isInProgressTask, isWaitingTask } from '../../lib/taskFormat'
-import { TaskCard, TaskDetailAccordion } from '../TaskComponents'
+import {
+  getFilterDescription,
+  getTaskPriority,
+  getWorkspaceHeadline,
+  isExceptionalTask,
+  isFinishedTask,
+  isInProgressTask,
+  isWaitingTask
+} from '../../lib/taskFormat'
+import { TaskCard } from '../TaskComponents'
+import { TaskDetailPane } from '../task/TaskDetailPane'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionCard } from '../ui/SectionCard'
 
@@ -12,6 +22,14 @@ const FILTER_OPTIONS = [
   { value: 'exception', label: '异常', tone: 'danger', icon: CircleAlert },
   { value: 'finished', label: '已完成', tone: 'success', icon: CircleCheckBig }
 ]
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(', ')
 
 export function TaskBoard({
   tasks,
@@ -24,8 +42,10 @@ export function TaskBoard({
   loading,
   error,
   onRetryLoad,
-  expandedTaskId,
-  onToggleExpand,
+  selectedTaskId,
+  selectedTask,
+  onSelectTask,
+  onCloseTaskDetail,
   syncConfig,
   syncPreviewState,
   syncActionLoading,
@@ -40,18 +60,81 @@ export function TaskBoard({
   onSyncTask,
   onClearFilters
 }) {
+  const mobileDetailTitleId = useId()
+  const mobileDetailPanelRef = useRef(null)
   const waitingCount = tasks.filter((task) => isWaitingTask(task)).length
   const inProgressCount = tasks.filter((task) => isInProgressTask(task)).length
   const exceptionCount = tasks.filter((task) => isExceptionalTask(task)).length
   const finishedCount = tasks.filter((task) => isFinishedTask(task)).length
+
+  useEffect(() => {
+    if (!selectedTask || typeof window === 'undefined' || window.innerWidth > 900) return undefined
+
+    const panel = mobileDetailPanelRef.current
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const previousOverflow = document.body.style.overflow
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseTaskDetail()
+        return
+      }
+
+      if (event.key !== 'Tab' || !panel) return
+
+      const focusableElements = Array.from(panel.querySelectorAll(FOCUSABLE_SELECTOR))
+      if (!focusableElements.length) {
+        event.preventDefault()
+        panel.focus()
+        return
+      }
+
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements[focusableElements.length - 1]
+      const activeElement = document.activeElement
+
+      if (event.shiftKey) {
+        if (activeElement === firstElement || activeElement === panel) {
+          event.preventDefault()
+          lastElement.focus()
+        }
+        return
+      }
+
+      if (activeElement === lastElement) {
+        event.preventDefault()
+        firstElement.focus()
+      }
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+    window.requestAnimationFrame(() => {
+      const focusableElements = Array.from(panel?.querySelectorAll(FOCUSABLE_SELECTOR) || [])
+      if (focusableElements.length > 0) {
+        focusableElements[0].focus()
+        return
+      }
+      panel?.focus()
+    })
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus?.()
+    }
+  }, [onCloseTaskDetail, selectedTask])
 
   return (
     <SectionCard className="batch-task-board stack-lg" variant="feature">
       <div className="task-overview-header">
         <div className="compact-panel-header">
           <span className="section-eyebrow">任务执行区</span>
-          <h2>批量任务工作台</h2>
-          <p>交接表驱动链路优先；这里保留任务队列、焦点区和手工兜底入口，方便补查和异常处理。</p>
+          <h2>批量任务队列</h2>
+          <p>把筛选、扫码、查询结果和腾讯文档回填放到同一块任务画布里，减少来回折叠和视线跳转。</p>
         </div>
       </div>
 
@@ -88,97 +171,129 @@ export function TaskBoard({
         </div>
       </div>
 
-      <section className="task-table-panel stack-md">
-        <div className="panel-split-header">
-          <div className="compact-panel-header">
-            <span className="section-eyebrow">筛选区</span>
-            <h3>任务过滤器</h3>
-            <p>{getFilterDescription(filterKey, FILTER_OPTIONS)}</p>
+      <div className="task-console-layout">
+        <section className="task-list-pane stack-md">
+          <div className="panel-split-header">
+            <div className="compact-panel-header">
+              <span className="section-eyebrow">任务过滤器</span>
+              <h3>任务队列</h3>
+              <p>{getFilterDescription(filterKey, FILTER_OPTIONS)}</p>
+            </div>
+            <span className="section-counter">{filteredTasks.length}/{tasks.length}</span>
           </div>
-          <span className="section-counter">{filteredTasks.length}/{tasks.length}</span>
-        </div>
 
-        {loading && tasks.length === 0 ? (
-          <div className="task-loading-shimmer">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="shimmer-row" />
-            ))}
-          </div>
-        ) : null}
+          {loading && tasks.length === 0 ? (
+            <div className="task-loading-shimmer">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="shimmer-row" />
+              ))}
+            </div>
+          ) : null}
 
-        {error && tasks.length === 0 ? (
-          <EmptyState
-            eyebrow="任务队列"
-            tone="danger"
-            icon={CircleAlert}
-            title="加载任务失败"
-            description={error.message}
-            actionLabel="重试加载"
-            onAction={onRetryLoad}
-          />
-        ) : null}
+          {error && tasks.length === 0 ? (
+            <EmptyState
+              eyebrow="任务队列"
+              tone="danger"
+              icon={CircleAlert}
+              title="加载任务失败"
+              description={error.message}
+              actionLabel="重试加载"
+              onAction={onRetryLoad}
+            />
+          ) : null}
 
-        {!loading && !error && tasks.length === 0 ? (
+          {!loading && !error && tasks.length === 0 ? (
           <EmptyState
             eyebrow="批量执行"
             tone="neutral"
             icon={Sparkles}
             title="当前没有二维码任务"
-            description="可以点击顶部的“手工建任务”来导入需要查询的内容 ID。"
+            description="可以点击顶部的“创建任务”来导入需要查询的内容 ID。"
           />
         ) : null}
 
-        {!loading && !error && tasks.length > 0 && filteredTasks.length === 0 ? (
-          <EmptyState
-            eyebrow="任务过滤器"
-            tone="warning"
-            icon={Search}
-            title="没有匹配当前筛选条件的任务"
-            description="可以切回“查看全部”，或清空搜索关键字后继续查看。"
-            actionLabel="清空筛选"
-            onAction={onClearFilters}
-          />
-        ) : null}
+          {!loading && !error && tasks.length > 0 && filteredTasks.length === 0 ? (
+            <EmptyState
+              eyebrow="任务过滤器"
+              tone="warning"
+              icon={Search}
+              title="没有匹配当前筛选条件的任务"
+              description="可以切回“查看全部”，或清空搜索关键字后继续查看。"
+              actionLabel="清空筛选"
+              onAction={onClearFilters}
+            />
+          ) : null}
 
-        {!loading && !error && filteredTasks.length > 0 ? (
-          <div className="task-queue-list">
-            {filteredTasks.map((task, index) => (
-              <div key={task.taskId} className="task-accordion-item">
+          {!loading && !error && filteredTasks.length > 0 ? (
+            <div className="task-queue-list task-master-list">
+              {filteredTasks.map((task, index) => (
                 <TaskCard
+                  key={task.taskId}
                   task={task}
                   syncConfig={syncConfig}
-                  expanded={expandedTaskId === task.taskId}
+                  selected={selectedTaskId === task.taskId}
                   recommended={index === 0 && filterKey === 'waiting'}
-                  onToggleExpand={onToggleExpand}
+                  onSelect={onSelectTask}
                   onCopyQr={onCopyQr}
                   onRefreshLogin={onRefreshLogin}
                   onSubmitSmsCode={onSubmitSmsCode}
                   copying={copyingTaskId === task.taskId}
                   busy={Boolean(actionLoading[task.taskId])}
                 />
-                {expandedTaskId === task.taskId ? (
-                  <div className="task-accordion-content">
-                    <TaskDetailAccordion
-                      task={task}
-                      busy={Boolean(actionLoading[task.taskId])}
-                      copying={copyingTaskId === task.taskId}
-                      syncConfig={syncConfig}
-                      syncPreview={syncPreviewState[task.taskId] || null}
-                      syncAction={syncActionLoading[task.taskId] || ''}
-                      onCopyQr={onCopyQr}
-                      onRefreshLogin={onRefreshLogin}
-                      onRetryQuery={onRetryQuery}
-                      onDeleteTask={onDeleteTask}
-                      onPreviewSync={onPreviewSync}
-                      onSyncTask={onSyncTask}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            ))}
+              ))}
+            </div>
+          ) : null}
+        </section>
+
+        <div className="task-detail-pane-desktop">
+          <TaskDetailPane
+            task={selectedTask}
+            busy={selectedTask ? Boolean(actionLoading[selectedTask.taskId]) : false}
+            copying={selectedTask ? copyingTaskId === selectedTask.taskId : false}
+            titleId={selectedTask ? `${selectedTask.taskId}-detail-title` : undefined}
+            syncConfig={syncConfig}
+            syncPreview={selectedTask ? syncPreviewState[selectedTask.taskId] || null : null}
+            syncAction={selectedTask ? syncActionLoading[selectedTask.taskId] || '' : ''}
+            onCopyQr={onCopyQr}
+            onRefreshLogin={onRefreshLogin}
+            onRetryQuery={onRetryQuery}
+            onDeleteTask={onDeleteTask}
+            onPreviewSync={onPreviewSync}
+            onSyncTask={onSyncTask}
+          />
+        </div>
+      </div>
+
+      {selectedTask ? (
+        <div className="task-detail-mobile-root">
+          <button className="task-detail-mobile-backdrop" type="button" onClick={onCloseTaskDetail} aria-label="关闭任务详情抽屉" />
+          <div
+            ref={mobileDetailPanelRef}
+            className="task-detail-mobile-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={mobileDetailTitleId}
+            tabIndex={-1}
+          >
+            <TaskDetailPane
+              task={selectedTask}
+              busy={Boolean(actionLoading[selectedTask.taskId])}
+              copying={copyingTaskId === selectedTask.taskId}
+              titleId={mobileDetailTitleId}
+              syncConfig={syncConfig}
+              syncPreview={syncPreviewState[selectedTask.taskId] || null}
+              syncAction={syncActionLoading[selectedTask.taskId] || ''}
+              onClose={onCloseTaskDetail}
+              onCopyQr={onCopyQr}
+              onRefreshLogin={onRefreshLogin}
+              onRetryQuery={onRetryQuery}
+              onDeleteTask={onDeleteTask}
+              onPreviewSync={onPreviewSync}
+              onSyncTask={onSyncTask}
+            />
           </div>
-        ) : null}
-      </section>
+        </div>
+      ) : null}
     </SectionCard>
   )
 }

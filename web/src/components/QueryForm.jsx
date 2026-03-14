@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight, Hash, LoaderCircle, SearchCheck, UserRound } from 'lucide-react'
-import { SectionCard } from './ui/SectionCard'
+import { CommandBar } from './ui/CommandBar'
 
 export function QueryForm({ activeAccount, loading, onSubmit }) {
   const [contentId, setContentId] = useState('')
@@ -8,8 +8,8 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
 
   const canSubmit = Boolean(activeAccount?.accountId && contentId)
   const helperText = useMemo(() => {
-    if (!activeAccount?.accountId) return '请先在左侧选择账号，或新增账号扫码登录。'
-    return '固定查询近 30 日的 5 个指标，并同步生成原始截图和汇总截图。'
+    if (!activeAccount?.accountId) return '先在左侧选择账号，或新增账号后再发起验证。'
+    return '固定查询近 30 日的 5 个主 KPI，并同步生成汇总图与原始截图。'
   }, [activeAccount?.accountId])
 
   const handleChange = (event) => {
@@ -33,27 +33,24 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
   }
 
   return (
-    <SectionCard className="query-toolbar-panel" variant="feature">
-      <div className="query-toolbar-copy">
-        <div className="query-toolbar-kicker">
-          <SearchCheck size={18} aria-hidden="true" />
-          <span className="section-eyebrow">查询控制台条</span>
-        </div>
-        <h2>查询工具条</h2>
-        <p>{helperText}</p>
-      </div>
-
-      <form className="query-toolbar" onSubmit={handleSubmit}>
-        <div className="current-account-chip">
-          <span className="chip-label">
+    <CommandBar
+      className="query-command-bar"
+      eyebrow="验证命令条"
+      title="单条内容验证"
+      description={helperText}
+      meta={(
+        <div className="query-command-meta">
+          <span className="query-command-chip">
             <UserRound size={16} aria-hidden="true" />
             <span>当前账号</span>
+            <strong>{activeAccount?.nickname || '未选择'}</strong>
           </span>
-          <strong>{activeAccount?.nickname || '未选择账号'}</strong>
-          <small>{activeAccount?.accountId || '请先在左侧选择'}</small>
+          <small>{activeAccount?.accountId || '请先在左侧选择可用账号'}</small>
         </div>
-
-        <label className="field query-input-field">
+      )}
+    >
+      <form className="query-command-strip" onSubmit={handleSubmit}>
+        <label className="field query-input-field query-command-field">
           <span className="query-input-label">
             <Hash size={16} aria-hidden="true" />
             <span>内容 ID</span>
@@ -81,8 +78,8 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
       ) : null}
 
       <p className={`query-toolbar-helper-note ${inputHint ? 'tone-warning' : ''}`}>
-        {inputHint || '固定查询近 30 日主 KPI，并同步生成原图与汇总图。'}
+        {inputHint || '主 KPI 会优先展示在结果舞台，次要信息收纳到折叠区中。'}
       </p>
-    </SectionCard>
+    </CommandBar>
   )
 }

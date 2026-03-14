@@ -28,6 +28,10 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
   const summaryTabId = `${screenshotTabsId}-summary-tab`
   const rawTabId = `${screenshotTabsId}-raw-tab`
   const panelId = `${screenshotTabsId}-panel`
+  const screenshotTabs = [
+    { value: 'summary', label: '作品分析截图', id: summaryTabId },
+    { value: 'raw', label: '作品管理截图', id: rawTabId }
+  ]
 
   useEffect(() => {
     setActiveTab('summary')
@@ -36,6 +40,34 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
 
   const errorState = useMemo(() => getErrorPresentation(error), [error])
   const previewImageUrl = activeTab === 'summary' ? result?.screenshots?.summaryUrl : result?.screenshots?.rawUrl
+
+  const handleScreenshotTabsKeyDown = (event) => {
+    const currentIndex = screenshotTabs.findIndex((item) => item.value === activeTab)
+    if (currentIndex === -1) return
+
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % screenshotTabs.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + screenshotTabs.length) % screenshotTabs.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = screenshotTabs.length - 1
+    } else {
+      return
+    }
+
+    event.preventDefault()
+    const nextTab = screenshotTabs[nextIndex]
+    const tabList = event.currentTarget
+    setActiveTab(nextTab.value)
+    window.requestAnimationFrame(() => {
+      tabList
+        ?.querySelector(`[data-tab="${nextTab.value}"]`)
+        ?.focus()
+    })
+  }
 
   const handleCopy = async () => {
     if (!result) return
@@ -67,8 +99,8 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
           <span className="section-eyebrow">结果舞台</span>
         </div>
         <div>
-          <h2>结果区</h2>
-          <p>优先展示当前最新查询结果，默认打开汇总截图以便快速读数。</p>
+          <h2>验证结果舞台</h2>
+          <p>把主 KPI、证据截图和补充信息拆成清晰层级，优先让你先看结论，再看细节。</p>
         </div>
       </div>
 
@@ -166,77 +198,30 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
             })}
           </div>
 
-          <div className="result-stage-subgrid">
-            <section className="secondary-metrics-section stack-md" aria-label="次要指标">
-              <div className="compact-panel-header">
-                <h3>次要指标</h3>
-                <p>补充展示互动类指标，保持主 KPI 读数区的聚焦感。</p>
-              </div>
-              <div className="secondary-metrics-grid">
-                {SECONDARY_METRICS.map((metric) => {
-                  const payload = resolveMetricPayload(result.metrics, metric)
-                  return (
-                    <div key={metric} className="metric-card secondary-metric-card">
-                      <span>{metric}</span>
-                      <strong>{formatMetricValue(payload?.value)}</strong>
-                      <small>{payload?.field || '-'}</small>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-
-            <div className="result-meta-grid expanded-meta-grid">
-              <div className="meta-card"><span>账号昵称</span><strong>{result.nickname}</strong></div>
-              <div className="meta-card"><span>账号 ID</span><strong>{result.accountId}</strong></div>
-              <div className="meta-card"><span>内容 ID</span><strong>{result.contentId}</strong></div>
-              <div className="meta-card"><span>查询时间</span><strong>{formatDateTime(result.fetchedAt)}</strong></div>
-            </div>
-          </div>
-
-          <div className="result-actions-row">
-            <button className="secondary-btn" type="button" onClick={handleCopy}>
-              <Copy size={18} aria-hidden="true" />
-              <span>{copyState === 'done' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制全部数据'}</span>
-            </button>
-            <a className="secondary-btn inline-link-btn" href={result.screenshots?.rawUrl} target="_blank" rel="noreferrer">
-              <FileImage size={18} aria-hidden="true" />
-              <span>打开原图</span>
-            </a>
-          </div>
-
           <div className="image-panel evidence-panel">
             <div className="image-panel-header">
               <div className="image-panel-header-copy">
                 <span className="section-eyebrow">证据视图</span>
-                <h3>截图切换</h3>
+                <h3>截图舞台</h3>
                 <small>{activeTab === 'summary' ? '对应“作品分析”页面 30 日汇总数据。' : '对应“内容管理 > 作品管理”页面的单条卡片数据。'}</small>
               </div>
-              <div className="tabs-switcher" role="tablist" aria-label="截图切换">
-                <button
-                  className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`}
-                  type="button"
-                  id={summaryTabId}
-                  role="tab"
-                  aria-controls={panelId}
-                  aria-selected={activeTab === 'summary'}
-                  tabIndex={activeTab === 'summary' ? 0 : -1}
-                  onClick={() => setActiveTab('summary')}
-                >
-                  作品分析截图
-                </button>
-                <button
-                  className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
-                  type="button"
-                  id={rawTabId}
-                  role="tab"
-                  aria-controls={panelId}
-                  aria-selected={activeTab === 'raw'}
-                  tabIndex={activeTab === 'raw' ? 0 : -1}
-                  onClick={() => setActiveTab('raw')}
-                >
-                  作品管理截图
-                </button>
+              <div className="tabs-switcher" role="tablist" aria-label="截图切换" onKeyDown={handleScreenshotTabsKeyDown}>
+                {screenshotTabs.map((tab) => (
+                  <button
+                    key={tab.value}
+                    className={`tab-btn ${activeTab === tab.value ? 'active' : ''}`}
+                    type="button"
+                    id={tab.id}
+                    data-tab={tab.value}
+                    role="tab"
+                    aria-controls={panelId}
+                    aria-selected={activeTab === tab.value}
+                    tabIndex={activeTab === tab.value ? 0 : -1}
+                    onClick={() => setActiveTab(tab.value)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -260,6 +245,50 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
               )}
             </div>
           </div>
+
+          <div className="result-actions-row">
+            <button className="secondary-btn" type="button" onClick={handleCopy}>
+              <Copy size={18} aria-hidden="true" />
+              <span>{copyState === 'done' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制全部数据'}</span>
+            </button>
+            {result.screenshots?.rawUrl ? (
+              <a className="secondary-btn inline-link-btn" href={result.screenshots.rawUrl} target="_blank" rel="noreferrer">
+                <FileImage size={18} aria-hidden="true" />
+                <span>打开原图</span>
+              </a>
+            ) : null}
+          </div>
+
+          <details className="result-supporting-details">
+            <summary>查看次要指标与元信息</summary>
+            <div className="result-stage-subgrid">
+              <section className="secondary-metrics-section stack-md" aria-label="次要指标">
+                <div className="compact-panel-header">
+                  <h3>次要指标</h3>
+                  <p>补充展示互动类指标，保持主 KPI 读数区的聚焦感。</p>
+                </div>
+                <div className="secondary-metrics-grid">
+                  {SECONDARY_METRICS.map((metric) => {
+                    const payload = resolveMetricPayload(result.metrics, metric)
+                    return (
+                      <div key={metric} className="metric-card secondary-metric-card">
+                        <span>{metric}</span>
+                        <strong>{formatMetricValue(payload?.value)}</strong>
+                        <small>{payload?.field || '-'}</small>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <div className="result-meta-grid expanded-meta-grid">
+                <div className="meta-card"><span>账号昵称</span><strong>{result.nickname}</strong></div>
+                <div className="meta-card"><span>账号 ID</span><strong>{result.accountId}</strong></div>
+                <div className="meta-card"><span>内容 ID</span><strong>{result.contentId}</strong></div>
+                <div className="meta-card"><span>查询时间</span><strong>{formatDateTime(result.fetchedAt)}</strong></div>
+              </div>
+            </div>
+          </details>
         </>
       ) : null}
     </SectionCard>

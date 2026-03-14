@@ -178,8 +178,15 @@ export function getTaskSummary(task) {
 export function getTaskSheetMatchSource(task) {
     const matchedBy = task?.sheetMatch?.details?.matchedBy || []
     if (matchedBy.includes('逛逛ID')) return '按逛逛ID命中'
-    if (matchedBy.includes('nickname')) return '按昵称命中'
+    if (matchedBy.includes('nickname')) return '按昵称兜底命中'
     return ''
+}
+
+export function getTaskSheetMatchReason(task) {
+    const matchedBy = task?.sheetMatch?.details?.matchedBy || []
+    if (matchedBy.includes('逛逛ID')) return '优先使用逛逛ID匹配交接表'
+    if (matchedBy.includes('nickname')) return '逛逛ID未命中，已按逛逛昵称兜底匹配'
+    return '系统自动判断'
 }
 
 export function getTaskSheetMatchDetail(task) {

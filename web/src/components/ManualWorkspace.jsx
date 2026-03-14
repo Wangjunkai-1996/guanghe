@@ -36,7 +36,7 @@ export function ManualWorkspace({
   const [queryResult, setQueryResult] = useState(null)
   const [queryError, setQueryError] = useState(null)
   const [accountInventoryReady, setAccountInventoryReady] = useState(() => hasLoadedAccounts || accounts.length > 0)
-  const { toasts, pushToast } = useToastQueue()
+  const { toasts, pushToast, removeToast } = useToastQueue()
 
   useEffect(() => {
     let cancelled = false
@@ -142,7 +142,13 @@ export function ManualWorkspace({
 
   return (
     <>
-          <section className="panel manual-entry-strip stack-lg">
+      {toasts.length ? (
+        <Suspense fallback={null}>
+          <ToastViewport toasts={toasts} onDismiss={removeToast} />
+        </Suspense>
+      ) : null}
+
+      <section className="panel manual-entry-strip stack-lg">
         <div className="manual-entry-bar">
           <div className="compact-panel-header">
             <div className="manual-entry-kicker">
@@ -232,11 +238,6 @@ export function ManualWorkspace({
             </main>
           </div>
 
-          {toasts.length ? (
-            <Suspense fallback={null}>
-              <ToastViewport toasts={toasts} />
-            </Suspense>
-          ) : null}
         </div>
       </section>
 

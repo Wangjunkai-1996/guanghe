@@ -233,7 +233,7 @@ describe('batch task workspace ui', () => {
 
     render(<BatchTasksWorkspace />)
 
-    await screen.findByRole('heading', { name: '任务过滤器' })
+    await screen.findByRole('heading', { name: '任务队列' })
     expect(screen.getAllByText('达人A').length).toBeGreaterThan(0)
     expect(screen.getByText('达人B')).toBeInTheDocument()
 
@@ -244,20 +244,20 @@ describe('batch task workspace ui', () => {
     fireEvent.click(screen.getByRole('button', { name: /全部任务/ }))
     fireEvent.click(screen.getByText('达人B'))
 
-    const expandedPill = await screen.findByText('收起详情')
-    const accordionItem = expandedPill.closest('.task-accordion-item')
+    await screen.findByText('详情已展开')
+    const detailPane = document.querySelector('.task-detail-pane')
 
-    expect(accordionItem).not.toBeNull()
-    expect(within(accordionItem).getByText('当前建议')).toBeInTheDocument()
+    expect(detailPane).not.toBeNull()
+    expect(within(detailPane).getByText('当前建议')).toBeInTheDocument()
 
     // Switch to results tab to see results content
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '概览与结果' }))
-    expect(within(accordionItem).getByRole('link', { name: '查看分析图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
-    expect(within(accordionItem).getAllByText('自然卷儿').length).toBeGreaterThan(0)
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '概览与结果' }))
+    expect(within(detailPane).getByRole('link', { name: '查看分析图' })).toHaveAttribute('href', '/api/artifacts/summary.png')
+    expect(within(detailPane).getAllByText('自然卷儿').length).toBeGreaterThan(0)
 
     // Switch to sync tab to see sync content
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
-    expect(within(accordionItem).getByText('腾讯文档同步')).toBeInTheDocument()
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '文档回填' }))
+    expect(within(detailPane).getByText('腾讯文档同步')).toBeInTheDocument()
   })
 
   test('renders batch hero summary with core actions', async () => {
@@ -265,11 +265,13 @@ describe('batch task workspace ui', () => {
 
     render(<BatchTasksWorkspace />)
 
-    expect(await screen.findByRole('heading', { name: '批量任务主控台' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '手工建任务' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '刷新列表' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '批量闭环工作区' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '创建任务' })).toBeInTheDocument()
+    const batchCommandBar = document.querySelector('.batch-command-bar')
+    expect(within(batchCommandBar).getByRole('button', { name: '检查工作表' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '展开高级排障' })).toBeInTheDocument()
-    expect(document.querySelectorAll('.batch-hero-grid .ui-stat-card')).toHaveLength(3)
+    expect(document.querySelectorAll('.command-bar-grid .ui-stat-card')).toHaveLength(4)
   })
 
   test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
@@ -333,8 +335,8 @@ describe('batch task workspace ui', () => {
   test('shows live draft validation and counts in task builder', async () => {
     render(<BatchTasksWorkspace />)
 
-    await screen.findByRole('heading', { name: '批量任务工作台' })
-    fireEvent.click(screen.getByRole('button', { name: '手工建任务' }))
+    await screen.findByRole('heading', { name: '批量任务队列' })
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }))
     await screen.findByRole('heading', { name: '新建批量任务' })
 
     fireEvent.change(screen.getByLabelText('批量任务输入'), {
@@ -520,12 +522,58 @@ describe('batch task workspace ui', () => {
 
     fireEvent.click(within(taskQueueList).getByText('达人E'))
 
-    const expandedPill = await screen.findByText('收起详情')
-    const accordionItem = expandedPill.closest('.task-accordion-item')
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
+    await screen.findByText('详情已展开')
+    const detailPane = document.querySelector('.task-detail-pane')
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '文档回填' }))
 
-    expect(within(accordionItem).getAllByText('按逛逛ID命中').length).toBeGreaterThan(0)
-    expect(within(accordionItem).getByText('命中依据')).toBeInTheDocument()
+    expect(within(detailPane).getAllByText('按逛逛ID命中').length).toBeGreaterThan(0)
+    expect(within(detailPane).getByText('命中依据')).toBeInTheDocument()
+    expect(within(detailPane).getByText('优先使用逛逛ID匹配交接表')).toBeInTheDocument()
+  })
+
+  test('shows nickname fallback source when accountId misses', async () => {
+    api.listTasks.mockResolvedValue({
+      tasks: [
+        createTask({
+          taskId: 'task-match-source-nickname',
+          taskMode: 'SHEET_DEMAND',
+          remark: '达人N',
+          contentId: '554608495125',
+          accountId: '9999',
+          accountNickname: '测试账号',
+          sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+          sheetMatch: {
+            status: 'NEEDS_FILL',
+            sheetRow: 10,
+            nickname: '达人N',
+            contentId: '554608495125',
+            missingColumns: ['查看次数'],
+            matchedAt: '2026-03-09T01:00:00.000Z',
+            details: { matchedBy: ['nickname'] }
+          },
+          login: { status: 'LOGGED_IN' },
+          query: { status: 'IDLE' }
+        })
+      ]
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    const taskQueueList = await waitFor(() => {
+      const element = document.querySelector('.task-queue-list')
+      expect(element).not.toBeNull()
+      return element
+    })
+    expect(within(taskQueueList).getByText('按昵称兜底命中')).toBeInTheDocument()
+
+    fireEvent.click(within(taskQueueList).getByText('达人N'))
+
+    await screen.findByText('详情已展开')
+    const detailPane = document.querySelector('.task-detail-pane')
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '文档回填' }))
+
+    expect(within(detailPane).getAllByText('按昵称兜底命中').length).toBeGreaterThan(0)
+    expect(within(detailPane).getByText('逛逛ID未命中，已按逛逛昵称兜底匹配')).toBeInTheDocument()
   })
 
   test('shows duplicate accountId sheet match as manual-intervention status', async () => {
@@ -569,12 +617,12 @@ describe('batch task workspace ui', () => {
 
     fireEvent.click(within(taskQueueList).getByText('达人F'))
 
-    const expandedPill = await screen.findByText('收起详情')
-    const accordionItem = expandedPill.closest('.task-accordion-item')
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
+    await screen.findByText('详情已展开')
+    const detailPane = document.querySelector('.task-detail-pane')
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '文档回填' }))
 
-    expect(within(accordionItem).getAllByText('逛逛ID重复').length).toBeGreaterThan(0)
-    expect(within(accordionItem).getByText(/找到多行相同逛逛ID/)).toBeInTheDocument()
+    expect(within(detailPane).getAllByText('逛逛ID重复').length).toBeGreaterThan(0)
+    expect(within(detailPane).getByText(/找到多行相同逛逛ID/)).toBeInTheDocument()
   })
 
   test('shows sync failure guidance and supports manual resync actions', async () => {
@@ -615,23 +663,23 @@ describe('batch task workspace ui', () => {
     expect((await screen.findAllByText('达人C')).length).toBeGreaterThan(0)
     fireEvent.click(screen.getAllByText('达人C')[0])
 
-    const expandedPill = await screen.findByText('收起详情')
-    const accordionItem = expandedPill.closest('.task-accordion-item')
+    await screen.findByText('详情已展开')
+    const detailPane = document.querySelector('.task-detail-pane')
 
     // Switch to sync tab to see sync content and buttons
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '文档回填' }))
 
-    expect(within(accordionItem).getAllByText(/同步：失败/).length).toBeGreaterThan(0)
-    expect(within(accordionItem).getAllByText('腾讯文档当前未登录，请先完成登录').length).toBeGreaterThan(0)
+    expect(within(detailPane).getAllByText(/同步：失败/).length).toBeGreaterThan(0)
+    expect(within(detailPane).getAllByText('腾讯文档当前未登录，请先完成登录').length).toBeGreaterThan(0)
 
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '预览回填' }))
+    fireEvent.click(within(detailPane).getByRole('button', { name: '预览回填' }))
     await waitFor(() => {
       expect(api.previewTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
         resultUrl: '/api/artifacts/results.json'
       }))
     })
 
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '立即同步' }))
+    fireEvent.click(within(detailPane).getByRole('button', { name: '立即同步' }))
     await waitFor(() => {
       expect(api.syncTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
         taskId: 'task-sync-failed',
@@ -909,10 +957,10 @@ describe('batch task workspace ui', () => {
 
     fireEvent.click(within(taskQueueList).getByText('达人D'))
 
-    const expandedPill = await screen.findByText('收起详情')
-    const accordionItem = expandedPill.closest('.task-accordion-item')
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '文档回填' }))
-    fireEvent.click(within(accordionItem).getByRole('button', { name: '立即同步' }))
+    await screen.findByText('详情已展开')
+    const detailPane = document.querySelector('.task-detail-pane')
+    fireEvent.click(within(detailPane).getByRole('tab', { name: '文档回填' }))
+    fireEvent.click(within(detailPane).getByRole('button', { name: '立即同步' }))
 
     await waitFor(() => {
       expect(api.syncTencentDocsHandoff).toHaveBeenCalledWith(expect.objectContaining({
@@ -940,13 +988,12 @@ describe('batch task workspace ui', () => {
 
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
-    expect(document.querySelectorAll('.page-header-stats .ui-stat-card')).toHaveLength(2)
-    expect(screen.queryByText('运营节奏')).not.toBeInTheDocument()
-    expect(screen.queryByText('查询工具条')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '批量任务控制台' })).toBeInTheDocument()
+    expect(screen.queryByText('单条内容验证')).not.toBeInTheDocument()
     expect(api.listAccounts).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('tab', { name: '账号管理与单条查询' }))
+    const workspaceNav = screen.getByRole('navigation', { name: '工作区导航' })
+    fireEvent.click(within(workspaceNav).getByRole('button', { name: '账号查询' }))
 
     await waitFor(() => {
       expect(screen.getByText('手工页正在读取账号库')).toBeInTheDocument()
@@ -959,16 +1006,16 @@ describe('batch task workspace ui', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('查询工具条')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '单条内容验证' })).toBeInTheDocument()
     })
     expect(screen.getByRole('heading', { name: '账号库与单条查询' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: '批量任务与交接表闭环' }))
-    expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
+    fireEvent.click(within(workspaceNav).getByRole('button', { name: '批量闭环' }))
+    expect(await screen.findByRole('heading', { name: '批量任务控制台' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: '账号管理与单条查询' }))
+    fireEvent.click(within(workspaceNav).getByRole('button', { name: '账号查询' }))
     await waitFor(() => {
-      expect(screen.getByText('查询工具条')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '单条内容验证' })).toBeInTheDocument()
     })
     expect(api.listAccounts).toHaveBeenCalledTimes(1)
   })

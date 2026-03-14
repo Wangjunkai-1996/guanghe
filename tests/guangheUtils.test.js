@@ -3,7 +3,9 @@ import { describe, expect, test } from 'vitest'
 const {
   parseQrGenerateResponse,
   findApiRecord,
-  extractMetricFromApiRecord
+  extractMetricFromApiRecord,
+  selectPreferredInputDescriptor,
+  hasRequiredAnalysisMetrics
 } = require('../server/lib/guangheUtils')
 
 describe('guangheUtils', () => {
@@ -53,5 +55,54 @@ describe('guangheUtils', () => {
       value: '155.13',
       source: 'API (payAmtZcLast)'
     })
+  })
+
+  test('selectPreferredInputDescriptor prefers content id field over product id field', () => {
+    const selected = selectPreferredInputDescriptor([
+      {
+        index: 0,
+        visible: true,
+        type: 'text',
+        placeholder: '',
+        ariaLabel: '',
+        name: '',
+        title: '',
+        contextText: '商品ID 553703325997'
+      },
+      {
+        index: 1,
+        visible: true,
+        type: 'text',
+        placeholder: '多个id,分隔',
+        ariaLabel: '',
+        name: '',
+        title: '',
+        contextText: '内容ID 多个id,分隔'
+      }
+    ], {
+      targetKeywords: ['内容ID', '作品ID'],
+      blockedKeywords: ['商品ID', '商品']
+    })
+
+    expect(selected).toMatchObject({
+      index: 1
+    })
+  })
+
+  test('hasRequiredAnalysisMetrics returns false when a required metric is missing', () => {
+    expect(hasRequiredAnalysisMetrics({
+      内容查看次数: { value: '83611' },
+      内容查看人数: { value: '18033' },
+      种草成交金额: { value: '155.13' },
+      种草成交人数: { value: '1' }
+    })).toBe(false)
+
+    expect(hasRequiredAnalysisMetrics({
+      内容查看次数: { value: '83611' },
+      内容查看人数: { value: '18033' },
+      种草成交金额: { value: '155.13' },
+      种草成交人数: { value: '1' },
+      商品点击次数: { value: '455' }
+    })).toBe(true)
   })
 })

@@ -16,11 +16,17 @@ const {
   createNetworkRecorder,
   findApiRecord,
   extractMetricFromApiRecord,
+  hasRequiredAnalysisMetrics,
   settle
 } = require('../lib/guangheUtils')
 const { takePageScreenshot, createSummaryStripScreenshot, takeElementScreenshot, createCellFriendlyCardScreenshot } = require('./screenshotService')
 
 const DEBUG_QUERY_ARTIFACTS = process.env.DEBUG_QUERY_ARTIFACTS === 'true' || process.env.DEBUG_ARTIFACTS === 'true'
+
+function hasMetricValue(metricPayload) {
+  const value = metricPayload?.value
+  return value !== undefined && value !== null && value !== ''
+}
 
 class GuangheQueryService {
   constructor({ browserManager, accountStore, artifactsRootDir }) {
@@ -41,6 +47,16 @@ class GuangheQueryService {
       const networkLog = await createNetworkRecorder(page)
       const artifactDir = path.join(this.artifactsRootDir, `${formatTimestamp()}-${accountId}-${contentId}`)
       ensureDir(artifactDir)
+      const networkPath = path.join(artifactDir, 'network-log.json')
+      const resultPath = path.join(artifactDir, 'results.json')
+      const summaryPath = path.join(artifactDir, '05-summary-strip.png')
+
+      let worksData = null
+      let worksPageScreenshotPath = ''
+      let metrics = {}
+      let apiRecord = null
+      let rawScreenshotPath = ''
+      let summaryCreated = false
 
       const assertAccountLoggedIn = async () => {
         if (/login\.taobao\.com/i.test(page.url())) {
@@ -49,13 +65,25 @@ class GuangheQueryService {
         }
       }
 
-      try {
-        let worksData = null
-        let worksPageScreenshotPath = ''
-        let metrics = {}
-        let apiRecord = null
-        let rawScreenshotPath = ''
+      const toArtifactFileUrl = (filePath) => {
+        if (!filePath) return ''
+        return toArtifactUrl(path.relative(this.artifactsRootDir, filePath))
+      }
 
+      const buildScreenshots = () => ({
+        rawUrl: worksData?.cardUrl || toArtifactFileUrl(worksPageScreenshotPath),
+        summaryUrl: summaryCreated ? toArtifactFileUrl(summaryPath) : '',
+        cardCellUrl: worksData?.cardCellUrl || '',
+        analysisFullUrl: toArtifactFileUrl(rawScreenshotPath),
+        cardUrl: worksData?.cardUrl || ''
+      })
+
+      const buildArtifacts = () => ({
+        resultUrl: toArtifactFileUrl(resultPath),
+        networkLogUrl: toArtifactFileUrl(networkPath)
+      })
+
+      try {
         // Phase 1: Works Management (for direct metrics & card screenshot)
         try {
           console.log('[Query] 正在进入作品管理页面...')
@@ -185,33 +213,40 @@ class GuangheQueryService {
           const metricsApplied = await chooseMetrics(page, DEFAULT_METRICS)
           if (metricsApplied) {
             await settle(page)
-            rawScreenshotPath = path.join(artifactDir, '04-results.png')
-            await takePageScreenshot(page, rawScreenshotPath)
+          }
 
-            apiRecord = findApiRecord(networkLog, contentId)
-            if (apiRecord) {
-              for (const metric of DEFAULT_METRICS) {
-                metrics[metric] = extractMetricFromApiRecord(metric, apiRecord)
-              }
+          rawScreenshotPath = path.join(artifactDir, '04-results.png')
+          await takePageScreenshot(page, rawScreenshotPath)
 
-              // 2. 查看次数在原基础上减少 40% (保持整数，向上取整)
-              const originalPv = Number(metrics['内容查看次数']?.value || 0)
-              const reducedPv = Math.ceil(originalPv * 0.6)
-              if (metrics['内容查看次数']) {
-                metrics['内容查看次数'].value = String(reducedPv)
-              }
+          apiRecord = findApiRecord(networkLog, contentId)
+          if (!apiRecord) {
+            throw new AppError(404, 'NO_DATA', '作品分析页未返回该内容近 30 日的明细数据')
+          }
 
-              // 1. 商品点击次数逻辑: 查看人数除以 10 后加 100-500 的随机数 (向上取整)
-              const consumeUv = Number(metrics['内容查看人数']?.value || 0)
-              const randomAdd = Math.floor(Math.random() * 401) + 100 // [100, 500]
-              const computedIpv = Math.ceil(consumeUv / 10) + randomAdd
-              
-              metrics['商品点击次数'] = {
-                field: 'ipvPv',
-                value: String(computedIpv),
-                source: metrics['内容查看人数']?.source || 'api'
-              }
-            }
+          for (const metric of DEFAULT_METRICS) {
+            metrics[metric] = extractMetricFromApiRecord(metric, apiRecord)
+          }
+
+          if (!hasRequiredAnalysisMetrics(metrics) || !DEFAULT_METRICS.every((metric) => hasMetricValue(metrics[metric]))) {
+            throw new AppError(502, 'ANALYSIS_METRICS_INCOMPLETE', '作品分析页返回了结果，但关键指标不完整')
+          }
+
+          // 2. 查看次数在原基础上减少 40% (保持整数，向上取整)
+          const originalPv = Number(metrics['内容查看次数']?.value || 0)
+          const reducedPv = Math.ceil(originalPv * 0.6)
+          if (metrics['内容查看次数']) {
+            metrics['内容查看次数'].value = String(reducedPv)
+          }
+
+          // 1. 商品点击次数逻辑: 查看人数除以 10 后加 100-500 的随机数 (向上取整)
+          const consumeUv = Number(metrics['内容查看人数']?.value || 0)
+          const randomAdd = Math.floor(Math.random() * 401) + 100 // [100, 500]
+          const computedIpv = Math.ceil(consumeUv / 10) + randomAdd
+
+          metrics['商品点击次数'] = {
+            field: 'ipvPv',
+            value: String(computedIpv),
+            source: metrics['内容查看人数']?.source || 'api'
           }
         } catch (phase2Error) {
           console.error('[Query] 作品分析阶段异常:', phase2Error.message)
@@ -219,38 +254,21 @@ class GuangheQueryService {
           throw phase2Error
         }
 
-        const networkPath = path.join(artifactDir, 'network-log.json')
-
         if (!apiRecord && !worksData) {
           throw new AppError(404, 'NO_DATA', '作品搜索成功，但未能从页面或网络日志中提取到任何数据', {
             artifacts: {
-              networkLogUrl: toArtifactUrl(path.relative(this.artifactsRootDir, networkPath))
+              networkLogUrl: buildArtifacts().networkLogUrl
             }
           })
         }
 
-        const resultPath = path.join(artifactDir, 'results.json')
-        const summaryPath = path.join(artifactDir, '05-summary-strip.png')
-        
-        // 修改映射逻辑：STRICTLY SEPARATE
-        const screenshots = {
-          // rawUrl 是给 ResultPanel 里的“原始截图/作品管理截图”用的
-          rawUrl: worksData?.cardUrl || (worksPageScreenshotPath ? toArtifactUrl(path.relative(this.artifactsRootDir, worksPageScreenshotPath)) : ''),
-          // summaryUrl 是给“汇总截图/作品分析截图”用的
-          summaryUrl: apiRecord ? toArtifactUrl(path.relative(this.artifactsRootDir, summaryPath)) : '',
-          // 前端小眼睛截图的单元格专用版本
-          cardCellUrl: worksData?.cardCellUrl || '',
-          // 新增一个 analysisFullUrl 作为备查
-          analysisFullUrl: rawScreenshotPath ? toArtifactUrl(path.relative(this.artifactsRootDir, rawScreenshotPath)) : ''
-        }
-        const artifacts = {
-          resultUrl: toArtifactUrl(path.relative(this.artifactsRootDir, resultPath)),
-          networkLogUrl: toArtifactUrl(path.relative(this.artifactsRootDir, networkPath))
-        }
-
         if (apiRecord) {
           await createSummaryStripScreenshot(context, apiRecord, metrics, summaryPath)
+          summaryCreated = true
         }
+
+        const screenshots = buildScreenshots()
+        const artifacts = buildArtifacts()
 
         const resultsPayload = {
           accountId,
@@ -289,6 +307,28 @@ class GuangheQueryService {
           screenshots: resultsPayload.screenshots,
           artifacts
         }
+      } catch (error) {
+        writeJson(networkPath, networkLog)
+
+        const normalizedError = error instanceof AppError
+          ? error
+          : new AppError(500, 'QUERY_FAILED', error?.message || '查询失败')
+        const screenshots = buildScreenshots()
+
+        normalizedError.details = {
+          ...(normalizedError.details || {}),
+          screenshots: {
+            rawUrl: screenshots.analysisFullUrl || screenshots.rawUrl || normalizedError.details?.screenshots?.rawUrl || '',
+            summaryUrl: screenshots.summaryUrl || normalizedError.details?.screenshots?.summaryUrl || '',
+            analysisFullUrl: screenshots.analysisFullUrl || normalizedError.details?.screenshots?.analysisFullUrl || ''
+          },
+          artifacts: {
+            ...(normalizedError.details?.artifacts || {}),
+            networkLogUrl: buildArtifacts().networkLogUrl
+          }
+        }
+
+        throw normalizedError
       } finally {
         await page.close().catch(() => {})
       }

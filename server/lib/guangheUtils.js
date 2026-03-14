@@ -95,6 +95,61 @@ function extractWorksManagementMetrics(apiRecord) {
   }
 }
 
+function normalizeComparableText(value) {
+  return String(value || '').replace(/\s+/g, '').trim().toLowerCase()
+}
+
+function selectPreferredInputDescriptor(descriptors, {
+  targetKeywords = [],
+  blockedKeywords = []
+} = {}) {
+  const normalizedTargets = targetKeywords.map(normalizeComparableText).filter(Boolean)
+  const normalizedBlocked = blockedKeywords.map(normalizeComparableText).filter(Boolean)
+  const visibleDescriptors = Array.isArray(descriptors) ? descriptors.filter((item) => item?.visible !== false) : []
+
+  let best = null
+  for (const descriptor of visibleDescriptors) {
+    const fieldText = [
+      descriptor.placeholder,
+      descriptor.ariaLabel,
+      descriptor.name,
+      descriptor.title
+    ].map(normalizeComparableText).join(' ')
+    const contextText = normalizeComparableText(descriptor.contextText)
+    const combinedText = `${fieldText} ${contextText}`.trim()
+
+    let score = 0
+    if (normalizedTargets.length > 0) {
+      if (normalizedTargets.some((keyword) => contextText.includes(keyword))) score += 320
+      if (normalizedTargets.some((keyword) => fieldText.includes(keyword))) score += 220
+      if (normalizedTargets.some((keyword) => combinedText.includes(keyword))) score += 80
+    }
+
+    if (/内容/.test(contextText) && /id/.test(combinedText)) score += 80
+    if (/作品/.test(contextText) && /id/.test(combinedText)) score += 80
+    if (descriptor.type === 'search') score += 12
+    if (descriptor.type === 'text') score += 8
+
+    if (normalizedBlocked.some((keyword) => fieldText.includes(keyword))) score -= 600
+    if (normalizedBlocked.some((keyword) => contextText.includes(keyword))) score -= 420
+    if (normalizedBlocked.some((keyword) => combinedText.includes(keyword))) score -= 180
+
+    if (!best || score > best.score) {
+      best = { ...descriptor, score }
+    }
+  }
+
+  if (!best || best.score <= 0) return null
+  return best
+}
+
+function hasRequiredAnalysisMetrics(metrics, requiredMetrics = DEFAULT_METRICS) {
+  return requiredMetrics.every((metric) => {
+    const value = metrics?.[metric]?.value
+    return value !== undefined && value !== null && value !== ''
+  })
+}
+
 async function waitForLoginState(page, timeoutMs = 180000) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
@@ -535,7 +590,17 @@ async function extractWorksManagementData(page, contentId) {
 
 
 async function fillContentId(page, contentId) {
-  const input = await findSearchInput(page)
+  const input = await findSearchInput(page, {
+    targetKeywords: ['内容ID', '作品ID'],
+    blockedKeywords: ['商品ID', '宝贝ID', 'item_id', 'itemid', '商品'],
+    placeholders: [
+      /内容ID/i,
+      /作品ID/i,
+      /请输入.*内容.*ID/i,
+      /请输入.*作品.*ID/i
+    ],
+    allowGenericFallback: false
+  })
   if (!input) {
     throw new AppError(500, 'CONTENT_ID_INPUT_NOT_FOUND', '没有找到内容 ID 输入框')
   }
@@ -551,7 +616,7 @@ async function fillContentId(page, contentId) {
   // Wait for React to process the input change
   await page.waitForTimeout(300)
 
-  const clicked = await clickAnyText(page, QUERY_BUTTON_CANDIDATES)
+  const clicked = await clickQueryButton(page)
   if (!clicked) {
     await page.keyboard.press('Enter').catch(() => { })
   }
@@ -567,7 +632,9 @@ async function pickDateRange30Days(page) {
 }
 
 async function chooseMetrics(page, metrics = DEFAULT_METRICS) {
-  const opened = await clickAnyText(page, METRIC_TRIGGER_CANDIDATES)
+  const metricsAlreadyVisible = await areMetricOptionsVisible(page, metrics)
+  const triggerCandidates = METRIC_TRIGGER_CANDIDATES.filter((item) => item !== '收起更多指标')
+  const opened = metricsAlreadyVisible || await clickAnyText(page, triggerCandidates)
   if (!opened) return false
 
   // Wait for the dropdown or popover to be visible
@@ -582,6 +649,7 @@ async function chooseMetrics(page, metrics = DEFAULT_METRICS) {
   }
 
   await clickAnyText(page, ['确定', '完成', '应用', '确认']).catch(() => false)
+  await clickQueryButton(page).catch(() => false)
   await settle(page)
   return true
 }
@@ -666,15 +734,38 @@ async function clickAnyText(page, texts) {
   return false
 }
 
-async function findSearchInput(page) {
-  const placeholders = [
-    /请输入.*ID/i,
-    /作品ID/i,
-    /关键字/i,
-    /内容ID/i,
-    /ID/i,
-    /搜索/i
-  ]
+async function clickQueryButton(page) {
+  return clickAnyText(page, QUERY_BUTTON_CANDIDATES)
+}
+
+async function areMetricOptionsVisible(page, metrics = DEFAULT_METRICS) {
+  for (const metric of metrics) {
+    const visible = await page.getByText(new RegExp(escapeRegExp(metric))).first().isVisible({ timeout: 400 }).catch(() => false)
+    if (visible) return true
+  }
+  return false
+}
+
+async function findSearchInput(page, options = {}) {
+  const {
+    targetKeywords = [],
+    blockedKeywords = [],
+    placeholders = [
+      /请输入.*ID/i,
+      /作品ID/i,
+      /关键字/i,
+      /内容ID/i,
+      /ID/i,
+      /搜索/i
+    ],
+    allowGenericFallback = true
+  } = options
+
+  const targetedInput = await findInputByKeywords(page, targetKeywords, { blockedKeywords })
+  if (targetedInput) {
+    console.log(`[findSearchInput] 匹配到定向输入框: ${targetKeywords.join(',')}`)
+    return targetedInput
+  }
   
   for (const p of placeholders) {
     const loc = page.getByPlaceholder(p).filter({ visible: true }).first()
@@ -683,6 +774,8 @@ async function findSearchInput(page) {
       return loc
     }
   }
+
+  if (!allowGenericFallback) return null
 
   // Fallback to searching for inputs in the search section or main area
   const searchAreaLocators = [
@@ -716,8 +809,108 @@ async function findSearchInput(page) {
   return null
 }
 
-async function findInputByKeywords(page, keywords) {
-  return findSearchInput(page)
+async function findInputByKeywords(page, keywords, { blockedKeywords = [] } = {}) {
+  if (!Array.isArray(keywords) || keywords.length === 0) return null
+
+  const selector = await page.evaluate(({ keywords, blockedKeywords }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, '').trim().toLowerCase()
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false
+      const style = window.getComputedStyle(node)
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) === 0) return false
+      const rect = node.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0
+    }
+    const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const collectContextText = (input) => {
+      const texts = []
+      const push = (value) => {
+        const text = cleanText(value)
+        if (text && !texts.includes(text)) texts.push(text)
+      }
+
+      for (const label of Array.from(input.labels || [])) {
+        push(label.innerText || label.textContent || '')
+      }
+
+      let current = input
+      for (let depth = 0; current && depth < 4; depth += 1) {
+        push(current.previousElementSibling?.innerText || current.previousElementSibling?.textContent || '')
+        push(current.parentElement?.innerText || current.parentElement?.textContent || '')
+        current = current.parentElement
+      }
+
+      const labelledBy = cleanText(
+        String(input.getAttribute('aria-labelledby') || '')
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent || '')
+          .join(' ')
+      )
+      push(labelledBy)
+      return texts.join(' | ')
+    }
+    const normalizedTargets = keywords.map(normalize).filter(Boolean)
+    const normalizedBlocked = blockedKeywords.map(normalize).filter(Boolean)
+
+    for (const node of document.querySelectorAll('[data-codex-target-input]')) {
+      node.removeAttribute('data-codex-target-input')
+    }
+
+    const nodes = Array.from(document.querySelectorAll('input, textarea'))
+    const descriptors = nodes.map((node, index) => ({
+      index,
+      visible: isVisible(node),
+      placeholder: node.getAttribute('placeholder') || '',
+      ariaLabel: node.getAttribute('aria-label') || '',
+      name: node.getAttribute('name') || '',
+      title: node.getAttribute('title') || '',
+      type: (node.getAttribute('type') || node.type || '').toLowerCase(),
+      contextText: collectContextText(node)
+    }))
+
+    let best = null
+    for (const descriptor of descriptors) {
+      if (!descriptor.visible) continue
+      const fieldText = [
+        descriptor.placeholder,
+        descriptor.ariaLabel,
+        descriptor.name,
+        descriptor.title
+      ].map(normalize).join(' ')
+      const contextText = normalize(descriptor.contextText)
+      const combinedText = `${fieldText} ${contextText}`.trim()
+
+      let score = 0
+      if (normalizedTargets.some((keyword) => contextText.includes(keyword))) score += 320
+      if (normalizedTargets.some((keyword) => fieldText.includes(keyword))) score += 220
+      if (normalizedTargets.some((keyword) => combinedText.includes(keyword))) score += 80
+      if (/内容/.test(contextText) && /id/.test(combinedText)) score += 80
+      if (/作品/.test(contextText) && /id/.test(combinedText)) score += 80
+      if (descriptor.type === 'search') score += 12
+      if (descriptor.type === 'text') score += 8
+
+      if (normalizedBlocked.some((keyword) => fieldText.includes(keyword))) score -= 600
+      if (normalizedBlocked.some((keyword) => contextText.includes(keyword))) score -= 420
+      if (normalizedBlocked.some((keyword) => combinedText.includes(keyword))) score -= 180
+
+      if (!best || score > best.score) {
+        best = { index: descriptor.index, score }
+      }
+    }
+
+    if (!best || best.score <= 0) return ''
+    const node = nodes[best.index]
+    if (!node) return ''
+    node.setAttribute('data-codex-target-input', 'true')
+    return '[data-codex-target-input="true"]'
+  }, { keywords, blockedKeywords }).catch(() => '')
+
+  if (!selector) return null
+  const locator = page.locator(selector).first()
+  if (await locator.isVisible({ timeout: 500 }).catch(() => false)) {
+    return locator
+  }
+  return null
 }
 
 async function settle(page) {
@@ -749,6 +942,8 @@ module.exports = {
   findWorksManagementApiRecord,
   extractMetricFromApiRecord,
   extractWorksManagementMetrics,
+  selectPreferredInputDescriptor,
+  hasRequiredAnalysisMetrics,
   waitForLoginState,
   detectLoginStatus,
   extractAccountProfile,

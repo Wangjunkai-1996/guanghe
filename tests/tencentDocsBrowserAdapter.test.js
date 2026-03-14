@@ -124,5 +124,10 @@ describe('tencent docs browser adapter helpers', () => {
     expect(__private.buildImageConversionTargets({ x: 10, y: 10, w: 100, h: 40 }, null).length).toBeGreaterThan(0)
   })
 
+  test('shouldContinueBatchScan stops when the first batch is shorter than the window size', () => {
+    expect(__private.shouldContinueBatchScan(Array.from({ length: 198 }, () => ({})), 200)).toBe(false)
+    expect(__private.shouldContinueBatchScan(Array.from({ length: 200 }, () => ({})), 200)).toBe(true)
+  })
+
 
 })

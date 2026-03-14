@@ -1,7 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { X } from 'lucide-react'
 import { ToneIcon } from './ToneIcon'
 
-export function ToastViewport({ toasts = [] }) {
+export function ToastViewport({ toasts = [], onDismiss = null }) {
   const shouldReduceMotion = useReducedMotion()
 
   if (!toasts.length) return null
@@ -13,13 +14,25 @@ export function ToastViewport({ toasts = [] }) {
           <motion.div
             key={toast.id}
             className={`toast-card tone-${toast.tone}`}
-            initial={shouldReduceMotion ? undefined : { opacity: 0, x: 24, y: 12 }}
-            animate={shouldReduceMotion ? undefined : { opacity: 1, x: 0, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, x: 24, y: 12 }}
+            title={toast.message}
+            aria-label={toast.message}
+            initial={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
+            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
             transition={{ duration: 0.22, ease: [0.2, 0, 0.2, 1] }}
           >
             <ToneIcon tone={toast.tone} className="toast-card-icon" />
-            <span>{toast.message}</span>
+            <span className="toast-card-message">{toast.message}</span>
+            {onDismiss ? (
+              <button
+                className="toast-card-close"
+                type="button"
+                aria-label="关闭提示"
+                onClick={() => onDismiss(toast.id)}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            ) : null}
           </motion.div>
         ))}
       </AnimatePresence>

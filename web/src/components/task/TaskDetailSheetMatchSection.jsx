@@ -1,5 +1,5 @@
 import React from 'react'
-import { formatTaskSheetMatchStatus, getTaskSheetMatchDetail, getTaskSheetMatchSource, getTaskSheetMatchTone } from '../../lib/taskFormat'
+import { formatTaskSheetMatchStatus, getTaskSheetMatchDetail, getTaskSheetMatchReason, getTaskSheetMatchSource, getTaskSheetMatchTone } from '../../lib/taskFormat'
 
 export const TaskDetailSheetMatchSection = React.memo(function TaskDetailSheetMatchSection({ task, showAdvanced }) {
     const sheetName = task.sheetTarget?.sheetName || '未设置'
@@ -7,6 +7,7 @@ export const TaskDetailSheetMatchSection = React.memo(function TaskDetailSheetMa
     const missingCount = task.sheetMatch?.missingColumns?.length || 0
     const tone = getTaskSheetMatchTone(task.sheetMatch?.status)
     const matchSource = getTaskSheetMatchSource(task)
+    const matchReason = getTaskSheetMatchReason(task)
 
     return (
         <div className="task-detail-section stack-sm">
@@ -36,7 +37,7 @@ export const TaskDetailSheetMatchSection = React.memo(function TaskDetailSheetMa
                         <div className="meta-card compact-meta-card"><span>目标工作表</span><strong>{sheetName}</strong></div>
                         <div className="meta-card compact-meta-card"><span>目标行</span><strong>{rowText}</strong><small>{task.sheetMatch?.nickname || task.accountNickname || '等待达人扫码'}</small></div>
                         <div className="meta-card compact-meta-card"><span>缺失列</span><strong>{missingCount} 列</strong><small>{missingCount ? task.sheetMatch.missingColumns.join('、') : '当前没有缺失列'}</small></div>
-                        {matchSource ? <div className="meta-card compact-meta-card"><span>命中依据</span><strong>{matchSource}</strong><small>{task.sheetMatch?.details?.matchedBy?.join('、') || '系统自动判断'}</small></div> : null}
+                        {matchSource ? <div className="meta-card compact-meta-card"><span>命中依据</span><strong>{matchSource}</strong><small>{matchReason}</small></div> : null}
                     </div>
                 </>
             ) : null}

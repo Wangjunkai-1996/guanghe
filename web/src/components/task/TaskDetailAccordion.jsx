@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useId, useState } from 'react'
 import {
   canDeleteTask,
   canRefreshTaskLogin,
@@ -33,6 +33,7 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
 }) {
   const [activeTab, setActiveTab] = useState('summary')
   const [detailTab, setDetailTab] = useState('results')
+  const detailTabsId = useId()
 
   useEffect(() => {
     setActiveTab('summary')
@@ -52,6 +53,39 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
   const canDelete = canDeleteTask(task)
   const showQr = Boolean(task.qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login.status))
   const recommendations = getTaskRecommendations(task, syncConfig)
+  const detailTabs = [
+    { value: 'results', label: '概览与结果' },
+    { value: 'sync', label: '文档回填' },
+    { value: 'logs', label: '二维码与日志' }
+  ]
+
+  const handleDetailTabsKeyDown = (event) => {
+    const currentIndex = detailTabs.findIndex((item) => item.value === detailTab)
+    if (currentIndex === -1) return
+
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % detailTabs.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + detailTabs.length) % detailTabs.length
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = detailTabs.length - 1
+    } else {
+      return
+    }
+
+    event.preventDefault()
+    const nextTab = detailTabs[nextIndex]
+    const tabList = event.currentTarget
+    setDetailTab(nextTab.value)
+    window.requestAnimationFrame(() => {
+      tabList
+        ?.querySelector(`[data-tab="${nextTab.value}"]`)
+        ?.focus()
+    })
+  }
 
   return (
     <div className="task-detail-accordion stack-md">
@@ -68,15 +102,38 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
       </div>
 
       <div className="task-detail-section">
-        <div className="tabs-switcher task-detail-tabs" role="tablist" aria-label={`任务 ${task.taskId} 详情页签`}>
-          <button className={`tab-btn ${detailTab === 'results' ? 'active' : ''}`} type="button" onClick={() => setDetailTab('results')}>概览与结果</button>
-          <button className={`tab-btn ${detailTab === 'sync' ? 'active' : ''}`} type="button" onClick={() => setDetailTab('sync')}>文档回填</button>
-          <button className={`tab-btn ${detailTab === 'logs' ? 'active' : ''}`} type="button" onClick={() => setDetailTab('logs')}>二维码与日志</button>
+        <div
+          className="tabs-switcher task-detail-tabs"
+          role="tablist"
+          aria-label={`任务 ${task.taskId} 详情页签`}
+          onKeyDown={handleDetailTabsKeyDown}
+        >
+          {detailTabs.map((item) => (
+            <button
+              key={item.value}
+              className={`tab-btn ${detailTab === item.value ? 'active' : ''}`}
+              type="button"
+              id={`${detailTabsId}-${item.value}-tab`}
+              data-tab={item.value}
+              role="tab"
+              aria-controls={`${detailTabsId}-${item.value}-panel`}
+              aria-selected={detailTab === item.value}
+              tabIndex={detailTab === item.value ? 0 : -1}
+              onClick={() => setDetailTab(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {detailTab === 'results' ? (
-        <>
+        <div
+          className="stack-md"
+          role="tabpanel"
+          id={`${detailTabsId}-results-panel`}
+          aria-labelledby={`${detailTabsId}-results-tab`}
+        >
           <div className="task-detail-section stack-md">
             <div className="task-summary-grid">
               <div className="meta-card compact-meta-card"><span>内容 ID</span><strong>{task.contentId || '-'}</strong></div>
@@ -99,11 +156,16 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
             canCopyQr={canCopyQr}
             canRefresh={canRefresh}
           />
-        </>
+        </div>
       ) : null}
 
       {detailTab === 'sync' ? (
-        <>
+        <div
+          className="stack-md"
+          role="tabpanel"
+          id={`${detailTabsId}-sync-panel`}
+          aria-labelledby={`${detailTabsId}-sync-tab`}
+        >
           {task.taskMode === 'SHEET_DEMAND' ? <TaskDetailSheetMatchSection task={task} showAdvanced /> : null}
           <TaskDetailSyncSection
             task={task}
@@ -114,11 +176,16 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
             onSyncTask={onSyncTask}
             showAdvanced
           />
-        </>
+        </div>
       ) : null}
 
       {detailTab === 'logs' ? (
-        <>
+        <div
+          className="stack-md"
+          role="tabpanel"
+          id={`${detailTabsId}-logs-panel`}
+          aria-labelledby={`${detailTabsId}-logs-tab`}
+        >
           <div className="task-detail-section stack-md">
             <div className="task-section-header">
               <div>
@@ -175,7 +242,7 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
               </div>
             ) : null}
           </div>
-        </>
+        </div>
       ) : null}
 
       <div className="task-actions-footer" onClick={stopPropagation}>

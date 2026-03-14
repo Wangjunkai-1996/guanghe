@@ -25,6 +25,7 @@ class GuangheTaskService {
     this.isPolling = false
 
     this.taskStore.markInterruptedNonTerminalTasks()
+    this.resumeInterruptedTasksFromSavedAccounts()
   }
 
   start() {
@@ -46,6 +47,49 @@ class GuangheTaskService {
 
   listTasks() {
     return this.taskStore.list()
+  }
+
+  resumeInterruptedTasksFromSavedAccounts() {
+    if (!this.loginService?.accountStore?.get) return
+
+    const tasks = this.taskStore.list()
+    for (const task of tasks) {
+      if (!isRecoverableInterruptedTask(task)) continue
+      const account = this.loginService.accountStore.get(task.accountId)
+      if (!isReusableStoredAccount(account)) continue
+
+      const nextTask = this.taskStore.patch(task.taskId, {
+        loginSessionId: '',
+        qrImageUrl: '',
+        login: { status: 'LOGGED_IN' },
+        accountId: String(account.accountId || task.accountId || ''),
+        accountNickname: account.nickname || task.accountNickname || '',
+        error: null
+      })
+
+      this.resumeTaskWithSavedAccount(nextTask)
+    }
+  }
+
+  resumeTaskWithSavedAccount(task) {
+    if (!task?.taskId || !task.accountId) return
+    if (TERMINAL_QUERY_STATUSES.has(task.query?.status) && task.query.status !== 'FAILED') return
+
+    if (task.taskMode === 'SHEET_DEMAND') {
+      if (TERMINAL_SHEET_STATUSES.has(task.sheetMatch?.status)) return
+
+      if (task.sheetMatch?.status === 'NEEDS_FILL' && task.contentId) {
+        this.enqueueQuery(task.taskId)
+        return
+      }
+
+      this.resolveSheetDemandTask(task.taskId).catch(() => {})
+      return
+    }
+
+    if (task.contentId) {
+      this.enqueueQuery(task.taskId)
+    }
   }
 
   async createTasksBatch(entries = []) {
@@ -753,6 +797,19 @@ function createIdleSyncState(overrides = {}) {
     error: null,
     ...overrides
   }
+}
+
+function isReusableStoredAccount(account) {
+  return Boolean(account?.accountId) && String(account?.status || '') === 'READY'
+}
+
+function isRecoverableInterruptedTask(task) {
+  if (!task) return false
+  if (task.login?.status !== 'INTERRUPTED') return false
+  if (task.error?.code !== 'TASK_INTERRUPTED') return false
+  if (!task.accountId) return false
+  if (TERMINAL_SHEET_STATUSES.has(task.sheetMatch?.status)) return false
+  return true
 }
 
 function createRunningSyncState() {

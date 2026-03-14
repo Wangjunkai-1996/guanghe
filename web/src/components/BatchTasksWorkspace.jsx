@@ -22,6 +22,12 @@ export function BatchTasksWorkspace() {
   return (
     <>
       <section className="tasks-workspace stack-lg">
+        {workspace.toasts.length ? (
+          <Suspense fallback={null}>
+            <ToastViewport toasts={workspace.toasts} onDismiss={workspace.removeToast} />
+          </Suspense>
+        ) : null}
+
         <BatchHeroSummary
           activeTarget={workspace.activeTencentDocsTarget}
           loginStatus={workspace.docsLoginStatus}
@@ -34,6 +40,7 @@ export function BatchTasksWorkspace() {
           loading={workspace.loading}
           diagnosticsOpen={workspace.isDiagnosticsOpen}
           onToggleBuilder={workspace.isBuilderOpen ? workspace.handleBuilderClose : workspace.handleBuilderOpen}
+          onInspect={workspace.handleInspectTencentDocs}
           onRefresh={() => workspace.handleRefreshList()}
           onToggleDiagnostics={workspace.handleToggleDiagnostics}
         />
@@ -65,6 +72,8 @@ export function BatchTasksWorkspace() {
           onMatchAccounts={workspace.handleMatchAccountsToDemands}
           onCreateTasksFromAccounts={workspace.handleOpenCreateTasksFromAccounts}
           creatingSheetTasks={workspace.creatingSheetTasks}
+          sheetTaskCount={workspace.sheetTaskCount}
+          onSheetTaskCountChange={workspace.setSheetTaskCount}
           matchingAccounts={workspace.matchingAccounts}
           creatingMatchedAccountTasks={workspace.creatingMatchedAccountTasks}
           demandFilter={workspace.demandFilter}
@@ -95,8 +104,10 @@ export function BatchTasksWorkspace() {
           loading={workspace.loading}
           error={workspace.error}
           onRetryLoad={() => workspace.handleRefreshList()}
-          expandedTaskId={workspace.expandedTaskId}
-          onToggleExpand={workspace.handleToggleExpand}
+          selectedTaskId={workspace.selectedTaskId}
+          selectedTask={workspace.selectedTask}
+          onSelectTask={workspace.handleSelectTask}
+          onCloseTaskDetail={workspace.handleCloseTaskDetail}
           syncConfig={workspace.syncConfig}
           syncPreviewState={workspace.syncPreviewState}
           syncActionLoading={workspace.syncActionLoading}
@@ -129,11 +140,6 @@ export function BatchTasksWorkspace() {
           </Suspense>
         ) : null}
 
-        {workspace.toasts.length ? (
-          <Suspense fallback={null}>
-            <ToastViewport toasts={workspace.toasts} />
-          </Suspense>
-        ) : null}
       </section>
 
       {workspace.accountTaskConfirmState.open ? (

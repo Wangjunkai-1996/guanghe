@@ -352,13 +352,83 @@ describe('taskService', () => {
     expect(interrupted.error.code).toBe('TASK_INTERRUPTED')
     expect(interrupted.qrImageUrl).toBe('')
   })
+
+  test('reuses saved account for sheet-demand task after restart without requiring QR', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guanghe-task-store-'))
+    const tasksFile = path.join(tmpDir, 'tasks.json')
+    const taskStore = new TaskStore({ tasksFile })
+    taskStore.upsert({
+      taskId: 'task-1',
+      taskMode: 'SHEET_DEMAND',
+      remark: '交接表扫码位 1',
+      contentId: '',
+      loginSessionId: '',
+      qrImageUrl: '',
+      createdAt: '2026-03-09T00:00:00.000Z',
+      updatedAt: '2026-03-09T00:00:00.000Z',
+      accountId: '1001',
+      accountNickname: '自然卷儿',
+      login: { status: 'LOGGED_IN' },
+      query: { status: 'IDLE' },
+      error: null,
+      metrics: null,
+      screenshots: { rawUrl: '', summaryUrl: '' },
+      artifacts: { resultUrl: '', networkLogUrl: '' },
+      sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+      sheetMatch: null
+    })
+
+    await taskStore.flush()
+
+    const restartedStore = new TaskStore({ tasksFile })
+    const loginService = createFakeLoginService([
+      { accountId: '1001', nickname: '自然卷儿', status: 'READY' }
+    ])
+    const queryService = createFakeQueryService()
+    const service = new GuangheTaskService({
+      taskStore: restartedStore,
+      loginService,
+      queryService,
+      tencentDocsSyncService: {
+        async matchDemandByNickname() {
+          return {
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
+            match: {
+              status: 'NEEDS_FILL',
+              sheetRow: 12,
+              nickname: '自然卷儿',
+              contentId: '554608495125',
+              missingColumns: ['查看次数']
+            }
+          }
+        },
+        getConfig() {
+          return {
+            enabled: true,
+            target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
+          }
+        }
+      }
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await service.waitForIdle()
+
+    const recovered = restartedStore.get('task-1')
+    expect(recovered.login.status).toBe('LOGGED_IN')
+    expect(recovered.error).toBeNull()
+    expect(recovered.sheetMatch.status).toBe('NEEDS_FILL')
+    expect(recovered.contentId).toBe('554608495125')
+    expect(recovered.query.status).toBe('SUCCEEDED')
+    expect(queryService.calls).toEqual([{ accountId: '1001', contentId: '554608495125' }])
+  })
 })
 
-function createHarness({ queryImpl, tencentDocsSyncService = null } = {}) {
+function createHarness({ queryImpl, tencentDocsSyncService = null, savedAccounts = [] } = {}) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guanghe-task-service-'))
   const tasksFile = path.join(tmpDir, 'tasks.json')
   const taskStore = new TaskStore({ tasksFile })
-  const loginService = createFakeLoginService()
+  const loginService = createFakeLoginService(savedAccounts)
   const queryService = createFakeQueryService(queryImpl)
   const service = new GuangheTaskService({
     taskStore,
@@ -378,11 +448,55 @@ function createHarness({ queryImpl, tencentDocsSyncService = null } = {}) {
   }
 }
 
-function createFakeLoginService() {
+function createFakeLoginService(savedAccounts = []) {
   const sessions = new Map()
+  const accounts = new Map(savedAccounts.map((account) => [
+    String(account.accountId),
+    {
+      accountId: String(account.accountId),
+      nickname: String(account.nickname || ''),
+      status: String(account.status || 'READY'),
+      lastLoginAt: account.lastLoginAt || new Date().toISOString()
+    }
+  ]))
   let counter = 0
 
+  const accountStore = {
+    get(accountId) {
+      return accounts.get(String(accountId)) || null
+    },
+    list() {
+      return Array.from(accounts.values())
+    },
+    upsert(account) {
+      const normalized = {
+        accountId: String(account.accountId),
+        nickname: String(account.nickname || ''),
+        status: String(account.status || 'READY'),
+        lastLoginAt: account.lastLoginAt || new Date().toISOString()
+      }
+      accounts.set(normalized.accountId, normalized)
+      return normalized
+    },
+    patch(accountId, patch) {
+      const current = accounts.get(String(accountId))
+      if (!current) return null
+      const next = {
+        ...current,
+        ...patch,
+        accountId: String(current.accountId)
+      }
+      accounts.set(next.accountId, next)
+      return next
+    },
+    remove(accountId) {
+      accounts.delete(String(accountId))
+    },
+    flush() {}
+  }
+
   return {
+    accountStore,
     async createLoginSession() {
       counter += 1
       const loginSessionId = `session-${counter}`

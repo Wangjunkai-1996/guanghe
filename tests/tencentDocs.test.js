@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import request from 'supertest'
 
 const { createApp } = require('../server/app')
@@ -217,6 +217,26 @@ describe('tencent docs integration', () => {
   })
 
   test('matchDemandByNickname scans beyond the first 200 rows', async () => {
+    const firstBatchRows = Array.from({ length: 200 }, (_value, index) => {
+      const sheetRow = index + 2
+      const nickname = `顶部达人${sheetRow}`
+      const contentId = String(10000 + sheetRow)
+      return {
+        sheetRow,
+        nickname,
+        contentId,
+        values: [nickname, contentId, '', '', '', '', ''],
+        cells: {
+          逛逛昵称: nickname,
+          内容id: contentId,
+          查看次数: '',
+          查看人数: '',
+          种草成交金额: '',
+          种草成交人数: '',
+          商品点击次数: ''
+        }
+      }
+    })
     const adapter = {
       readSheet: async ({ target, maxRows }) => ({
         target,
@@ -224,22 +244,8 @@ describe('tencent docs integration', () => {
         tabs: [{ name: '1', selected: true }],
         columnCount: 7,
         headers: ['逛逛昵称', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
-        rowCount: 1,
-        rows: [{
-          sheetRow: 2,
-          nickname: '顶部达人',
-          contentId: '10001',
-          values: ['顶部达人', '10001', '', '', '', '', ''],
-          cells: {
-            逛逛昵称: '顶部达人',
-            内容id: '10001',
-            查看次数: '',
-            查看人数: '',
-            种草成交金额: '',
-            种草成交人数: '',
-            商品点击次数: ''
-          }
-        }]
+        rowCount: firstBatchRows.length,
+        rows: firstBatchRows
       }),
       readSheetWindow: async ({ target, startRow, maxRows, headers }) => {
         if (startRow === 202) {
@@ -285,6 +291,58 @@ describe('tencent docs integration', () => {
     expect(payload.match.status).toBe('NEEDS_FILL')
     expect(payload.match.sheetRow).toBe(240)
     expect(payload.match.contentId).toBe('554608495125')
+  })
+
+  test('matchDemandByNickname stops after the first batch when it is shorter than 200 rows', async () => {
+    const rows = Array.from({ length: 198 }, (_value, index) => {
+      const sheetRow = index + 2
+      const nickname = sheetRow === 199 ? '尾部达人' : `达人${sheetRow}`
+      const contentId = sheetRow === 199 ? '554608495125' : String(500000000000 + sheetRow)
+      return {
+        sheetRow,
+        nickname,
+        contentId,
+        values: [nickname, contentId, '', '', '', '', ''],
+        cells: {
+          逛逛昵称: nickname,
+          内容id: contentId,
+          查看次数: '',
+          查看人数: '',
+          种草成交金额: '',
+          种草成交人数: '',
+          商品点击次数: ''
+        }
+      }
+    })
+    const readSheetWindow = vi.fn(async ({ target, startRow, maxRows, headers }) => ({
+      target,
+      startRow,
+      maxRows,
+      headers,
+      rowCount: 0,
+      rows: []
+    }))
+    const adapter = {
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 7,
+        headers: ['逛逛昵称', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: rows.length,
+        rows
+      }),
+      readSheetWindow,
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] })
+    }
+
+    const { service } = createService({ adapter })
+    const payload = await service.matchDemandByNickname({ nickname: '尾部达人', maxRows: 5000 })
+
+    expect(payload.match.status).toBe('NEEDS_FILL')
+    expect(payload.match.sheetRow).toBe(199)
+    expect(payload.match.contentId).toBe('554608495125')
+    expect(readSheetWindow).not.toHaveBeenCalled()
   })
 
   test('matchDemandByNickname ignores deep windows that snap back to the header row', async () => {
@@ -398,6 +456,62 @@ describe('tencent docs integration', () => {
     expect(payload.match.status).toBe('NEEDS_FILL')
     expect(payload.match.sheetRow).toBe(7)
     expect(payload.match.contentId).toBe('22222')
+    expect(payload.match.details).toEqual({ matchedBy: ['逛逛ID'] })
+  })
+
+  test('matchDemandByNickname still prefers 逛逛ID when nickname has changed', async () => {
+    const adapter = {
+      readSheet: async ({ target, maxRows }) => ({
+        target,
+        maxRows,
+        tabs: [{ name: '1', selected: true }],
+        columnCount: 8,
+        headers: ['逛逛昵称', '逛逛ID', '内容id', '查看次数', '查看人数', '种草成交金额', '种草成交人数', '商品点击次数'],
+        rowCount: 2,
+        rows: [
+          {
+            sheetRow: 6,
+            nickname: '旧昵称达人',
+            contentId: '11111',
+            values: ['旧昵称达人', '1001', '11111', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '旧昵称达人',
+              逛逛ID: '1001',
+              内容id: '11111',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          },
+          {
+            sheetRow: 7,
+            nickname: '新昵称达人',
+            contentId: '22222',
+            values: ['新昵称达人', '1002', '22222', '', '', '', '', ''],
+            cells: {
+              逛逛昵称: '新昵称达人',
+              逛逛ID: '1002',
+              内容id: '22222',
+              查看次数: '',
+              查看人数: '',
+              种草成交金额: '',
+              种草成交人数: '',
+              商品点击次数: ''
+            }
+          }
+        ]
+      }),
+      writeRow: async () => ({ action: 'UPDATED', matchedBy: ['同步键'] })
+    }
+
+    const { service } = createService({ adapter })
+    const payload = await service.matchDemandByNickname({ nickname: '新昵称达人', accountId: '1001' })
+
+    expect(payload.match.status).toBe('NEEDS_FILL')
+    expect(payload.match.sheetRow).toBe(6)
+    expect(payload.match.contentId).toBe('11111')
     expect(payload.match.details).toEqual({ matchedBy: ['逛逛ID'] })
   })
 

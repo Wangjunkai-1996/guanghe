@@ -713,31 +713,33 @@ class TencentDocsSyncService {
     })
 
     const rows = [...firstSnapshot.rows]
-    let nextStartRow = firstBatchSize + 2
+    if (rows.length >= firstBatchSize) {
+      let nextStartRow = firstBatchSize + 2
 
-    while (nextStartRow <= scanLimit + 1) {
-      const consumedRows = nextStartRow - 2
-      const remaining = scanLimit - consumedRows
-      if (remaining <= 0) break
+      while (nextStartRow <= scanLimit + 1) {
+        const consumedRows = nextStartRow - 2
+        const remaining = scanLimit - consumedRows
+        if (remaining <= 0) break
 
-      const windowSize = Math.min(MATCH_SCAN_BATCH_ROWS, remaining)
-      const windowSnapshot = await this.readSheetDemandWindow({
-        target: firstSnapshot.target,
-        startRow: nextStartRow,
-        maxRows: windowSize,
-        headers: firstSnapshot.headers,
-        artifactDir,
-        strict
-      })
+        const windowSize = Math.min(MATCH_SCAN_BATCH_ROWS, remaining)
+        const windowSnapshot = await this.readSheetDemandWindow({
+          target: firstSnapshot.target,
+          startRow: nextStartRow,
+          maxRows: windowSize,
+          headers: firstSnapshot.headers,
+          artifactDir,
+          strict
+        })
 
-      if (!windowSnapshot.rows?.length) {
-        break
-      }
+        if (!windowSnapshot.rows?.length) {
+          break
+        }
 
-      rows.push(...windowSnapshot.rows)
-      nextStartRow += windowSize
-      if (windowSnapshot.rows.length < windowSize) {
-        break
+        rows.push(...windowSnapshot.rows)
+        nextStartRow += windowSize
+        if (windowSnapshot.rows.length < windowSize) {
+          break
+        }
       }
     }
 
@@ -1200,6 +1202,8 @@ function resolveTencentDocsStateFile(config = {}) {
 
 function resolveDemandMatch(demands = [], { nickname, accountId } = {}) {
   const normalizedAccountId = String(accountId || '').trim()
+  // Prefer the immutable Guangguang account ID first; nickname is only a fallback
+  // when the sheet doesn't contain the ID or the current account cannot be found.
   if (normalizedAccountId) {
     const accountMatches = demands.filter((item) => String(item.accountId || '').trim() === normalizedAccountId)
     if (accountMatches.length === 1) {

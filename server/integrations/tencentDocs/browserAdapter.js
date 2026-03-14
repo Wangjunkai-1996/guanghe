@@ -240,49 +240,51 @@ class TencentDocsBrowserAdapter {
       const parsedFile = path.join(artifactDir, 'sheet-preview.json')
       fs.writeFileSync(rawTsvFile, firstRawTsv, 'utf8')
 
-      let nextStartRow = firstBatchSize + 2
-      while (nextStartRow <= totalRows + 1) {
-        const consumedRows = nextStartRow - 2
-        const remaining = totalRows - consumedRows
-        if (remaining <= 0) break
+      if (shouldContinueBatchScan(rows, firstBatchSize)) {
+        let nextStartRow = firstBatchSize + 2
+        while (nextStartRow <= totalRows + 1) {
+          const consumedRows = nextStartRow - 2
+          const remaining = totalRows - consumedRows
+          if (remaining <= 0) break
 
-        const currentWindowSize = Math.min(windowBatchSize, remaining)
-        const rawWindowTsv = await readSheetSelectionWindow(page, {
-          startRow: nextStartRow,
-          rowCount: currentWindowSize,
-          columnCount: firstParsed.headers.length,
-          platform: this.platform
-        })
-        const windowParsed = parseClipboardDataRows(rawWindowTsv, firstParsed.headers, {
-          startSheetRow: nextStartRow
-        })
+          const currentWindowSize = Math.min(windowBatchSize, remaining)
+          const rawWindowTsv = await readSheetSelectionWindow(page, {
+            startRow: nextStartRow,
+            rowCount: currentWindowSize,
+            columnCount: firstParsed.headers.length,
+            platform: this.platform
+          })
+          const windowParsed = parseClipboardDataRows(rawWindowTsv, firstParsed.headers, {
+            startSheetRow: nextStartRow
+          })
 
-        const windowPayload = {
-          target: {
-            docUrl: target.docUrl,
-            sheetName: selectedSheetName || target.sheetName || ''
-          },
-          startRow: nextStartRow,
-          maxRows: currentWindowSize,
-          columnCount: windowParsed.columnCount,
-          headers: firstParsed.headers,
-          rowCount: windowParsed.rows.length,
-          rows: windowParsed.rows
-        }
-        fs.writeFileSync(path.join(artifactDir, `sheet-window-${nextStartRow}.tsv`), rawWindowTsv, 'utf8')
-        writeJson(path.join(artifactDir, `sheet-window-${nextStartRow}.json`), windowPayload)
+          const windowPayload = {
+            target: {
+              docUrl: target.docUrl,
+              sheetName: selectedSheetName || target.sheetName || ''
+            },
+            startRow: nextStartRow,
+            maxRows: currentWindowSize,
+            columnCount: windowParsed.columnCount,
+            headers: firstParsed.headers,
+            rowCount: windowParsed.rows.length,
+            rows: windowParsed.rows
+          }
+          fs.writeFileSync(path.join(artifactDir, `sheet-window-${nextStartRow}.tsv`), rawWindowTsv, 'utf8')
+          writeJson(path.join(artifactDir, `sheet-window-${nextStartRow}.json`), windowPayload)
 
-        if (looksLikeRepeatedHeaderRows(windowParsed.rows)) {
-          break
-        }
-        if (!windowParsed.rows.length) {
-          break
-        }
+          if (looksLikeRepeatedHeaderRows(windowParsed.rows)) {
+            break
+          }
+          if (!windowParsed.rows.length) {
+            break
+          }
 
-        rows.push(...windowParsed.rows)
-        nextStartRow += currentWindowSize
-        if (windowParsed.rows.length < currentWindowSize) {
-          break
+          rows.push(...windowParsed.rows)
+          nextStartRow += currentWindowSize
+          if (windowParsed.rows.length < currentWindowSize) {
+            break
+          }
         }
       }
 
@@ -1708,6 +1710,11 @@ function normalizeMaxRows(maxRows) {
   return Math.max(1, Math.min(200, Math.floor(value)))
 }
 
+function shouldContinueBatchScan(rows = [], batchSize) {
+  const normalizedBatchSize = normalizeMaxRows(batchSize)
+  return Array.isArray(rows) && rows.length >= normalizedBatchSize
+}
+
 function looksLikeRepeatedHeaderRows(rows = []) {
   const firstRow = rows[0]
   if (!firstRow) return false
@@ -1747,6 +1754,7 @@ module.exports = {
     pickBestFloatingImageCandidate,
     hasWritableCellValue,
     hasDangerousMenuLabels,
-    buildImageConversionTargets
+    buildImageConversionTargets,
+    shouldContinueBatchScan
   }
 }

@@ -136,8 +136,7 @@ export function useBatchTasksWorkspace() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // For Accordion UI
-  const [expandedTaskId, setExpandedTaskId] = useState(null)
+  const [selectedTaskId, setSelectedTaskId] = useState(null)
 
   const [submitting, setSubmitting] = useState(false)
   const [batchInput, setBatchInput] = useState('')
@@ -166,6 +165,7 @@ export function useBatchTasksWorkspace() {
   const [demandFilter, setDemandFilter] = useState('open')
   const [demandSearch, setDemandSearch] = useState('')
   const [creatingSheetTasks, setCreatingSheetTasks] = useState(0)
+  const [sheetTaskCount, setSheetTaskCount] = useState(2)
   const [syncPreviewState, setSyncPreviewState] = useState({})
   const [syncActionLoading, setSyncActionLoading] = useState({})
   const [docsDiagnostic, setDocsDiagnostic] = useState(createTencentDocsDiagnosticState())
@@ -175,7 +175,7 @@ export function useBatchTasksWorkspace() {
   const [creatingMatchedAccountTasks, setCreatingMatchedAccountTasks] = useState(false)
   const [accountTaskConfirmState, setAccountTaskConfirmState] = useState({ open: false, accounts: [] })
   const [taskDeleteState, setTaskDeleteState] = useState({ open: false, taskId: '', label: '' })
-  const { toasts, pushToast: addToast } = useToastQueue()
+  const { toasts, pushToast: addToast, removeToast } = useToastQueue()
 
   const activeTencentDocsTarget = useMemo(
     () => (docsConfigDraft.docUrl ? docsConfigDraft : (syncConfig.target?.docUrl ? syncConfig.target : null)),
@@ -672,13 +672,30 @@ export function useBatchTasksWorkspace() {
       .sort(compareTasks)
   }, [filterKey, searchValue, tasks])
 
-  const expandedTask = useMemo(
-    () => tasks.find((t) => t.taskId === expandedTaskId) || null,
-    [tasks, expandedTaskId]
+  const selectedTask = useMemo(
+    () => tasks.find((t) => t.taskId === selectedTaskId) || null,
+    [tasks, selectedTaskId]
   )
 
-  const handleToggleExpand = useCallback((taskId) => {
-    setExpandedTaskId((current) => (current === taskId ? null : taskId))
+  useEffect(() => {
+    if (filteredTasks.length === 0) {
+      setSelectedTaskId(null)
+      return
+    }
+
+    setSelectedTaskId((current) => (
+      current && filteredTasks.some((task) => task.taskId === current)
+        ? current
+        : null
+    ))
+  }, [filteredTasks])
+
+  const handleSelectTask = useCallback((taskId) => {
+    setSelectedTaskId(taskId)
+  }, [])
+
+  const handleCloseTaskDetail = useCallback(() => {
+    setSelectedTaskId(null)
   }, [])
 
   const handleRefreshList = async ({ inspectAfterRefresh = true, inspectForceRefresh = true, toast = true, reloadConfig = true } = {}) => {
@@ -1112,7 +1129,8 @@ export function useBatchTasksWorkspace() {
     filteredTasks,
     loading,
     error,
-    expandedTaskId,
+    selectedTaskId,
+    selectedTask,
     submitting,
     batchInput,
     serverBatchErrors,
@@ -1122,6 +1140,7 @@ export function useBatchTasksWorkspace() {
     searchValue,
     isBuilderOpen,
     toasts,
+    removeToast,
     lastSyncedAt,
     syncConfig,
     docsConfigDraft,
@@ -1129,6 +1148,7 @@ export function useBatchTasksWorkspace() {
     demandFilter,
     demandSearch,
     creatingSheetTasks,
+    sheetTaskCount,
     syncPreviewState,
     syncActionLoading,
     docsDiagnostic,
@@ -1156,9 +1176,11 @@ export function useBatchTasksWorkspace() {
     setSearchValue,
     setDemandFilter,
     setDemandSearch,
+    setSheetTaskCount,
     setAccountTaskConfirmState,
     setTaskDeleteState,
-    handleToggleExpand,
+    handleSelectTask,
+    handleCloseTaskDetail,
     handleRefreshList,
     handleSaveTencentDocsConfig,
     handleStartTencentDocsLogin,
