@@ -2,7 +2,7 @@
 
 这份文档是给另一台电脑上的 Codex 用的，目标不是解释所有实现细节，而是让它能在 **10 分钟内判断项目定位、主业务链路、关键文件和推荐技能**，避免一上来走偏。
 
-> 前端 UI 重构 V1 完成记录见 `docs/frontend-ui-refactor-plan.md`。第二轮品牌化视觉升级完成记录见 `docs/frontend-ui-visual-v2-plan.md`。第三轮前端性能优化计划见 `docs/frontend-performance-v3-plan.md`；后续如需继续这个专项任务，优先更新 V3 文件中的 checklist 和 `Execution Log`。
+> 前端 UI 重构 V1 完成记录见 `docs/frontend-ui-refactor-plan.md`。第二轮品牌化视觉升级完成记录见 `docs/frontend-ui-visual-v2-plan.md`。第三轮前端性能优化记录见 `docs/frontend-performance-v3-plan.md`。第四轮视觉收口与交互打磨完成记录见 `docs/frontend-ui-v4-plan.md`；当前如果继续做前端页面优化，优先以 V4 作为最新基线，V1/V2/V3 视为历史档案。
 
 ## 0. 先纠偏
 
@@ -57,6 +57,8 @@ npm test
 ## 3. 适合这个仓库的主要 Codex Skills
 
 > 这一节说的是 **适合 Codex 在这个仓库里工作时使用的 skills**，不是项目运行时依赖。另一台电脑即使没有这些 skills 也能接手，只是效率会低一些。
+
+如果是继续接手 V4 之后的前端页面优化，优先组合 `frontend-design-system` + `react-ui-patterns` + `web-accessibility` + `Browser Automation` + `vitest`；这套组合已经在 V4 视觉收口里验证过，适合继续做页面减重、层级收口、状态反馈和浏览器验收。
 
 ### 核心推荐
 

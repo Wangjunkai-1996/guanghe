@@ -27,8 +27,13 @@ export function BatchHeroSummary({
   onRefresh,
   onToggleDiagnostics
 }) {
+  const pendingCount = normalizeCount(pendingDemandCount)
+  const waitingQueueCount = normalizeCount(waitingCount)
+  const exceptionQueueCount = normalizeCount(exceptionCount)
+  const taskOverview = pendingCount + waitingQueueCount + exceptionQueueCount
+
   return (
-    <SectionCard className="batch-hero-summary stack-md" variant="hero" emphasis="strong">
+    <SectionCard className="batch-hero-summary stack-md" variant="feature" emphasis="strong">
       <div className="batch-hero-shell">
         <div className="batch-hero-copy">
           <div className="batch-hero-kicker-row">
@@ -37,8 +42,8 @@ export function BatchHeroSummary({
               {formatTencentDocsLoginStatus(loginStatus)}
             </StatusBadge>
           </div>
-          <h2>品牌化批量任务主控台</h2>
-          <p>先锁定交接表目标和腾讯文档登录态，再把待补数达人、二维码任务和异常处理放进同一条运营节奏里。</p>
+          <h2>批量任务主控台</h2>
+          <p>先锁定交接表目标和腾讯文档登录态，再进入待补数、二维码任务与异常处理的统一执行节奏。</p>
 
           <div className="batch-hero-inline-highlights">
             <div className="batch-hero-inline-card">
@@ -68,7 +73,7 @@ export function BatchHeroSummary({
               <RefreshCw size={18} aria-hidden="true" />
               <span>{loading ? '刷新中...' : '刷新列表'}</span>
             </button>
-            <button className="secondary-btn hero-secondary-btn quiet-action-btn" type="button" onClick={onToggleDiagnostics}>
+            <button className="secondary-btn hero-secondary-btn quiet-action-btn ghost-btn" type="button" onClick={onToggleDiagnostics}>
               <ShieldAlert size={18} aria-hidden="true" />
               <span>{diagnosticsOpen ? '收起高级排障' : '展开高级排障'}</span>
             </button>
@@ -78,7 +83,7 @@ export function BatchHeroSummary({
 
       <div className="batch-hero-grid">
         <StatCard
-          label="腾讯文档目标"
+          label="当前交接表"
           value={activeTarget?.sheetName || '未选择'}
           detail={activeTarget?.docUrl || '请先录入并保存腾讯文档链接'}
           tone="info"
@@ -86,30 +91,30 @@ export function BatchHeroSummary({
           emphasis="hero"
         />
         <StatCard
-          label="文档登录状态"
+          label="文档登录与同步"
           value={formatTencentDocsLoginStatus(loginStatus)}
-          detail={loginUpdatedAt ? formatDateTime(loginUpdatedAt) : '尚未建立登录态'}
+          detail={loginUpdatedAt ? `最近同步 ${formatDateTime(loginUpdatedAt)}` : '尚未建立登录态'}
           tone={getTencentDocsLoginTone(loginStatus)}
           icon={QrCode}
           emphasis="hero"
         />
         <StatCard
-          label="待补数达人"
-          value={pendingDemandCount}
-          detail={waitingCount > 0 ? `当前有 ${waitingCount} 条任务等待扫码` : '可按需继续发起二维码任务'}
+          label="任务概况"
+          value={taskOverview}
+          detail={`待补数 ${pendingCount} · 待扫码 ${waitingQueueCount} · 异常 ${exceptionQueueCount}`}
           tone="warning"
-          icon={Sparkles}
-          emphasis="hero"
-        />
-        <StatCard
-          label="异常任务数"
-          value={exceptionCount}
-          detail={lastSyncedAt ? `任务队列最近更新：${formatDateTime(lastSyncedAt)}` : '任务队列正在初始化'}
-          tone={exceptionCount > 0 ? 'danger' : 'success'}
           icon={exceptionCount > 0 ? TriangleAlert : ShieldAlert}
           emphasis="hero"
         />
       </div>
+      <div className="batch-hero-footnote">
+        <small>{lastSyncedAt ? `任务队列最近更新：${formatDateTime(lastSyncedAt)}` : '任务队列正在初始化'}</small>
+      </div>
     </SectionCard>
   )
+}
+
+function normalizeCount(value) {
+  const next = Number(value)
+  return Number.isFinite(next) ? next : 0
 }

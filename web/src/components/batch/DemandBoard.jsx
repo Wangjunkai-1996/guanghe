@@ -153,16 +153,16 @@ export function DemandBoard({
             <h2>缺数达人列表</h2>
             <p>默认只看需要补数和异常达人，发码前先确认内容 ID 和目标行是否正确。</p>
           </div>
-          <div className="tasks-toolbar-actions">
-            <button className="secondary-btn" type="button" onClick={() => onCreateSheetTasks(1)} disabled={!canCreateSheetTasks || creatingSheetTasks === 1}>
+        <div className="tasks-toolbar-actions">
+            <button className="primary-btn" type="button" onClick={() => onCreateSheetTasks(1)} disabled={!canCreateSheetTasks || creatingSheetTasks === 1}>
               <SendHorizontal size={18} aria-hidden="true" />
               <span>生成 1 个光合二维码</span>
             </button>
-            <button className="secondary-btn" type="button" onClick={() => onCreateSheetTasks(2)} disabled={!canCreateSheetTasks || creatingSheetTasks === 2}>
+            <button className="secondary-btn ghost-btn" type="button" onClick={() => onCreateSheetTasks(2)} disabled={!canCreateSheetTasks || creatingSheetTasks === 2}>
               <SendHorizontal size={18} aria-hidden="true" />
               <span>生成 2 个光合二维码</span>
             </button>
-            <button className="secondary-btn" type="button" onClick={() => onCreateSheetTasks(5)} disabled={!canCreateSheetTasks || creatingSheetTasks === 5}>
+            <button className="secondary-btn ghost-btn" type="button" onClick={() => onCreateSheetTasks(5)} disabled={!canCreateSheetTasks || creatingSheetTasks === 5}>
               <SendHorizontal size={18} aria-hidden="true" />
               <span>生成 5 个光合二维码</span>
             </button>

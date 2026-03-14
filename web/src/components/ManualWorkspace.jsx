@@ -7,8 +7,6 @@ import { ResultPanel } from './ResultPanel'
 import { formatLoginStatus } from '../lib/ui'
 import { useToastQueue } from '../hooks/useToastQueue'
 import { InlineNotice } from './ui/InlineNotice'
-import { SectionCard } from './ui/SectionCard'
-import { StatusBadge } from './ui/StatusBadge'
 
 const ConfirmDialog = lazy(() =>
   import('./ui/ConfirmDialog').then((module) => ({ default: module.ConfirmDialog }))
@@ -144,7 +142,7 @@ export function ManualWorkspace({
 
   return (
     <>
-      <SectionCard className="manual-entry-strip open" variant="hero" emphasis="strong">
+          <section className="panel manual-entry-strip stack-lg">
         <div className="manual-entry-bar">
           <div className="compact-panel-header">
             <div className="manual-entry-kicker">
@@ -159,11 +157,6 @@ export function ManualWorkspace({
               <ArrowUpRight size={18} aria-hidden="true" />
               <span>前往批量闭环</span>
             </button>
-            {manualEntryStatus ? (
-              <StatusBadge tone="info" emphasis="glass" icon={Sparkles}>
-                {manualEntryStatus}
-              </StatusBadge>
-            ) : null}
             <div className="workspace-summary-chip">
               <span>
                 <Users size={16} aria-hidden="true" />
@@ -245,7 +238,7 @@ export function ManualWorkspace({
             </Suspense>
           ) : null}
         </div>
-      </SectionCard>
+      </section>
 
       {accountDeleteState.open ? (
         <Suspense fallback={null}>

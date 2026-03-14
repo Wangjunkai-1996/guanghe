@@ -30,7 +30,7 @@ export function DiagnosticsPanel({ open, syncConfig, diagnostic, diagnosticPendi
             <p>默认折叠，避免诊断信息持续抢占首屏注意力；只有处理读表、表头或回填异常时再展开。</p>
           </div>
           <div className="tasks-toolbar-actions">
-            <button className="secondary-btn" type="button" onClick={onToggle} aria-expanded={open} aria-controls={panelId}>
+            <button className="secondary-btn ghost-btn" type="button" onClick={onToggle} aria-expanded={open} aria-controls={panelId}>
               {open ? '收起排障信息' : '展开排障信息'}
             </button>
           </div>

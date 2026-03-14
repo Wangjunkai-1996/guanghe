@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
-import { ArrowRight, BadgeInfo, Hash, LoaderCircle, SearchCheck, UserRound } from 'lucide-react'
+import { ArrowRight, Hash, LoaderCircle, SearchCheck, UserRound } from 'lucide-react'
 import { SectionCard } from './ui/SectionCard'
-import { StatusBadge } from './ui/StatusBadge'
 
 export function QueryForm({ activeAccount, loading, onSubmit }) {
   const [contentId, setContentId] = useState('')
@@ -10,9 +9,8 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
   const canSubmit = Boolean(activeAccount?.accountId && contentId)
   const helperText = useMemo(() => {
     if (!activeAccount?.accountId) return '请先在左侧选择账号，或新增账号扫码登录。'
-    if (inputHint) return inputHint
     return '固定查询近 30 日的 5 个指标，并同步生成原始截图和汇总截图。'
-  }, [activeAccount?.accountId, inputHint])
+  }, [activeAccount?.accountId])
 
   const handleChange = (event) => {
     const rawValue = event.target.value
@@ -82,11 +80,9 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
         </div>
       ) : null}
 
-      {!loading && !inputHint ? (
-        <StatusBadge tone={inputHint ? 'warning' : 'info'} emphasis="glass" icon={BadgeInfo}>
-          固定查询近 30 日主 KPI，并同步生成原图与汇总图。
-        </StatusBadge>
-      ) : null}
+      <p className={`query-toolbar-helper-note ${inputHint ? 'tone-warning' : ''}`}>
+        {inputHint || '固定查询近 30 日主 KPI，并同步生成原图与汇总图。'}
+      </p>
     </SectionCard>
   )
 }

@@ -265,10 +265,11 @@ describe('batch task workspace ui', () => {
 
     render(<BatchTasksWorkspace />)
 
-    expect(await screen.findByRole('heading', { name: '品牌化批量任务主控台' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '批量任务主控台' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '手工建任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '刷新列表' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '展开高级排障' })).toBeInTheDocument()
+    expect(document.querySelectorAll('.batch-hero-grid .ui-stat-card')).toHaveLength(3)
   })
 
   test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
@@ -940,6 +941,8 @@ describe('batch task workspace ui', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
+    expect(document.querySelectorAll('.page-header-stats .ui-stat-card')).toHaveLength(2)
+    expect(screen.queryByText('运营节奏')).not.toBeInTheDocument()
     expect(screen.queryByText('查询工具条')).not.toBeInTheDocument()
     expect(api.listAccounts).not.toHaveBeenCalled()
 

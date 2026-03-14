@@ -171,12 +171,6 @@ export default function App() {
               ? `当前账号：${activeAccount.nickname}`
               : (hasLoadedAccounts ? '可随时切换账号' : '首次切到手工页时再加载账号库'),
             tone: 'info'
-          },
-          {
-            label: '运营节奏',
-            value: activeTab === 'batch' ? '交接表驱动' : '单条快查',
-            detail: activeTab === 'batch' ? '优先推进扫码、查询与回填闭环' : '快速核验内容数据与账号状态',
-            tone: 'warning'
           }
         ]}
       />
