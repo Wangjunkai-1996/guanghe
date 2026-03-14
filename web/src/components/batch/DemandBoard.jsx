@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheckBig, Search, SendHorizontal, SquareChartGantt, Users, WandSparkles } from 'lucide-react'
 import { formatDateTime } from '../../lib/ui'
+import { InlineNotice } from '../ui/InlineNotice'
 import { SectionCard } from '../ui/SectionCard'
 import { StatCard } from '../ui/StatCard'
 import { StatusBadge } from '../ui/StatusBadge'
@@ -17,6 +18,7 @@ export function DemandBoard({
   syncConfig,
   docsConfigDraft,
   docsDiagnostic,
+  diagnosticPending,
   docsLoginSession,
   readyAccountCount,
   matchedAccountCount,
@@ -49,6 +51,7 @@ export function DemandBoard({
     })
 
   const loginStatus = docsLoginSession?.status || syncConfig.login?.status || 'IDLE'
+  const showDeferredState = diagnosticPending && !docsDiagnostic.payload && !docsDiagnostic.error
   const canCreateSheetTasks = Boolean(
     syncConfig.enabled
       && docsConfigDraft.docUrl
@@ -58,13 +61,34 @@ export function DemandBoard({
 
   return (
     <SectionCard className="batch-demand-board stack-lg" variant="feature">
-      <div className="task-summary-grid handoff-summary-grid">
-        <SummaryCard label="总行数" value={summary.totalRows} helper="已扫描交接表数据行" tone="info" icon={SquareChartGantt} />
-        <SummaryCard label="待补数" value={summary.needsFillRows} helper="可自动查数并回填" tone="warning" icon={WandSparkles} />
-        <SummaryCard label="缺内容ID" value={summary.missingContentIdRows} helper="需先补内容 ID" tone="danger" icon={CircleAlert} />
-        <SummaryCard label="重名异常" value={summary.duplicateNicknameRows} helper="同名达人需人工处理" tone="danger" icon={Users} />
-        <SummaryCard label="已完整" value={summary.completeRows} helper="无需重复发码" tone="success" icon={CircleCheckBig} />
-      </div>
+      {showDeferredState ? (
+        <>
+          <InlineNotice
+            tone="info"
+            eyebrow="需求区预热"
+            icon={WandSparkles}
+            title="交接表摘要正在后台生成"
+            description="首屏先保住主控制流和任务区阅读顺序；缺数达人、缺内容 ID 和异常分布会在静默检查完成后自动补齐。"
+          />
+          <div className="task-summary-grid handoff-summary-grid" role="status" aria-live="polite">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="meta-card compact-meta-card diagnostic-card skeleton-card batch-skeleton-card">
+                <div className="skeleton-line short" />
+                <div className="skeleton-line tall" />
+                <div className="skeleton-line medium" />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="task-summary-grid handoff-summary-grid">
+          <SummaryCard label="总行数" value={summary.totalRows} helper="已扫描交接表数据行" tone="info" icon={SquareChartGantt} />
+          <SummaryCard label="待补数" value={summary.needsFillRows} helper="可自动查数并回填" tone="warning" icon={WandSparkles} />
+          <SummaryCard label="缺内容ID" value={summary.missingContentIdRows} helper="需先补内容 ID" tone="danger" icon={CircleAlert} />
+          <SummaryCard label="重名异常" value={summary.duplicateNicknameRows} helper="同名达人需人工处理" tone="danger" icon={Users} />
+          <SummaryCard label="已完整" value={summary.completeRows} helper="无需重复发码" tone="success" icon={CircleCheckBig} />
+        </div>
+      )}
 
       <section className="panel handoff-account-match-panel stack-md v2-console-card">
         <div className="panel-split-header">
@@ -108,6 +132,10 @@ export function DemandBoard({
             {matchedReadyAccounts.length > 8 ? (
               <span className="task-meta-chip">+{matchedReadyAccounts.length - 8} 个账号</span>
             ) : null}
+          </div>
+        ) : showDeferredState ? (
+          <div className="task-inline-hint" role="status" aria-live="polite">
+            首轮匹配会在交接表静默检查后更准确；如果你现在就要联动账号库，可直接点击“匹配账号库”立即强制刷新。
           </div>
         ) : (
           <div className="task-inline-hint">
@@ -165,7 +193,26 @@ export function DemandBoard({
           </label>
         </div>
 
-        {filteredDemands.length === 0 ? (
+        {showDeferredState ? (
+          <div className="handoff-demand-list handoff-demand-list-loading" role="status" aria-live="polite">
+            <div className="handoff-demand-row handoff-demand-head" role="row">
+              <span>达人名</span>
+              <span>内容 ID</span>
+              <span>状态</span>
+              <span>缺失列</span>
+              <span>最近检查</span>
+            </div>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="handoff-demand-row tone-info skeleton-demand-row" role="row">
+                <div className="skeleton-line medium" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line short" />
+              </div>
+            ))}
+          </div>
+        ) : filteredDemands.length === 0 ? (
           <div className="result-empty-state compact-empty-state">
             <strong>当前筛选下没有达人需求</strong>
             <p>可以切换到“查看全部”确认交接表扫描结果，或先检查表头和内容 ID 是否齐全。</p>

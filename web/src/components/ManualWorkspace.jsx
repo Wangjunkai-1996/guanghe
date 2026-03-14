@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, SearchCheck, Sparkles, Users } from 'lucide-react'
 import { api } from '../api'
 import { AccountList } from './AccountList'
@@ -22,9 +22,11 @@ const LOGIN_SESSION_PENDING_STATUSES = ['WAITING_QR', 'WAITING_CONFIRM', 'WAITIN
 export function ManualWorkspace({
   accounts,
   accountsLoading,
+  hasLoadedAccounts = false,
   selectedAccountId,
   setSelectedAccountId,
   activeAccount,
+  ensureAccountsLoaded = async () => accounts,
   loginSession,
   isLoginDrawerOpen,
   setIsLoginDrawerOpen,
@@ -35,7 +37,34 @@ export function ManualWorkspace({
   const [queryLoading, setQueryLoading] = useState(false)
   const [queryResult, setQueryResult] = useState(null)
   const [queryError, setQueryError] = useState(null)
+  const [accountInventoryReady, setAccountInventoryReady] = useState(() => hasLoadedAccounts || accounts.length > 0)
   const { toasts, pushToast } = useToastQueue()
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInventory = async () => {
+      try {
+        await ensureAccountsLoaded()
+      } finally {
+        if (!cancelled) {
+          setAccountInventoryReady(true)
+        }
+      }
+    }
+
+    void loadInventory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [ensureAccountsLoaded])
+
+  useEffect(() => {
+    if (hasLoadedAccounts) {
+      setAccountInventoryReady(true)
+    }
+  }, [hasLoadedAccounts])
 
   const handleQuery = async ({ contentId }) => {
     if (!activeAccount?.accountId) return
@@ -111,6 +140,8 @@ export function ManualWorkspace({
     return formatLoginStatus(loginSession.status)
   }, [loginSession])
 
+  const isAccountInventoryPending = !accountInventoryReady && !hasLoadedAccounts
+
   return (
     <>
       <SectionCard className="manual-entry-strip open" variant="hero" emphasis="strong">
@@ -138,13 +169,27 @@ export function ManualWorkspace({
                 <Users size={16} aria-hidden="true" />
                 <span>已保存账号</span>
               </span>
-              <strong>{accounts.length}</strong>
-              <small>{manualEntryStatus ? '当前仍有登录流程进行中' : '单条查询与账号切换都可在这里完成'}</small>
+              <strong>{isAccountInventoryPending ? '...' : accounts.length}</strong>
+              <small>
+                {manualEntryStatus
+                  ? '当前仍有登录流程进行中'
+                  : (isAccountInventoryPending ? '首次进入手工页后按需加载账号库' : '单条查询与账号切换都可在这里完成')}
+              </small>
             </div>
           </div>
         </div>
 
         <div className="manual-query-shell stack-lg">
+          {isAccountInventoryPending ? (
+            <InlineNotice
+              tone="info"
+              eyebrow="账号库按需加载"
+              icon={Users}
+              title="手工页正在读取账号库"
+              description="默认首屏优先给批量闭环工作台让路；当你首次切到这里时，账号资源会按需加载，当前布局会保持稳定不闪空。"
+            />
+          ) : null}
+
           {activeLoginBanner ? (
             <InlineNotice
               tone={activeLoginBanner.tone}

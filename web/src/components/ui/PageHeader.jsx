@@ -1,11 +1,10 @@
-import { LayoutPanelTop } from 'lucide-react'
-import { StatCard } from './StatCard'
+import { DashboardIcon } from './ShellIcons'
 
 export function PageHeader({
   eyebrow,
   title,
   description,
-  icon: IconComponent = LayoutPanelTop,
+  icon: IconComponent = DashboardIcon,
   badge = '',
   variant = 'hero',
   actions = null,
@@ -34,21 +33,40 @@ export function PageHeader({
         {actions ? <div className="workspace-hero-actions page-header-actions">{actions}</div> : null}
         {stats.length ? (
           <div className="workspace-header-stats page-header-stats">
-            {stats.map((item) => (
-              <StatCard
-                key={`${item.label}-${item.value}`}
-                label={item.label}
-                value={item.value}
-                detail={item.detail}
-                tone={item.tone}
-                eyebrow={item.eyebrow}
-                icon={item.icon}
-                emphasis={item.emphasis}
-              />
-            ))}
+            {stats.map((item) => <PageHeaderStatCard key={`${item.label}-${item.value}`} {...item} />)}
           </div>
         ) : null}
       </div>
     </header>
+  )
+}
+
+function PageHeaderStatCard({
+  label,
+  value,
+  detail,
+  tone = 'neutral',
+  eyebrow = '',
+  icon: Icon = null,
+  emphasis = 'soft'
+}) {
+  const classes = ['header-stat-card', 'ui-stat-card', `tone-${tone}`, `emphasis-${emphasis}`].filter(Boolean).join(' ')
+
+  return (
+    <div className={classes}>
+      <div className="ui-stat-card-topline">
+        <div className="ui-stat-card-copy">
+          {eyebrow ? <span className="ui-stat-card-eyebrow">{eyebrow}</span> : null}
+          <span>{label}</span>
+        </div>
+        {Icon ? (
+          <div className="ui-stat-card-icon-wrap">
+            <Icon className={`ui-tone-icon tone-${tone} ui-stat-card-icon`} aria-hidden="true" />
+          </div>
+        ) : null}
+      </div>
+      <strong>{value}</strong>
+      {detail ? <small>{detail}</small> : null}
+    </div>
   )
 }

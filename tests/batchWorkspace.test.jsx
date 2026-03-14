@@ -291,6 +291,44 @@ describe('batch task workspace ui', () => {
     }))
   })
 
+  test('batch workspace does not load accounts on boot and defers initial inspect until idle time', async () => {
+    const originalRequestIdleCallback = window.requestIdleCallback
+    const originalCancelIdleCallback = window.cancelIdleCallback
+    const requestIdleCallback = vi.fn(() => 1)
+    const cancelIdleCallback = vi.fn()
+
+    window.requestIdleCallback = requestIdleCallback
+    window.cancelIdleCallback = cancelIdleCallback
+
+    render(<BatchTasksWorkspace />)
+
+    await waitFor(() => {
+      expect(api.listTasks).toHaveBeenCalledTimes(1)
+      expect(api.getTencentDocsConfig).toHaveBeenCalledTimes(1)
+    })
+
+    expect(api.listAccounts).not.toHaveBeenCalled()
+    expect(api.inspectTencentDocsSheet).not.toHaveBeenCalled()
+    expect(screen.getByText('交接表正在后台预检查')).toBeInTheDocument()
+    expect(requestIdleCallback).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      const [idleWork] = requestIdleCallback.mock.calls[0]
+      await idleWork({
+        didTimeout: false,
+        timeRemaining: () => 50
+      })
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(api.inspectTencentDocsSheet).toHaveBeenCalledTimes(1)
+    })
+
+    window.requestIdleCallback = originalRequestIdleCallback
+    window.cancelIdleCallback = originalCancelIdleCallback
+  })
+
   test('shows live draft validation and counts in task builder', async () => {
     render(<BatchTasksWorkspace />)
 
@@ -891,19 +929,45 @@ describe('batch task workspace ui', () => {
     expect(api.inspectTencentDocsSheet.mock.calls.some(([payload]) => payload?.forceRefresh === true)).toBe(false)
   })
 
-  test('app defaults to task workspace and reveals manual query on demand', async () => {
+  test('app loads accounts only when manual workspace is opened for the first time', async () => {
+    let resolveAccounts
+    api.listAccounts.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveAccounts = () => resolve({
+        accounts: [{ accountId: '1001', nickname: '自然卷儿', status: 'READY', lastLoginAt: '2026-03-11T00:29:00.000Z' }]
+      })
+    }))
 
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
     expect(screen.queryByText('查询工具条')).not.toBeInTheDocument()
+    expect(api.listAccounts).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('tab', { name: '账号管理与单条查询' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('手工页正在读取账号库')).toBeInTheDocument()
+    })
+    expect(api.listAccounts).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveAccounts()
+      await Promise.resolve()
+    })
 
     await waitFor(() => {
       expect(screen.getByText('查询工具条')).toBeInTheDocument()
     })
     expect(screen.getByRole('heading', { name: '账号库与单条查询' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '批量任务与交接表闭环' }))
+    expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '账号管理与单条查询' }))
+    await waitFor(() => {
+      expect(screen.getByText('查询工具条')).toBeInTheDocument()
+    })
+    expect(api.listAccounts).toHaveBeenCalledTimes(1)
   })
 
   test('manual workspace routes to batch tab through onRequestBatchTab callback', async () => {

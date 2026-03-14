@@ -45,6 +45,7 @@ export function BatchTasksWorkspace() {
           onSaveConfig={workspace.handleSaveTencentDocsConfig}
           onInspect={workspace.handleInspectTencentDocs}
           docsDiagnostic={workspace.docsDiagnostic}
+          diagnosticPending={workspace.diagnosticPending}
           docsLoginSession={workspace.docsLoginSession}
           onStartLogin={workspace.handleStartTencentDocsLogin}
         />
@@ -55,6 +56,7 @@ export function BatchTasksWorkspace() {
           syncConfig={workspace.syncConfig}
           docsConfigDraft={workspace.docsConfigDraft}
           docsDiagnostic={workspace.docsDiagnostic}
+          diagnosticPending={workspace.diagnosticPending}
           docsLoginSession={workspace.docsLoginSession}
           readyAccountCount={workspace.readyAccounts.length}
           matchedAccountCount={workspace.accountDemandMatches.length}
@@ -76,6 +78,7 @@ export function BatchTasksWorkspace() {
             open={workspace.isDiagnosticsOpen}
             syncConfig={workspace.syncConfig}
             diagnostic={workspace.docsDiagnostic}
+            diagnosticPending={workspace.diagnosticPending}
             onInspect={workspace.handleInspectTencentDocs}
             onToggle={workspace.handleToggleDiagnostics}
           />

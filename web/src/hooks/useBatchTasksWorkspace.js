@@ -169,6 +169,7 @@ export function useBatchTasksWorkspace() {
   const [syncPreviewState, setSyncPreviewState] = useState({})
   const [syncActionLoading, setSyncActionLoading] = useState({})
   const [docsDiagnostic, setDocsDiagnostic] = useState(createTencentDocsDiagnosticState())
+  const [isInspectDeferred, setIsInspectDeferred] = useState(false)
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false)
   const [matchingAccounts, setMatchingAccounts] = useState(false)
   const [creatingMatchedAccountTasks, setCreatingMatchedAccountTasks] = useState(false)
@@ -186,12 +187,32 @@ export function useBatchTasksWorkspace() {
   const successfulSyncKeysRef = useRef(new Set())
   const activeTencentDocsTargetRef = useRef(null)
   const docsDiagnosticRef = useRef(createTencentDocsDiagnosticState())
+  const silentInspectHandleRef = useRef(null)
+  const silentInspectHandleTypeRef = useRef('')
+  const hasScheduledInitialInspectRef = useRef(false)
 
   const stopDocsLoginPolling = useCallback(() => {
     if (docsLoginPollingRef.current) {
       window.clearInterval(docsLoginPollingRef.current)
       docsLoginPollingRef.current = null
     }
+  }, [])
+
+  const cancelScheduledInspect = useCallback(() => {
+    if (silentInspectHandleRef.current === null) {
+      setIsInspectDeferred(false)
+      return
+    }
+
+    if (silentInspectHandleTypeRef.current === 'idle' && typeof window.cancelIdleCallback === 'function') {
+      window.cancelIdleCallback(silentInspectHandleRef.current)
+    } else {
+      window.clearTimeout(silentInspectHandleRef.current)
+    }
+
+    silentInspectHandleRef.current = null
+    silentInspectHandleTypeRef.current = ''
+    setIsInspectDeferred(false)
   }, [])
 
   const loadTasks = useCallback(async ({ silent = false } = {}) => {
@@ -342,6 +363,7 @@ export function useBatchTasksWorkspace() {
   }, [applyTencentDocsConfigPayload, addToast])
 
   const runTencentDocsInspect = useCallback(async ({ silent = false, target, maxRows = 200, configOverride, persistResolvedTarget = false, forceRefresh = false } = {}) => {
+    cancelScheduledInspect()
     const effectiveConfig = configOverride || syncConfig
     const effectiveTarget = target && target.docUrl ? target : undefined
     if (!effectiveConfig.available) {
@@ -383,6 +405,7 @@ export function useBatchTasksWorkspace() {
       return null
     }
 
+    setIsInspectDeferred(false)
     setDocsDiagnostic((current) => ({
       ...current,
       loading: true,
@@ -437,7 +460,28 @@ export function useBatchTasksWorkspace() {
       if (!silent) addToast('danger', errorPayload.message)
       return null
     }
-  }, [persistTencentDocsTarget, addToast, syncConfig])
+  }, [cancelScheduledInspect, persistTencentDocsTarget, addToast, syncConfig])
+
+  const scheduleSilentInspect = useCallback((options = {}) => {
+    cancelScheduledInspect()
+    setIsInspectDeferred(true)
+
+    const runScheduledInspect = () => {
+      silentInspectHandleRef.current = null
+      silentInspectHandleTypeRef.current = ''
+      setIsInspectDeferred(false)
+      void runTencentDocsInspect(options).catch(() => null)
+    }
+
+    if (typeof window.requestIdleCallback === 'function') {
+      silentInspectHandleTypeRef.current = 'idle'
+      silentInspectHandleRef.current = window.requestIdleCallback(runScheduledInspect, { timeout: 800 })
+      return
+    }
+
+    silentInspectHandleTypeRef.current = 'timeout'
+    silentInspectHandleRef.current = window.setTimeout(runScheduledInspect, 300)
+  }, [cancelScheduledInspect, runTencentDocsInspect])
 
   const processSuccessfulTaskEvents = useCallback((nextTasks) => {
     const activeTarget = activeTencentDocsTargetRef.current
@@ -507,7 +551,7 @@ export function useBatchTasksWorkspace() {
 
     const boot = async () => {
       if (!cancelled) {
-        await Promise.all([loadTasks(), loadSyncConfig(), loadAccounts()])
+        await Promise.all([loadTasks(), loadSyncConfig()])
       }
     }
 
@@ -515,9 +559,10 @@ export function useBatchTasksWorkspace() {
 
     return () => {
       cancelled = true
+      cancelScheduledInspect()
       stopDocsLoginPolling()
     }
-  }, [loadAccounts, loadSyncConfig, loadTasks, stopDocsLoginPolling])
+  }, [cancelScheduledInspect, loadSyncConfig, loadTasks, stopDocsLoginPolling])
 
   useEffect(() => {
     activeTencentDocsTargetRef.current = activeTencentDocsTarget
@@ -554,22 +599,27 @@ export function useBatchTasksWorkspace() {
   useEffect(() => {
     if (syncConfig.loading) return
     if (!syncConfig.available || !syncConfig.enabled) {
+      cancelScheduledInspect()
       setDocsDiagnostic(createTencentDocsDiagnosticState())
       return
     }
 
     if (!syncConfig.target?.docUrl && !syncConfig.defaultTargetConfigured) {
+      cancelScheduledInspect()
       setDocsDiagnostic(createTencentDocsDiagnosticState())
       return
     }
 
-    void runTencentDocsInspect({
+    if (hasScheduledInitialInspectRef.current) return
+
+    hasScheduledInitialInspectRef.current = true
+    scheduleSilentInspect({
       silent: true,
       target: syncConfig.target?.docUrl ? syncConfig.target : undefined,
       persistResolvedTarget: Boolean(syncConfig.target?.docUrl && !syncConfig.target?.sheetName),
       forceRefresh: false
     })
-  }, [runTencentDocsInspect, syncConfig.available, syncConfig.defaultTargetConfigured, syncConfig.enabled, syncConfig.loading, syncConfig.target])
+  }, [cancelScheduledInspect, scheduleSilentInspect, syncConfig.available, syncConfig.defaultTargetConfigured, syncConfig.enabled, syncConfig.loading, syncConfig.target])
 
   useEffect(() => {
     if (docsDiagnostic.error) {
@@ -632,6 +682,8 @@ export function useBatchTasksWorkspace() {
   }, [])
 
   const handleRefreshList = async ({ inspectAfterRefresh = true, inspectForceRefresh = true, toast = true, reloadConfig = true } = {}) => {
+    hasScheduledInitialInspectRef.current = true
+    cancelScheduledInspect()
     const [, nextConfig] = await Promise.all([loadTasks(), reloadConfig ? loadSyncConfig() : Promise.resolve(syncConfig)])
     if (inspectAfterRefresh && nextConfig?.enabled && (nextConfig?.defaultTargetConfigured || docsConfigDraft.docUrl)) {
       await runTencentDocsInspect({
@@ -651,6 +703,8 @@ export function useBatchTasksWorkspace() {
     }
 
     try {
+      hasScheduledInitialInspectRef.current = true
+      cancelScheduledInspect()
       const payload = await api.updateTencentDocsConfig(draftTarget)
       const nextConfig = applyTencentDocsConfigPayload(payload)
       setDocsConfigDraft({
@@ -706,6 +760,8 @@ export function useBatchTasksWorkspace() {
       return
     }
 
+    hasScheduledInitialInspectRef.current = true
+    cancelScheduledInspect()
     setMatchingAccounts(true)
     try {
       const [nextAccounts, payload] = await Promise.all([
@@ -964,7 +1020,10 @@ export function useBatchTasksWorkspace() {
     }
   }, [addToast, applySyncResultToDocsDiagnostic, handleRefreshList, runTencentDocsInspect])
 
-  const pendingDemandCount = Number(docsDiagnostic.payload?.summary?.needsFillRows || 0)
+  const diagnosticPending = isInspectDeferred || (docsDiagnostic.loading && !docsDiagnostic.checkedAt)
+  const pendingDemandCount = diagnosticPending && !docsDiagnostic.payload?.summary
+    ? '...'
+    : Number(docsDiagnostic.payload?.summary?.needsFillRows || 0)
   const docsLoginStatus = docsLoginSession?.status || syncConfig.login?.status || 'IDLE'
   const docsLoginUpdatedAt = docsLoginSession?.updatedAt || syncConfig.login?.updatedAt || ''
   const waitingTaskCount = filteredTasks.filter((task) => task.login?.status === 'WAITING_QR' || task.login?.status === 'WAITING_CONFIRM').length
@@ -1028,11 +1087,13 @@ export function useBatchTasksWorkspace() {
   }, [])
 
   const handleInspectTencentDocs = useCallback(() => {
+    hasScheduledInitialInspectRef.current = true
+    cancelScheduledInspect()
     return runTencentDocsInspect({
       target: docsConfigDraft.docUrl ? docsConfigDraft : undefined,
       forceRefresh: true
     })
-  }, [docsConfigDraft, runTencentDocsInspect])
+  }, [cancelScheduledInspect, docsConfigDraft, runTencentDocsInspect])
 
   const handleToggleDiagnostics = useCallback(() => {
     setIsDiagnosticsOpen((current) => !current)
@@ -1090,6 +1151,7 @@ export function useBatchTasksWorkspace() {
     waitingTaskCount,
     exceptionTaskCount,
     shouldShowDiagnostics,
+    diagnosticPending,
     setFilterKey,
     setSearchValue,
     setDemandFilter,

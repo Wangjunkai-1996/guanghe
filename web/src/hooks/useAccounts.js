@@ -5,6 +5,7 @@ import { useSSE } from './useSSE'
 export function useAccounts({ onLoaded } = {}) {
     const [accounts, setAccounts] = useState([])
     const [accountsLoading, setAccountsLoading] = useState(false)
+    const [hasLoadedAccounts, setHasLoadedAccounts] = useState(false)
     const [selectedAccountId, setSelectedAccountId] = useState('')
 
     const activeAccount = useMemo(
@@ -12,23 +13,34 @@ export function useAccounts({ onLoaded } = {}) {
         [accounts, selectedAccountId]
     )
 
+    const applyAccounts = useCallback((nextAccounts) => {
+        setAccounts(nextAccounts)
+        setHasLoadedAccounts(true)
+        setSelectedAccountId((current) => {
+            if (current && nextAccounts.some((account) => account.accountId === current)) return current
+            return nextAccounts[0]?.accountId || ''
+        })
+        if (onLoaded) {
+            onLoaded(nextAccounts)
+        }
+        return nextAccounts
+    }, [onLoaded])
+
     const loadAccounts = useCallback(async ({ silent = false } = {}) => {
         if (!silent) setAccountsLoading(true)
         try {
             const payload = await api.listAccounts()
             const nextAccounts = payload.accounts || []
-            setAccounts(nextAccounts)
-            setSelectedAccountId((current) => {
-                if (current && nextAccounts.some((account) => account.accountId === current)) return current
-                return nextAccounts[0]?.accountId || ''
-            })
-            if (onLoaded) {
-                onLoaded(nextAccounts)
-            }
+            return applyAccounts(nextAccounts)
         } finally {
             if (!silent) setAccountsLoading(false)
         }
-    }, [onLoaded])
+    }, [applyAccounts])
+
+    const ensureAccountsLoaded = useCallback(async (options = {}) => {
+        if (hasLoadedAccounts) return accounts
+        return loadAccounts(options)
+    }, [accounts, hasLoadedAccounts, loadAccounts])
 
     const deleteAccount = useCallback(async (accountId) => {
         await api.deleteAccount(accountId)
@@ -40,20 +52,18 @@ export function useAccounts({ onLoaded } = {}) {
     }, [selectedAccountId, loadAccounts])
 
     useSSE('accounts', (nextAccounts) => {
-        setAccounts(nextAccounts)
-        setSelectedAccountId((current) => {
-            if (current && nextAccounts.some((account) => account.accountId === current)) return current
-            return nextAccounts[0]?.accountId || ''
-        })
+        applyAccounts(nextAccounts || [])
     })
 
     return {
         accounts,
         accountsLoading,
+        hasLoadedAccounts,
         selectedAccountId,
         setSelectedAccountId,
         activeAccount,
         loadAccounts,
+        ensureAccountsLoaded,
         deleteAccount
     }
 }

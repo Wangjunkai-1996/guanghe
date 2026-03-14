@@ -1,0 +1,136 @@
+{
+  "name": "final",
+  "baseUrl": "http://localhost:3001/",
+  "screenshots": {
+    "batchDesktop": "/Users/tokk/Desktop/KK_XCX/docs/ui-performance-v3/final/final-batch-desktop.png",
+    "manualDesktop": "/Users/tokk/Desktop/KK_XCX/docs/ui-performance-v3/final/final-manual-desktop.png",
+    "batchMobile": "/Users/tokk/Desktop/KK_XCX/docs/ui-performance-v3/final/final-batch-mobile.png",
+    "manualMobile": "/Users/tokk/Desktop/KK_XCX/docs/ui-performance-v3/final/final-manual-mobile.png"
+  },
+  "scrollWidths": {
+    "390": {
+      "batch": {
+        "bodyScrollWidth": 390,
+        "innerWidth": 390,
+        "documentScrollWidth": 390
+      },
+      "manual": {
+        "bodyScrollWidth": 390,
+        "innerWidth": 390,
+        "documentScrollWidth": 390
+      }
+    },
+    "768": {
+      "batch": {
+        "bodyScrollWidth": 768,
+        "innerWidth": 768,
+        "documentScrollWidth": 768
+      },
+      "manual": {
+        "bodyScrollWidth": 768,
+        "innerWidth": 768,
+        "documentScrollWidth": 768
+      }
+    },
+    "1024": {
+      "batch": {
+        "bodyScrollWidth": 1024,
+        "innerWidth": 1024,
+        "documentScrollWidth": 1024
+      },
+      "manual": {
+        "bodyScrollWidth": 1024,
+        "innerWidth": 1024,
+        "documentScrollWidth": 1024
+      }
+    },
+    "1440": {
+      "batch": {
+        "bodyScrollWidth": 1440,
+        "innerWidth": 1440,
+        "documentScrollWidth": 1440
+      },
+      "manual": {
+        "bodyScrollWidth": 1440,
+        "innerWidth": 1440,
+        "documentScrollWidth": 1440
+      }
+    }
+  },
+  "requests": {
+    "initialRequests": [
+      {
+        "url": "http://localhost:3001/",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/index-DnVKFj2J.css",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/index-Cl2xvTT8.js",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/react-vendor-D7f9BLy3.js",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/api/auth/me",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/api/events",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/favicon.svg",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/InlineNotice-DKdId9IS.js",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/icon-vendor-CmNObyB5.js",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/useToastQueue-CQrraYLn.js",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/assets/BatchTasksWorkspace-CZVIUKUW.js",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/api/tasks",
+        "status": 200,
+        "method": "GET"
+      },
+      {
+        "url": "http://localhost:3001/api/tencent-docs/config",
+        "status": 200,
+        "method": "GET"
+      }
+    ],
+    "manualSwitchRequests": [
+      {
+        "url": "http://localhost:3001/assets/ManualWorkspace-C1pbF-E7.js",
+        "status": 200,
+        "method": "GET"
+      }
+    ]
+  }
+}

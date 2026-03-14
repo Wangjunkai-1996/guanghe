@@ -689,6 +689,23 @@ select,
   min-height: 300px;
 }
 
+.batch-skeleton-card {
+  min-height: 132px;
+  justify-content: space-between;
+}
+
+.skeleton-demand-row {
+  align-items: center;
+}
+
+.skeleton-demand-row > * {
+  min-width: 0;
+}
+
+.handoff-demand-list-loading .handoff-demand-row:not(.handoff-demand-head) {
+  background: rgba(255, 252, 247, 0.72);
+}
+
 .row-focus-pill {
   padding: 4px 10px;
   border-radius: 999px;

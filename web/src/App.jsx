@@ -1,8 +1,8 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { ChartColumnIncreasing, LayoutDashboard, Sparkles, Users, Workflow } from 'lucide-react'
 import { api } from './api'
 import { LoginForm } from './components/LoginForm'
 import { PageHeader } from './components/ui/PageHeader'
+import { DashboardIcon } from './components/ui/ShellIcons'
 import { useAccounts } from './hooks/useAccounts'
 import { useLoginSession } from './hooks/useLoginSession'
 
@@ -31,6 +31,8 @@ export default function App() {
     setSelectedAccountId,
     activeAccount,
     loadAccounts,
+    hasLoadedAccounts,
+    ensureAccountsLoaded,
     deleteAccount
   } = useAccounts()
 
@@ -55,9 +57,6 @@ export default function App() {
           const payload = await api.me()
           if (cancelled) return
           setAuthenticated(Boolean(payload.authenticated))
-          if (payload.authenticated) {
-            await loadAccounts()
-          }
         } catch (_error) {
           if (!cancelled) setAuthenticated(false)
         } finally {
@@ -76,7 +75,6 @@ export default function App() {
     try {
       await api.login(password)
       setAuthenticated(true)
-      await loadAccounts()
     } catch (error) {
       setAuthError(error.message)
     } finally {
@@ -108,16 +106,12 @@ export default function App() {
     {
       key: 'batch',
       label: '批量任务与交接表闭环',
-      shortLabel: '批量闭环',
-      icon: Workflow,
       tabId: 'workspace-tab-batch',
       panelId: 'workspace-panel-batch'
     },
     {
       key: 'account',
       label: '账号管理与单条查询',
-      shortLabel: '单条验证',
-      icon: Users,
       tabId: 'workspace-tab-account',
       panelId: 'workspace-panel-account'
     }
@@ -128,24 +122,21 @@ export default function App() {
       <PageHeader
         eyebrow="品牌运营控制台"
         badge="Brand Ops"
-        icon={LayoutDashboard}
+        icon={DashboardIcon}
         title="光合品牌运营工作台"
         description="围绕腾讯交接表闭环、达人扫码任务和单条内容验证建立统一运营控制台，突出首页层级、状态主线与执行节奏。"
         actions={(
           <div className="page-header-action-cluster">
             <div className="page-header-status-strip">
               <span className="page-header-status-pill">
-                <Sparkles size={16} aria-hidden="true" />
                 当前聚焦：{activeTab === 'batch' ? '批量执行链路' : '账号与单条验证'}
               </span>
               <span className="page-header-status-pill subtle">
-                <ChartColumnIncreasing size={16} aria-hidden="true" />
                 两个工作台共用同一套状态反馈与交互规范
               </span>
             </div>
             <div className="tabs-switcher workspace-segmented-control" role="tablist" aria-label="工作台标签">
             {workspaceTabs.map((tab) => {
-              const TabIcon = tab.icon
               return (
                 <button
                   key={tab.key}
@@ -158,7 +149,6 @@ export default function App() {
                   className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.key)}
                 >
-                  <TabIcon size={16} aria-hidden="true" />
                   <span>{tab.label}</span>
                 </button>
               )
@@ -172,22 +162,21 @@ export default function App() {
             value: activeTab === 'batch' ? '批量闭环' : '单条验证',
             detail: activeTab === 'batch' ? '腾讯文档驱动工作流' : '账号库与单次验证',
             tone: 'accent',
-            icon: activeTab === 'batch' ? Workflow : Users,
             emphasis: 'hero'
           },
           {
             label: '已保存账号',
-            value: accountsLoading ? '...' : String(accounts.length),
-            detail: activeAccount?.nickname ? `当前账号：${activeAccount.nickname}` : '可随时切换账号',
-            tone: 'info',
-            icon: Users
+            value: hasLoadedAccounts ? String(accounts.length) : '待载入',
+            detail: activeAccount?.nickname
+              ? `当前账号：${activeAccount.nickname}`
+              : (hasLoadedAccounts ? '可随时切换账号' : '首次切到手工页时再加载账号库'),
+            tone: 'info'
           },
           {
             label: '运营节奏',
             value: activeTab === 'batch' ? '交接表驱动' : '单条快查',
             detail: activeTab === 'batch' ? '优先推进扫码、查询与回填闭环' : '快速核验内容数据与账号状态',
-            tone: 'warning',
-            icon: ChartColumnIncreasing
+            tone: 'warning'
           }
         ]}
       />
@@ -221,6 +210,8 @@ export default function App() {
                     selectedAccountId={selectedAccountId}
                     setSelectedAccountId={setSelectedAccountId}
                     activeAccount={activeAccount}
+                    hasLoadedAccounts={hasLoadedAccounts}
+                    ensureAccountsLoaded={ensureAccountsLoaded}
                     loginSession={loginSession}
                     isLoginDrawerOpen={isLoginDrawerOpen}
                     setIsLoginDrawerOpen={setIsLoginDrawerOpen}

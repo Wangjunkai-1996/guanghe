@@ -5,6 +5,7 @@ import {
   getTencentDocsLoginDescription,
   getTencentDocsLoginTone
 } from '../../lib/ui'
+import { InlineNotice } from '../ui/InlineNotice'
 import { SectionCard } from '../ui/SectionCard'
 import { StatusBadge } from '../ui/StatusBadge'
 
@@ -15,6 +16,7 @@ export function HandoffControlCenter({
   onSaveConfig,
   onInspect,
   docsDiagnostic,
+  diagnosticPending,
   docsLoginSession,
   onStartLogin
 }) {
@@ -36,10 +38,24 @@ export function HandoffControlCenter({
           <StatusBadge tone={getTencentDocsLoginTone(loginStatus)} emphasis="glass">
             {formatTencentDocsLoginStatus(loginStatus)}
           </StatusBadge>
-          <strong>{getHubHeadline(docsDiagnostic.payload?.summary, loginStatus, docsConfigDraft)}</strong>
-          <small>{docsDiagnostic.checkedAt ? `最近检查：${formatDateTime(docsDiagnostic.checkedAt)}` : '尚未检查交接表'}</small>
+          <strong>{getHubHeadline(docsDiagnostic.payload?.summary, loginStatus, docsConfigDraft, diagnosticPending)}</strong>
+          <small>
+            {docsDiagnostic.checkedAt
+              ? `最近检查：${formatDateTime(docsDiagnostic.checkedAt)}`
+              : (diagnosticPending ? '首屏已就绪，交接表检查将在空闲时静默启动' : '尚未检查交接表')}
+          </small>
         </div>
       </div>
+
+      {diagnosticPending ? (
+        <InlineNotice
+          tone="info"
+          eyebrow="静默检查"
+          icon={ScanSearch}
+          title="交接表正在后台预检查"
+          description="默认首屏先让英雄区、控制区和任务区落稳，再在浏览器空闲时读取工作表。若你现在就要核对数据，可直接点击“检查工作表”。"
+        />
+      ) : null}
 
       <div className="handoff-hub-grid batch-control-grid">
         <section className="panel handoff-config-panel stack-md v2-console-card">
@@ -160,9 +176,10 @@ function readTencentDocsTabToken(value) {
   }
 }
 
-function getHubHeadline(summary = {}, loginStatus, docsConfigDraft) {
+function getHubHeadline(summary = {}, loginStatus, docsConfigDraft, diagnosticPending) {
   const needsFillRows = Number(summary?.needsFillRows || 0)
   if (!docsConfigDraft.docUrl) return '先配置腾讯文档链接，再开始交接表闭环。'
+  if (diagnosticPending) return '交接表正在后台预检查，完成后会更新缺数达人与账号匹配信息。'
   if (loginStatus !== 'LOGGED_IN') return '腾讯文档未完成登录，建议先补登录态再发码。'
   if (needsFillRows > 0) return `当前有 ${needsFillRows} 位达人待补数，可以准备发码。`
   return '交接表已完成本轮检查，可以继续抽查任务结果或重新读表。'

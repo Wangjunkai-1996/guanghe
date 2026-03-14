@@ -1,19 +1,24 @@
 import { useId } from 'react'
 import { formatDateTime } from '../../lib/ui'
+import { InlineNotice } from '../ui/InlineNotice'
 import { SectionCard } from '../ui/SectionCard'
 import { TencentDocsDiagnosticPanel } from '../TencentDocsDiagnosticPanel'
 
-export function DiagnosticsPanel({ open, syncConfig, diagnostic, onInspect, onToggle }) {
+export function DiagnosticsPanel({ open, syncConfig, diagnostic, diagnosticPending, onInspect, onToggle }) {
   const panelId = useId()
-  const headline = diagnostic.error
+  const headline = diagnosticPending
+    ? '首屏已就绪，排障会在浏览器空闲时静默启动。'
+    : (diagnostic.error
     ? diagnostic.error.message
     : diagnostic.checkedAt
       ? '最近一次排障信息已就绪，需要时再展开细看。'
-      : '高级排障默认折叠，只有排查读表/表头/同步问题时再展开。'
+      : '高级排障默认折叠，只有排查读表/表头/同步问题时再展开。')
 
-  const detail = diagnostic.checkedAt
+  const detail = diagnosticPending
+    ? '你也可以点击“立即诊断”或上方“检查工作表”跳过延后策略。'
+    : (diagnostic.checkedAt
     ? `最近检查：${formatDateTime(diagnostic.checkedAt)}`
-    : (diagnostic.loading ? '正在执行诊断…' : '当前未执行诊断')
+    : (diagnostic.loading ? '正在执行诊断…' : '当前未执行诊断'))
 
   return (
     <section className="batch-diagnostics-shell stack-md">
@@ -38,6 +43,14 @@ export function DiagnosticsPanel({ open, syncConfig, diagnostic, onInspect, onTo
 
       {open ? (
         <div id={panelId}>
+          {diagnosticPending ? (
+            <InlineNotice
+              tone="info"
+              eyebrow="排障延后执行"
+              title="诊断尚未抢占首屏"
+              description="为了先稳定呈现英雄区、控制区和任务区，默认诊断会延后到空闲时启动；展开后仍可手动立即发起诊断。"
+            />
+          ) : null}
           <TencentDocsDiagnosticPanel
             syncConfig={syncConfig}
             diagnostic={diagnostic}
