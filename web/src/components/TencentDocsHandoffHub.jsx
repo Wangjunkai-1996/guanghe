@@ -1,4 +1,9 @@
-import { formatDateTime } from '../lib/ui'
+import {
+  formatDateTime,
+  formatTencentDocsLoginStatus,
+  getTencentDocsLoginDescription,
+  getTencentDocsLoginTone
+} from '../lib/ui'
 
 const SHEET_FILTER_OPTIONS = [
   { value: 'open', label: '仅看待补数' },
@@ -100,11 +105,11 @@ export function TencentDocsHandoffHub({
               <strong>{docsConfigDraft.sheetName || syncConfig.target?.sheetName || '未选择'}</strong>
               <small>{docsConfigDraft.docUrl || syncConfig.target?.docUrl || '请先录入腾讯文档链接'}</small>
             </div>
-            <div className={`meta-card compact-meta-card diagnostic-card tone-${getLoginTone(loginStatus)}`}>
-              <span>腾讯文档登录</span>
-              <strong>{formatLoginStatus(loginStatus)}</strong>
-              <small>{docsLoginSession?.updatedAt ? formatDateTime(docsLoginSession.updatedAt) : (syncConfig.login?.updatedAt ? formatDateTime(syncConfig.login.updatedAt) : '未登录')}</small>
-            </div>
+          <div className={`meta-card compact-meta-card diagnostic-card tone-${getTencentDocsLoginTone(loginStatus)}`}>
+            <span>腾讯文档登录</span>
+            <strong>{formatTencentDocsLoginStatus(loginStatus)}</strong>
+            <small>{docsLoginSession?.updatedAt ? formatDateTime(docsLoginSession.updatedAt) : (syncConfig.login?.updatedAt ? formatDateTime(syncConfig.login.updatedAt) : '未登录')}</small>
+          </div>
           </div>
           {docsDiagnostic.error ? <div className="inline-error">{docsDiagnostic.error.message}</div> : null}
         </section>
@@ -114,9 +119,9 @@ export function TencentDocsHandoffHub({
             <h3>腾讯文档扫码登录</h3>
             <p>登录一次后会长期保存编辑态；读表或写表提示失效时，再重新生成二维码即可。</p>
           </div>
-          <div className={`task-state-banner tone-${getLoginTone(loginStatus)}`}>
-            <strong>{formatLoginStatus(loginStatus)}</strong>
-            <small>{getLoginDescription(loginStatus)}</small>
+          <div className={`task-state-banner tone-${getTencentDocsLoginTone(loginStatus)}`}>
+            <strong>{formatTencentDocsLoginStatus(loginStatus)}</strong>
+            <small>{getTencentDocsLoginDescription(loginStatus)}</small>
           </div>
           <div className="task-actions-inline">
             <button className="primary-btn" type="button" onClick={onStartLogin} disabled={!docsConfigDraft.docUrl}>
@@ -245,31 +250,6 @@ function readTencentDocsTabToken(value) {
   } catch (_error) {
     return ''
   }
-}
-
-function formatLoginStatus(status) {
-  if (status === 'WAITING_QR') return '等待扫码'
-  if (status === 'WAITING_CONFIRM') return '等待确认'
-  if (status === 'LOGGED_IN') return '已登录'
-  if (status === 'EXPIRED') return '二维码已过期'
-  if (status === 'FAILED') return '登录失败'
-  return '未登录'
-}
-
-function getLoginTone(status) {
-  if (status === 'LOGGED_IN') return 'success'
-  if (status === 'WAITING_QR' || status === 'WAITING_CONFIRM') return 'info'
-  if (status === 'EXPIRED') return 'warning'
-  return 'danger'
-}
-
-function getLoginDescription(status) {
-  if (status === 'WAITING_QR') return '请用你的微信扫码登录腾讯文档。'
-  if (status === 'WAITING_CONFIRM') return '已扫码，请在手机上确认登录。'
-  if (status === 'LOGGED_IN') return '腾讯文档登录态已保存，可直接执行读表和回填。'
-  if (status === 'EXPIRED') return '二维码已过期，重新生成后再扫码即可。'
-  if (status === 'FAILED') return '腾讯文档登录失败，建议重新生成二维码。'
-  return '还没有可用的腾讯文档登录态。'
 }
 
 function getHubHeadline(summary, loginStatus, draft) {

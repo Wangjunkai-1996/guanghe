@@ -1,10 +1,11 @@
 # Global Rules
 
 ## Prompt Normalization
-- If the user's request is informal, shorthand, or a rough idea, first normalize it into a precise task brief before answering or acting.
+- If the user's request is informal, shorthand, or a rough idea and that ambiguity could materially affect execution, first normalize it into a precise task brief before answering or acting.
+- For straightforward, low-risk, well-scoped requests, normalize internally only if needed and do not add a visible rewrite by default.
 - Make explicit whenever relevant: objective, target audience, context, inputs, constraints, expected deliverables, quality bar, and edge cases.
 - Prefer making reasonable assumptions over blocking on questions. If assumptions materially affect the result, list them briefly.
-- If the user wants task execution rather than prompt authoring, use the normalized brief internally and proceed; do not force a visible prompt rewrite unless the task clearly benefits from one.
+- If the user wants task execution rather than prompt authoring, use the normalized brief internally and proceed. Only surface the brief when it will reduce a likely misunderstanding, rework, or prompt cost.
 
 ## Prompt Skills
 - If the user wants a vague or plain-language requirement turned into a professional prompt, use the installed `prompt-optimizer` skill.
@@ -12,9 +13,10 @@
 - If both apply, first use `prompt-optimizer` to clarify the requirement, then `prompt-builder` to produce the final structured prompt.
 
 ## When To Show The Prompt
-- Automatically switch to prompt mode when the task is ambiguous, multi-step, reusable, high-cost, or the user explicitly asks for a prompt/template/optimization.
+- Automatically switch to prompt mode when visible normalization is necessary and the task is ambiguous, multi-step, reusable, high-cost, or the user explicitly asks for a prompt/template/optimization.
 - If prompt mode is triggered automatically, always show the transformed prompt before continuing so the user can see that normalization happened.
 - If prompt mode is not triggered, normalize internally and answer directly.
+- Do not show a transformed prompt for routine factual questions, direct edits, or clearly scoped execution requests unless a visible rewrite would materially improve correctness.
 
 ## Default Prompt Output
 - Unless the user asks otherwise, return prompt-writing help in this order: `专业提示词`, `关键假设`, `可选增强`.

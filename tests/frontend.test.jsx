@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import React from 'react'
-import { describe, expect, test, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { LoginForm } from '../web/src/components/LoginForm'
 import { QueryForm } from '../web/src/components/QueryForm'
 import { LoginSessionPanel } from '../web/src/components/LoginSessionPanel'
 import { ResultPanel } from '../web/src/components/ResultPanel'
+
+afterEach(() => {
+  cleanup()
+})
 
 describe('frontend components', () => {
   test('renders login form and submits password', async () => {
@@ -38,7 +42,7 @@ describe('frontend components', () => {
   })
 
   test('login drawer shows expired state and refresh action', () => {
-    render(
+    const view = render(
       <LoginSessionPanel
         loginSession={{
           loginSessionId: 'session-1',
@@ -54,8 +58,57 @@ describe('frontend components', () => {
       />
     )
 
-    expect(screen.getByText('二维码已过期')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '刷新二维码' })).toBeInTheDocument()
+    expect(view.getAllByText('二维码已过期').length).toBeGreaterThan(0)
+    expect(view.getByRole('button', { name: '刷新二维码' })).toBeInTheDocument()
+  })
+
+  test('login drawer submits sms verification code', async () => {
+    const onSubmitSmsCode = vi.fn().mockResolvedValue(undefined)
+    const view = render(
+      <LoginSessionPanel
+        loginSession={{
+          loginSessionId: 'session-sms',
+          status: 'WAITING_SMS',
+          qrImageUrl: null,
+          error: null,
+          account: null
+        }}
+        qrCodeDataUrl=""
+        isOpen
+        onClose={vi.fn()}
+        onRefresh={vi.fn()}
+        onSubmitSmsCode={onSubmitSmsCode}
+      />
+    )
+
+    const input = view.getByPlaceholderText('请输入短信验证码')
+    fireEvent.change(input, { target: { value: ' 123456 ' } })
+    fireEvent.click(view.getByRole('button', { name: '提交验证码' }))
+
+    expect(onSubmitSmsCode).toHaveBeenCalledWith('123456')
+  })
+
+  test('login drawer closes on escape', () => {
+    const onClose = vi.fn()
+    render(
+      <LoginSessionPanel
+        loginSession={{
+          loginSessionId: 'session-2',
+          status: 'WAITING_QR',
+          qrImageUrl: null,
+          error: null,
+          account: null
+        }}
+        qrCodeDataUrl=""
+        isOpen
+        onClose={onClose}
+        onRefresh={vi.fn()}
+        onSubmitSmsCode={vi.fn()}
+      />
+    )
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalled()
   })
 
   test('result panel defaults to summary screenshot and supports tab switch', () => {
@@ -86,7 +139,7 @@ describe('frontend components', () => {
     )
 
     expect(screen.getByAltText('汇总截图预览')).toHaveAttribute('src', '/api/artifacts/summary.png')
-    fireEvent.click(screen.getByRole('button', { name: '作品管理截图' }))
+    fireEvent.click(screen.getByRole('tab', { name: '作品管理截图' }))
     expect(screen.getByAltText('原始截图预览')).toHaveAttribute('src', '/api/artifacts/raw.png')
     expect(screen.getByRole('button', { name: '复制全部数据' })).toBeInTheDocument()
   })

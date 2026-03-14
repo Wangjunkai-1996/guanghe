@@ -29,6 +29,39 @@ export function formatLoginStatus(status) {
   }
 }
 
+export function formatTencentDocsLoginStatus(status) {
+  switch (status) {
+    case 'WAITING_QR':
+      return '等待扫码'
+    case 'WAITING_CONFIRM':
+      return '等待确认'
+    case 'LOGGED_IN':
+      return '已登录'
+    case 'EXPIRED':
+      return '二维码已过期'
+    case 'FAILED':
+      return '登录失败'
+    default:
+      return '未登录'
+  }
+}
+
+export function getTencentDocsLoginTone(status) {
+  if (status === 'LOGGED_IN') return 'success'
+  if (status === 'EXPIRED') return 'warning'
+  if (status === 'FAILED') return 'danger'
+  return 'info'
+}
+
+export function getTencentDocsLoginDescription(status) {
+  if (status === 'LOGGED_IN') return '腾讯文档登录态已保存，可直接执行读表和回填。'
+  if (status === 'WAITING_CONFIRM') return '二维码已生成，扫码后请在手机上确认腾讯文档登录。'
+  if (status === 'WAITING_QR') return '请用腾讯文档或微信扫码，以建立可复用的编辑登录态。'
+  if (status === 'EXPIRED') return '二维码已过期，请重新生成。'
+  if (status === 'FAILED') return '登录失败，请重新生成二维码后重试。'
+  return '建议先建立腾讯文档登录态，避免读表或回填时被打断。'
+}
+
 export function formatTaskLoginStatus(status) {
   if (status === 'INTERRUPTED') return '任务中断'
   return formatLoginStatus(status)
@@ -117,10 +150,20 @@ export function isTaskFinished(task) {
   return ['EXPIRED', 'FAILED', 'INTERRUPTED'].includes(task?.login?.status) && task?.query?.status === 'IDLE'
 }
 
-export function formatDateTime(value) {
+export function formatDateTime(value, { style = 'full' } = {}) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
+
+  if (style === 'compact') {
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date)
+  }
+
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',

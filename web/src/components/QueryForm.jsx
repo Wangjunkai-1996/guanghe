@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { SectionCard } from './ui/SectionCard'
 
 export function QueryForm({ activeAccount, loading, onSubmit }) {
   const [contentId, setContentId] = useState('')
@@ -32,7 +33,7 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
   }
 
   return (
-    <section className="panel query-toolbar-panel">
+    <SectionCard className="query-toolbar-panel">
       <div className="query-toolbar-copy">
         <h2>查询工具条</h2>
         <p>{helperText}</p>
@@ -61,7 +62,7 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
         </button>
       </form>
 
-      {loading ? <div className="query-processing-hint">正在查询并生成截图…</div> : null}
-    </section>
+      {loading ? <div className="query-processing-hint" aria-live="polite">正在查询并生成截图…</div> : null}
+    </SectionCard>
   )
 }

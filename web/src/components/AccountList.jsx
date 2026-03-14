@@ -1,56 +1,40 @@
 import { useState } from 'react'
 import { buildFallbackAvatar, formatAccountStatus, formatDateTime } from '../lib/ui'
+import { EmptyState } from './ui/EmptyState'
+import { SectionCard } from './ui/SectionCard'
+import { StatusBadge } from './ui/StatusBadge'
 
-export function AccountList({ accounts, selectedAccountId, loading, onSelect, onCreate, onDelete, sheetDemands, matchLoading, onMatchSheet, batchQuerying, onBatchQuery, queryProgress }) {
+export function AccountList({ accounts, selectedAccountId, loading, onSelect, onCreate, onDelete }) {
   const [menuOpenId, setMenuOpenId] = useState('')
 
-  const getMatchBadge = (account) => {
-    if (!sheetDemands) return null
-    const reqNick = (account.nickname || '').trim().toLowerCase()
-    const match = sheetDemands.find(d => d.normalizedNickname === reqNick)
-    
-    if (!match) return <span className="status-pill status-neutral" style={{ fontSize: '0.7em', marginTop: '4px' }}>不在交接表</span>
-    if (match.status === 'COMPLETE') return <span className="status-pill status-success" style={{ fontSize: '0.7em', marginTop: '4px' }}>表内 (已填完)</span>
-    if (match.status === 'NEEDS_FILL') return <span className="status-pill status-warning" style={{ fontSize: '0.7em', marginTop: '4px' }}>表内 (缺数据, {match.contentId})</span>
-    if (match.status === 'CONTENT_ID_MISSING') return <span className="status-pill status-danger" style={{ fontSize: '0.7em', marginTop: '4px' }}>表内 (缺内容 ID)</span>
-    return <span className="status-pill status-info" style={{ fontSize: '0.7em', marginTop: '4px' }}>表内 ({match.status})</span>
-  }
-
   return (
-    <section className="panel sidebar-panel stack-md">
+    <SectionCard className="sidebar-panel stack-md">
       <div className="sidebar-panel-header">
         <div>
           <h2>账号侧栏</h2>
-          <p>从这里切换账号，右侧查询区会自动跟随当前账号。</p>
+          <p>这里只保留账号管理与切换；交接表匹配和批量下发已经回到批量工作台处理。</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button className="primary-btn" type="button" onClick={onCreate} disabled={loading}>
-              {loading ? '创建中...' : '新增账号'}
-            </button>
-            <button className="secondary-btn" type="button" onClick={onMatchSheet} disabled={matchLoading || batchQuerying}>
-              {matchLoading ? '匹配中...' : '匹配交接表'}
-            </button>
-            {sheetDemands && (
-                <button className="primary-btn" type="button" onClick={onBatchQuery} disabled={batchQuerying || matchLoading}>
-                {batchQuerying ? '跑批填表中...' : '一键查询填表'}
-                </button>
-            )}
+        <div className="account-list-actions">
+          <button className="primary-btn" type="button" onClick={onCreate} disabled={loading}>
+            {loading ? '创建中...' : '新增账号'}
+          </button>
         </div>
       </div>
 
       {accounts.length === 0 ? (
-        <div className="sidebar-empty-card">
-          <strong>还没有已保存账号</strong>
-          <p>先新增一个光合账号，后续就能直接切换并查询。</p>
-          <button className="secondary-btn" type="button" onClick={onCreate}>立即扫码登录</button>
-        </div>
+        <EmptyState
+          className="sidebar-empty-card"
+          title="还没有已保存账号"
+          description="先新增一个光合账号，后续就能直接切换并查询。"
+          actionLabel="立即扫码登录"
+          onAction={onCreate}
+        />
       ) : (
         <div className="account-list">
           {accounts.map((account) => {
             const selected = account.accountId === selectedAccountId
             const isMenuOpen = menuOpenId === account.accountId
-            const progress = queryProgress?.[account.accountId]
-            
+
             return (
               <article key={account.accountId} className={`account-card ${selected ? 'selected' : ''}`}>
                 <button
@@ -65,18 +49,11 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
                   <div className="account-copy">
                     <div className="account-title-row">
                       <strong className="account-name">{account.nickname || '未命名账号'}</strong>
-                      <span className={`status-pill status-${account.status === 'READY' ? 'success' : 'warning'}`}>
+                      <StatusBadge tone={account.status === 'READY' ? 'success' : 'warning'}>
                         {formatAccountStatus(account.status)}
-                      </span>
+                      </StatusBadge>
                     </div>
-                    {getMatchBadge(account)}
-                    {progress && (
-                        <div className={`account-meta`} style={{ color: progress.status === 'failed' ? '#ff4d4f' : '#1677ff', marginTop: '4px' }}>
-                            {progress.status === 'loading' ? '⌛ ' : progress.status === 'success' ? '✅ ' : '❌ '}
-                            {progress.message}
-                        </div>
-                    )}
-                    <div className="account-meta" style={{ marginTop: '8px' }}>账号 ID：{account.accountId}</div>
+                    <div className="account-meta account-meta-spaced">账号 ID：{account.accountId}</div>
                     <div className="account-meta">最近登录：{formatDateTime(account.lastLoginAt)}</div>
                   </div>
                 </button>
@@ -85,16 +62,20 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
                   <button
                     type="button"
                     className="icon-btn"
-                    aria-label={`更多操作-${account.accountId}`}
+                    aria-label={`${account.nickname || account.accountId} 更多操作`}
+                    aria-haspopup="menu"
+                    aria-expanded={isMenuOpen}
+                    aria-controls={isMenuOpen ? `account-menu-${account.accountId}` : undefined}
                     onClick={() => setMenuOpenId(isMenuOpen ? '' : account.accountId)}
                   >
                     ⋯
                   </button>
                   {isMenuOpen ? (
-                    <div className="popover-menu">
+                    <div className="popover-menu" role="menu" id={`account-menu-${account.accountId}`} aria-label={`${account.nickname || account.accountId} 操作菜单`}>
                       <button
                         type="button"
                         className="danger-menu-item"
+                        role="menuitem"
                         onClick={() => {
                           setMenuOpenId('')
                           onDelete(account.accountId)
@@ -110,6 +91,6 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
           })}
         </div>
       )}
-    </section>
+    </SectionCard>
   )
 }

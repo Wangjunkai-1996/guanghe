@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { formatDateTime, formatMetricValue, getErrorPresentation } from '../lib/ui'
 import { resolveMetricPayload } from '../lib/taskFormat'
+import { EmptyState } from './ui/EmptyState'
+import { SectionCard } from './ui/SectionCard'
 
 const METRIC_ORDER = [
   '查看次数',
@@ -14,9 +16,16 @@ const METRIC_ORDER = [
   '评论数'
 ]
 
+const PRIMARY_METRICS = METRIC_ORDER.slice(0, 5)
+const SECONDARY_METRICS = METRIC_ORDER.slice(5)
+
 export function ResultPanel({ result, error, loading, activeAccount, onRetryLogin }) {
   const [activeTab, setActiveTab] = useState('summary')
   const [copyState, setCopyState] = useState('idle')
+  const screenshotTabsId = useId()
+  const summaryTabId = `${screenshotTabsId}-summary-tab`
+  const rawTabId = `${screenshotTabsId}-raw-tab`
+  const panelId = `${screenshotTabsId}-panel`
 
   useEffect(() => {
     setActiveTab('summary')
@@ -49,7 +58,7 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
   }
 
   return (
-    <section className="panel result-panel stack-lg">
+    <SectionCard className="result-panel stack-lg">
       <div className="panel-header compact-panel-header">
         <div>
           <h2>结果区</h2>
@@ -84,19 +93,19 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
       ) : null}
 
       {!loading && !errorState && !result ? (
-        <div className="result-empty-state">
-          <strong>{activeAccount ? '输入内容 ID 后即可开始查询' : '请先选择或新增账号'}</strong>
-          <p>
-            {activeAccount
-              ? `当前账号为 ${activeAccount.nickname}，查询完成后这里会展示 9 个核心指标和两张截图。`
-              : '左侧选择一个账号后，再输入内容 ID 发起查询。'}
-          </p>
-        </div>
+          <EmptyState
+            title={activeAccount ? '输入内容 ID 后即可开始查询' : '请先选择或新增账号'}
+            description={
+              activeAccount
+              ? `当前账号为 ${activeAccount.nickname}，查询完成后这里会优先展示 5 个主 KPI、次要指标和两张截图。`
+              : '左侧选择一个账号后，再输入内容 ID 发起查询。'
+            }
+          />
       ) : null}
 
       {!loading && result ? (
         <>
-          <div className="result-state-bar success-bar">
+          <div className="result-state-bar success-bar" role="status" aria-live="polite">
             <div>
               <span className="result-state-label">状态</span>
               <strong>查询成功</strong>
@@ -105,7 +114,7 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
           </div>
 
           <div className="metrics-grid">
-            {METRIC_ORDER.map((metric) => {
+            {PRIMARY_METRICS.map((metric) => {
               const payload = resolveMetricPayload(result.metrics, metric)
               return (
                 <div key={metric} className="metric-card emphasized-metric-card">
@@ -116,6 +125,25 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
               )
             })}
           </div>
+
+          <section className="secondary-metrics-section stack-md" aria-label="次要指标">
+            <div className="compact-panel-header">
+              <h3>次要指标</h3>
+              <p>补充展示互动类指标，保持主 KPI 读数区的聚焦感。</p>
+            </div>
+            <div className="secondary-metrics-grid">
+              {SECONDARY_METRICS.map((metric) => {
+                const payload = resolveMetricPayload(result.metrics, metric)
+                return (
+                  <div key={metric} className="metric-card secondary-metric-card">
+                    <span>{metric}</span>
+                    <strong>{formatMetricValue(payload?.value)}</strong>
+                    <small>{payload?.field || '-'}</small>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
 
           <div className="result-meta-grid expanded-meta-grid">
             <div className="meta-card"><span>账号昵称</span><strong>{result.nickname}</strong></div>
@@ -137,6 +165,11 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
                 <button
                   className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`}
                   type="button"
+                  id={summaryTabId}
+                  role="tab"
+                  aria-controls={panelId}
+                  aria-selected={activeTab === 'summary'}
+                  tabIndex={activeTab === 'summary' ? 0 : -1}
                   onClick={() => setActiveTab('summary')}
                 >
                   作品分析截图
@@ -144,6 +177,11 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
                 <button
                   className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
                   type="button"
+                  id={rawTabId}
+                  role="tab"
+                  aria-controls={panelId}
+                  aria-selected={activeTab === 'raw'}
+                  tabIndex={activeTab === 'raw' ? 0 : -1}
                   onClick={() => setActiveTab('raw')}
                 >
                   作品管理截图
@@ -152,7 +190,12 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
               <small>{activeTab === 'summary' ? '对应“作品分析”页面 30 日汇总数据。' : '对应“内容管理 > 作品管理”页面的单条卡片数据。'}</small>
             </div>
 
-            <div className="image-stage">
+            <div
+              className="image-stage"
+              role="tabpanel"
+              id={panelId}
+              aria-labelledby={activeTab === 'summary' ? summaryTabId : rawTabId}
+            >
               {previewImageUrl ? (
                 <img
                   className="result-image large-preview"
@@ -168,7 +211,7 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
           </div>
         </>
       ) : null}
-    </section>
+    </SectionCard>
   )
 }
 

@@ -1,0 +1,118 @@
+body {
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  body {
+    min-width: 0;
+  }
+
+  .page-header,
+  .page-header-actions,
+  .ui-toolbar-header,
+  .ui-inline-notice,
+  .confirm-dialog-actions {
+    flex-direction: column;
+  }
+
+  .page-header-meta {
+    justify-items: stretch;
+    width: 100%;
+  }
+
+  .query-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .current-account-chip {
+    grid-column: 1 / -1;
+  }
+
+  .query-submit-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .secondary-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .login-drawer-meta-grid,
+  .login-drawer-stage-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .login-drawer-guide-list {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .page-shell,
+  .workspace-page {
+    padding: var(--space-4);
+  }
+
+  .page-header-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .query-toolbar-copy {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .query-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .secondary-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-list-actions > * {
+    flex: 1 1 140px;
+  }
+
+  .confirm-dialog-root {
+    padding: 16px;
+  }
+
+  .login-drawer-panel {
+    width: 100%;
+    padding: var(--space-4);
+  }
+
+  .login-drawer-header,
+  .login-drawer-overview-header,
+  .login-drawer-sms-row {
+    flex-direction: column;
+  }
+
+  .login-drawer-live-region {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .login-drawer-step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .login-drawer-step .status-pill {
+    grid-column: 2;
+    justify-self: flex-start;
+  }
+
+  .login-drawer-success-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .login-drawer-guide-list {
+    grid-template-columns: 1fr;
+  }
+
+  .login-drawer-actions > * {
+    flex: 1 1 150px;
+  }
+}

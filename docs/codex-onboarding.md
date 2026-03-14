@@ -2,6 +2,8 @@
 
 这份文档是给另一台电脑上的 Codex 用的，目标不是解释所有实现细节，而是让它能在 **10 分钟内判断项目定位、主业务链路、关键文件和推荐技能**，避免一上来走偏。
 
+> 前端 UI 重构主计划见 `docs/frontend-ui-refactor-plan.md`。后续如需继续这个专项任务，优先更新那一份文件中的 checklist 和 `Execution Log`。
+
 ## 0. 先纠偏
 
 - 虽然仓库目录名里有 `XCX`，**当前仓库不是微信小程序项目**。
@@ -450,4 +452,3 @@ Express API（server/app.js）
    - `artifacts/web/`
    - `data/tasks.json`
    - `data/accounts.json`
-

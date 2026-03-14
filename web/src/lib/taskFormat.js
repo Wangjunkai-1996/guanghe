@@ -1,3 +1,5 @@
+import { formatDateTime as formatSharedDateTime, formatMetricValue as formatSharedMetricValue } from './ui'
+
 export const METRIC_ORDER = [
     '查看次数',
     '查看人数',
@@ -53,18 +55,11 @@ export function getMissingTencentDocsHeaders(headers) {
 }
 
 export function formatDateTime(dateString) {
-    if (!dateString) return '-'
-    try {
-        const d = new Date(dateString)
-        return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-    } catch (_e) {
-        return String(dateString)
-    }
+    return formatSharedDateTime(dateString, { style: 'compact' })
 }
 
 export function formatMetricValue(value) {
-    if (value === null || value === undefined) return '-'
-    return String(value)
+    return formatSharedMetricValue(value)
 }
 
 export function supportsClipboardImage() {

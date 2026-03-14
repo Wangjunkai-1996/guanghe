@@ -4,6 +4,7 @@ import { LoginForm } from './components/LoginForm'
 import { BatchTasksWorkspace } from './components/BatchTasksWorkspace'
 import { LoginSessionPanel } from './components/LoginSessionPanel'
 import { ManualWorkspace } from './components/ManualWorkspace'
+import { PageHeader } from './components/ui/PageHeader'
 import { useAccounts } from './hooks/useAccounts'
 import { useLoginSession } from './hooks/useLoginSession'
 
@@ -61,12 +62,6 @@ export default function App() {
     }
   }, [loadAccounts])
 
-  useEffect(() => {
-    const handleSwitch = () => setActiveTab('batch')
-    window.addEventListener('switch-to-batch-tasks', handleSwitch)
-    return () => window.removeEventListener('switch-to-batch-tasks', handleSwitch)
-  }, [])
-
   const handleLogin = async (password) => {
     setAuthLoading(true)
     setAuthError('')
@@ -101,48 +96,83 @@ export default function App() {
     )
   }
 
+  const workspaceTabs = [
+    { key: 'batch', label: '批量任务与交接表闭环', tabId: 'workspace-tab-batch', panelId: 'workspace-panel-batch' },
+    { key: 'account', label: '账号管理与单条查询', tabId: 'workspace-tab-account', panelId: 'workspace-panel-account' }
+  ]
+
   return (
     <div className="workspace-page">
-      <header className="panel workspace-hero" style={{ marginBottom: '24px' }}>
-        <div className="workspace-hero-copy" style={{ marginBottom: '16px' }}>
-          <span className="section-eyebrow">多账号管理</span>
-          <h1>光合平台工作台</h1>
-        </div>
+      <PageHeader
+        eyebrow="多账号管理"
+        title="光合平台工作台"
+        description="围绕腾讯交接表闭环和单条内容验证建立统一工作台，后续会持续向运营控制台形态收敛。"
+        actions={(
+          <div className="tabs-switcher" role="tablist" aria-label="工作台标签">
+            {workspaceTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                id={tab.tabId}
+                role="tab"
+                aria-controls={tab.panelId}
+                aria-selected={activeTab === tab.key}
+                tabIndex={activeTab === tab.key ? 0 : -1}
+                className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+        stats={[
+          {
+            label: '当前模式',
+            value: activeTab === 'batch' ? '批量闭环' : '单条查询',
+            detail: activeTab === 'batch' ? '腾讯文档驱动工作流' : '账号库与单次验证'
+          },
+          {
+            label: '已保存账号',
+            value: accountsLoading ? '...' : String(accounts.length),
+            detail: activeAccount?.nickname ? `当前账号：${activeAccount.nickname}` : '可随时切换账号'
+          }
+        ]}
+      />
 
-        <div className="tabs-switcher">
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === 'batch' ? 'active' : ''}`}
-            onClick={() => setActiveTab('batch')}
-          >
-            批量任务与交接表闭环
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === 'account' ? 'active' : ''}`}
-            onClick={() => setActiveTab('account')}
-          >
-            账号管理与单条查询
-          </button>
-        </div>
-      </header>
+      <main className="stack-lg">
+        {workspaceTabs.map((tab) => {
+          if (tab.key !== activeTab) return null
 
-      {activeTab === 'account' ? (
-        <ManualWorkspace
-          accounts={accounts}
-          accountsLoading={accountsLoading}
-          selectedAccountId={selectedAccountId}
-          setSelectedAccountId={setSelectedAccountId}
-          activeAccount={activeAccount}
-          loginSession={loginSession}
-          isLoginDrawerOpen={isLoginDrawerOpen}
-          setIsLoginDrawerOpen={setIsLoginDrawerOpen}
-          handleCreateLoginSession={handleCreateLoginSession}
-          handleDeleteAccount={handleDeleteAccount}
-        />
-      ) : (
-        <BatchTasksWorkspace />
-      )}
+          return (
+            <section
+              key={tab.key}
+              id={tab.panelId}
+              role="tabpanel"
+              aria-labelledby={tab.tabId}
+              className="stack-lg"
+            >
+              {tab.key === 'account' ? (
+                <ManualWorkspace
+                  accounts={accounts}
+                  accountsLoading={accountsLoading}
+                  selectedAccountId={selectedAccountId}
+                  setSelectedAccountId={setSelectedAccountId}
+                  activeAccount={activeAccount}
+                  loginSession={loginSession}
+                  isLoginDrawerOpen={isLoginDrawerOpen}
+                  setIsLoginDrawerOpen={setIsLoginDrawerOpen}
+                  handleCreateLoginSession={handleCreateLoginSession}
+                  handleDeleteAccount={handleDeleteAccount}
+                  onRequestBatchTab={() => setActiveTab('batch')}
+                />
+              ) : (
+                <BatchTasksWorkspace />
+              )}
+            </section>
+          )
+        })}
+      </main>
 
       <LoginSessionPanel
         loginSession={loginSession}

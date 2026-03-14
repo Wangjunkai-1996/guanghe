@@ -31,9 +31,6 @@ export function useAccounts({ onLoaded } = {}) {
     }, [onLoaded])
 
     const deleteAccount = useCallback(async (accountId) => {
-        const confirmed = window.confirm(`确认删除账号 ${accountId} 吗？`)
-        if (!confirmed) return false
-
         await api.deleteAccount(accountId)
         if (selectedAccountId === accountId) {
             setSelectedAccountId('')

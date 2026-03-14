@@ -15,6 +15,7 @@ vi.mock('../web/src/api', () => {
     listTasks: vi.fn(),
     createTaskBatch: vi.fn(),
     createSheetDemandTaskBatch: vi.fn(),
+    createSheetDemandTaskFromAccounts: vi.fn(),
     refreshTaskLogin: vi.fn(),
     retryTaskQuery: vi.fn(),
     deleteTask: vi.fn(),
@@ -60,6 +61,7 @@ vi.stubGlobal('EventSource', MockEventSource)
 
 import App from '../web/src/App'
 import { BatchTasksWorkspace } from '../web/src/components/BatchTasksWorkspace'
+import { ManualWorkspace } from '../web/src/components/ManualWorkspace'
 import { api } from '../web/src/api'
 
 afterEach(() => {
@@ -72,6 +74,7 @@ describe('batch task workspace ui', () => {
     api.listTasks.mockResolvedValue({ tasks: [] })
     api.createTaskBatch.mockResolvedValue({ tasks: [] })
     api.createSheetDemandTaskBatch.mockResolvedValue({ tasks: [createTask({ taskId: 'sheet-task-1', taskMode: 'SHEET_DEMAND' })] })
+    api.createSheetDemandTaskFromAccounts.mockResolvedValue({ tasks: [createTask({ taskId: 'sheet-account-1', taskMode: 'SHEET_DEMAND' })] })
     api.refreshTaskLogin.mockResolvedValue({ ok: true })
     api.retryTaskQuery.mockResolvedValue({ ok: true })
     api.deleteTask.mockResolvedValue(undefined)
@@ -259,6 +262,11 @@ describe('batch task workspace ui', () => {
 
   test('shows tencent docs diagnostic summary and inspect artifacts', async () => {
     render(<BatchTasksWorkspace />)
+
+    expect(await screen.findByRole('heading', { name: '腾讯文档高级排障' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '同步诊断' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '展开排障信息' }))
 
     expect(await screen.findByRole('heading', { name: '同步诊断' })).toBeInTheDocument()
     expect(await screen.findByText('完全匹配')).toBeInTheDocument()
@@ -879,12 +887,70 @@ describe('batch task workspace ui', () => {
     expect(await screen.findByRole('heading', { name: '批量任务工作台' })).toBeInTheDocument()
     expect(screen.queryByText('查询工具条')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '账号管理与单条查询' }))
+    fireEvent.click(screen.getByRole('tab', { name: '账号管理与单条查询' }))
 
     await waitFor(() => {
       expect(screen.getByText('查询工具条')).toBeInTheDocument()
     })
     expect(screen.getByRole('heading', { name: '账号库与单条查询' })).toBeInTheDocument()
+  })
+
+  test('manual workspace routes to batch tab through onRequestBatchTab callback', async () => {
+    const onRequestBatchTab = vi.fn()
+
+    render(
+      <ManualWorkspace
+        accounts={[{ accountId: '1001', nickname: '自然卷儿', status: 'READY', lastLoginAt: '2026-03-11T00:29:00.000Z' }]}
+        accountsLoading={false}
+        selectedAccountId="1001"
+        setSelectedAccountId={vi.fn()}
+        activeAccount={{ accountId: '1001', nickname: '自然卷儿', status: 'READY' }}
+        loginSession={null}
+        isLoginDrawerOpen={false}
+        setIsLoginDrawerOpen={vi.fn()}
+        handleCreateLoginSession={vi.fn()}
+        handleDeleteAccount={vi.fn()}
+        onRequestBatchTab={onRequestBatchTab}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: '匹配交接表' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '一键查询填表' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '前往批量闭环' }))
+    expect(onRequestBatchTab).toHaveBeenCalled()
+  })
+
+  test('batch workspace matches saved accounts and uses confirm dialog before creating sheet-demand tasks', async () => {
+    api.listAccounts.mockResolvedValue({
+      accounts: [
+        { accountId: '1001', nickname: '达人A', status: 'READY', lastLoginAt: '2026-03-11T00:29:00.000Z' },
+        { accountId: '1002', nickname: '达人C', status: 'READY', lastLoginAt: '2026-03-11T01:29:00.000Z' }
+      ]
+    })
+
+    render(<BatchTasksWorkspace />)
+
+    await screen.findByRole('heading', { name: '匹配账号并批量下发' })
+
+    fireEvent.click(screen.getByRole('button', { name: '匹配账号库' }))
+
+    expect(await screen.findByText('已匹配 1 个可直接创建任务的账号')).toBeInTheDocument()
+    expect(api.inspectTencentDocsSheet.mock.calls.some(([payload]) => payload?.forceRefresh === true)).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: '为匹配账号创建任务' }))
+
+    expect(await screen.findByRole('alertdialog', { name: '确认为匹配账号创建批量任务' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '创建批量任务' }))
+
+    await waitFor(() => {
+      expect(api.createSheetDemandTaskFromAccounts).toHaveBeenCalledWith({
+        accountIds: ['1001'],
+        sheetTarget: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
+      })
+    })
+
+    expect(await screen.findByText('已为 1 个匹配账号创建批量任务')).toBeInTheDocument()
   })
 })
 
