@@ -3,6 +3,8 @@ dist/
 artifacts/
 .cache/
 data/*.json
+data/*.sqlite
+data/*.sqlite-*
 data/accounts.json.bak.*
 output/
 midscene_run/

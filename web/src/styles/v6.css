@@ -1,0 +1,977 @@
+body.v6-console-ui {
+  --font-sans: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-display: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-numeric: 'DIN Alternate', 'Bahnschrift', 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SFMono-Regular', monospace;
+
+  --brand-ink-950: #09111f;
+  --brand-ink-900: #0f1726;
+  --brand-ink-800: #172235;
+  --brand-ink-700: #20314f;
+  --brand-paper: rgba(15, 23, 38, 0.92);
+  --brand-gold-500: #4ea7ff;
+  --brand-gold-400: #76b9ff;
+  --brand-gold-100: rgba(78, 167, 255, 0.16);
+  --brand-coral-500: #6fb9ff;
+  --brand-coral-100: rgba(111, 185, 255, 0.14);
+  --brand-success-500: #18b47a;
+  --brand-success-100: rgba(24, 180, 122, 0.14);
+  --brand-warning-500: #d9a441;
+  --brand-warning-100: rgba(217, 164, 65, 0.14);
+  --brand-danger-500: #e06262;
+  --brand-danger-100: rgba(224, 98, 98, 0.14);
+
+  --bg-page-solid: #060c16;
+  --bg-page:
+    radial-gradient(circle at top left, rgba(64, 134, 255, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(10, 23, 46, 0.74), transparent 28%),
+    linear-gradient(180deg, #08111f 0%, #0a1423 100%);
+  --bg-panel: rgba(10, 19, 31, 0.9);
+  --bg-soft: rgba(14, 23, 38, 0.92);
+  --bg-emphasis: rgba(18, 28, 45, 0.96);
+  --bg-card-strong: linear-gradient(180deg, rgba(13, 21, 34, 0.98), rgba(8, 15, 26, 0.94));
+  --bg-card-accent: linear-gradient(180deg, rgba(19, 34, 55, 0.98), rgba(11, 21, 35, 0.94));
+  --bg-hero: linear-gradient(180deg, rgba(11, 18, 31, 0.96), rgba(8, 14, 24, 0.96));
+
+  --text-primary: #edf4ff;
+  --text-secondary: #8ea3c2;
+  --text-muted: #68809f;
+  --text-inverse: #f7fbff;
+  --text-gold: #8dc6ff;
+
+  --border-default: rgba(120, 150, 193, 0.18);
+  --border-soft: rgba(120, 150, 193, 0.1);
+  --border-strong: rgba(168, 190, 224, 0.22);
+  --border-glow: rgba(78, 167, 255, 0.18);
+
+  --shadow-panel: 0 18px 42px rgba(0, 0, 0, 0.32);
+  --shadow-panel-strong: 0 28px 70px rgba(0, 0, 0, 0.38);
+  --shadow-drawer: -18px 0 40px rgba(0, 0, 0, 0.42);
+  --shadow-floating: 0 22px 48px rgba(0, 0, 0, 0.32);
+  --shadow-focus: 0 0 0 3px rgba(78, 167, 255, 0.22);
+  --focus-ring: 0 0 0 3px rgba(78, 167, 255, 0.24);
+
+  --radius-xl: 24px;
+  --radius-lg: 18px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+
+  color: var(--text-primary);
+  background: var(--bg-page);
+}
+
+body.v6-console-ui::before {
+  background-image:
+    linear-gradient(rgba(133, 165, 214, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(133, 165, 214, 0.06) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.34), transparent 84%);
+  opacity: 1;
+}
+
+body.v6-console-ui::after {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(78, 167, 255, 0.12), transparent 14%),
+    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.04), transparent 14%);
+  opacity: 1;
+}
+
+body.v6-console-ui .panel {
+  background: var(--bg-panel);
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(18px);
+}
+
+body.v6-console-ui .panel::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 20%);
+}
+
+body.v6-console-ui .section-eyebrow {
+  color: #88bfff;
+}
+
+body.v6-console-ui .secondary-btn,
+body.v6-console-ui .inline-link-btn,
+body.v6-console-ui .icon-btn,
+body.v6-console-ui input,
+body.v6-console-ui select,
+body.v6-console-ui textarea {
+  background: rgba(14, 23, 38, 0.92);
+  color: var(--text-primary);
+  border-color: rgba(123, 151, 191, 0.18);
+  box-shadow: none;
+}
+
+body.v6-console-ui .secondary-btn:hover,
+body.v6-console-ui .inline-link-btn:hover,
+body.v6-console-ui .icon-btn:hover,
+body.v6-console-ui .tab-btn:hover {
+  background: rgba(24, 39, 62, 0.96);
+  border-color: rgba(123, 151, 191, 0.28);
+}
+
+body.v6-console-ui .primary-btn {
+  background: linear-gradient(135deg, #1c72ff 0%, #4ea7ff 100%);
+  border-color: rgba(110, 181, 255, 0.28);
+  color: #f7fbff;
+  box-shadow: 0 14px 28px rgba(28, 114, 255, 0.22);
+}
+
+body.v6-console-ui .ghost-btn,
+body.v6-console-ui .secondary-btn.ghost-btn {
+  background: rgba(14, 20, 31, 0.7);
+  color: #a9c4e7;
+}
+
+body.v6-console-ui .app-shell {
+  max-width: none;
+  margin: 0;
+  grid-template-columns: 292px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+body.v6-console-ui .app-sidebar {
+  top: 18px;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(8, 14, 24, 0.98), rgba(11, 19, 33, 0.96));
+  border: 1px solid rgba(120, 150, 193, 0.12);
+}
+
+body.v6-console-ui .app-sidebar::before {
+  background: radial-gradient(circle at top right, rgba(78, 167, 255, 0.12), transparent 30%);
+}
+
+body.v6-console-ui .app-sidebar-brand {
+  gap: 10px;
+}
+
+body.v6-console-ui .app-sidebar-brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(78, 167, 255, 0.12);
+  border-color: rgba(78, 167, 255, 0.18);
+}
+
+body.v6-console-ui .app-sidebar-brand-copy strong {
+  font-size: 20px;
+}
+
+body.v6-console-ui .app-side-nav {
+  gap: 8px;
+}
+
+body.v6-console-ui .app-side-nav-item {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(13, 21, 34, 0.82);
+  border-color: rgba(120, 150, 193, 0.08);
+}
+
+body.v6-console-ui .app-side-nav-item.active {
+  background: linear-gradient(180deg, rgba(28, 114, 255, 0.22), rgba(14, 39, 74, 0.24));
+  border-color: rgba(78, 167, 255, 0.24);
+}
+
+body.v6-console-ui .app-sidebar-footer {
+  gap: 10px;
+}
+
+body.v6-console-ui .app-sidebar-system-grid {
+  display: grid;
+  gap: 8px;
+}
+
+body.v6-console-ui .app-sidebar-status-card {
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(13, 21, 34, 0.88);
+  border-color: rgba(120, 150, 193, 0.12);
+}
+
+body.v6-console-ui .app-shell-main {
+  display: grid;
+  gap: 14px;
+}
+
+body.v6-console-ui .app-topbar {
+  display: grid;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: rgba(8, 14, 24, 0.84);
+  border: 1px solid rgba(120, 150, 193, 0.12);
+  box-shadow: var(--shadow-panel);
+}
+
+body.v6-console-ui .app-topbar-copy-v6 {
+  gap: 6px;
+}
+
+body.v6-console-ui .app-topbar-copy-main strong {
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+body.v6-console-ui .app-topbar-copy small {
+  color: var(--text-secondary);
+  max-width: 72ch;
+}
+
+body.v6-console-ui .app-heartbeat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 10px;
+}
+
+body.v6-console-ui .app-heartbeat-card {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  min-height: 66px;
+  border-radius: 14px;
+  border: 1px solid rgba(120, 150, 193, 0.1);
+  background: rgba(15, 23, 38, 0.86);
+}
+
+body.v6-console-ui .app-heartbeat-card span,
+body.v6-console-ui .app-heartbeat-card small {
+  color: var(--text-secondary);
+}
+
+body.v6-console-ui .app-heartbeat-card strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+body.v6-console-ui .app-shell-body {
+  min-height: 0;
+}
+
+body.v6-console-ui .workspace-view {
+  min-height: 0;
+}
+
+body.v6-console-ui .tasks-workspace-v6 {
+  gap: 16px;
+}
+
+body.v6-console-ui .batch-v6-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 420px;
+  gap: 16px;
+  align-items: start;
+}
+
+body.v6-console-ui .batch-v6-column {
+  min-width: 0;
+}
+
+body.v6-console-ui .batch-v6-sidebar,
+body.v6-console-ui .batch-v6-inspector {
+  position: sticky;
+  top: 18px;
+}
+
+body.v6-console-ui .batch-v6-main {
+  min-width: 0;
+}
+
+body.v6-console-ui .batch-v6-queue-shell {
+  display: grid;
+  gap: 12px;
+}
+
+body.v6-console-ui .batch-v6-queue-header,
+body.v6-console-ui .batch-mission-header,
+body.v6-console-ui .batch-inspector-header,
+body.v6-console-ui .queue-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.v6-console-ui .batch-v6-queue-header p,
+body.v6-console-ui .batch-mission-header p,
+body.v6-console-ui .batch-inspector-header p,
+body.v6-console-ui .queue-panel-header p {
+  color: var(--text-secondary);
+}
+
+body.v6-console-ui .batch-view-toggle,
+body.v6-console-ui .mission-command-meta,
+body.v6-console-ui .queue-panel-meta,
+body.v6-console-ui .mission-secondary-actions,
+body.v6-console-ui .batch-inspector-actions,
+body.v6-console-ui .inspector-demand-grid,
+body.v6-console-ui .mission-summary-strip,
+body.v6-console-ui .demand-summary-strip.v6 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.v6-console-ui .batch-v6-queue-header {
+  justify-content: flex-end;
+}
+
+body.v6-console-ui .batch-mission-panel,
+body.v6-console-ui .batch-inspector-panel,
+body.v6-console-ui .demand-queue-panel,
+body.v6-console-ui .manual-query-bar,
+body.v6-console-ui .result-panel-vnext {
+  border-radius: 20px;
+}
+
+body.v6-console-ui .mission-stepper {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.v6-console-ui .mission-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  background: rgba(14, 23, 38, 0.82);
+  border: 1px solid rgba(120, 150, 193, 0.08);
+}
+
+body.v6-console-ui .mission-step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(120, 150, 193, 0.26);
+  box-shadow: 0 0 0 4px rgba(120, 150, 193, 0.08);
+}
+
+body.v6-console-ui .mission-step.state-done .mission-step-dot {
+  background: #18b47a;
+  box-shadow: 0 0 0 4px rgba(24, 180, 122, 0.12);
+}
+
+body.v6-console-ui .mission-step.state-active .mission-step-dot {
+  background: #4ea7ff;
+  box-shadow: 0 0 0 4px rgba(78, 167, 255, 0.12);
+}
+
+body.v6-console-ui .mission-step-copy {
+  display: grid;
+  gap: 2px;
+}
+
+body.v6-console-ui .mission-step-copy small,
+body.v6-console-ui .mission-command-copy p,
+body.v6-console-ui .mission-command-meta span,
+body.v6-console-ui .demand-row-meta span,
+body.v6-console-ui .inspector-datum span,
+body.v6-console-ui .inspector-panel-block-header small {
+  color: var(--text-secondary);
+}
+
+body.v6-console-ui .mission-target-fields {
+  display: grid;
+  gap: 8px;
+}
+
+body.v6-console-ui .mission-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.v6-console-ui .mission-summary-card,
+body.v6-console-ui .demand-summary-card {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(15, 23, 38, 0.84);
+  border: 1px solid rgba(120, 150, 193, 0.1);
+  display: grid;
+  gap: 4px;
+}
+
+body.v6-console-ui .mission-summary-card strong,
+body.v6-console-ui .demand-summary-card strong {
+  font-size: 18px;
+}
+
+body.v6-console-ui .mission-summary-card.tone-warning,
+body.v6-console-ui .demand-summary-card.tone-warning {
+  border-color: rgba(217, 164, 65, 0.28);
+}
+
+body.v6-console-ui .mission-summary-card.tone-danger,
+body.v6-console-ui .demand-summary-card.tone-danger {
+  border-color: rgba(224, 98, 98, 0.28);
+}
+
+body.v6-console-ui .mission-summary-card.tone-success,
+body.v6-console-ui .demand-summary-card.tone-success {
+  border-color: rgba(24, 180, 122, 0.28);
+}
+
+body.v6-console-ui .mission-command-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(12, 22, 36, 0.96), rgba(7, 14, 24, 0.96));
+  border: 1px solid rgba(78, 167, 255, 0.16);
+}
+
+body.v6-console-ui .mission-command-copy h3 {
+  font-size: 18px;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+}
+
+body.v6-console-ui .mission-command-actions {
+  display: grid;
+  gap: 10px;
+}
+
+body.v6-console-ui .mission-secondary-actions {
+  align-items: stretch;
+}
+
+body.v6-console-ui .task-board-toolbar,
+body.v6-console-ui .task-board-toolbar-right {
+  gap: 10px;
+}
+
+body.v6-console-ui .batch-task-board,
+body.v6-console-ui .demand-queue-panel {
+  background: var(--bg-panel);
+}
+
+body.v6-console-ui .batch-task-board .ui-section-card-header,
+body.v6-console-ui .demand-queue-panel .ui-section-card-header {
+  margin-bottom: 8px;
+}
+
+body.v6-console-ui .task-board-meta,
+body.v6-console-ui .queue-panel-meta {
+  color: var(--text-secondary);
+}
+
+body.v6-console-ui .task-console-layout.is-desktop {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.v6-console-ui .task-list-pane {
+  min-width: 0;
+}
+
+body.v6-console-ui .task-queue-list {
+  display: grid;
+  gap: 10px;
+}
+
+body.v6-console-ui .task-queue-card {
+  border-radius: 16px;
+  background: rgba(13, 22, 36, 0.86);
+  border: 1px solid rgba(120, 150, 193, 0.12);
+}
+
+body.v6-console-ui .task-queue-card.selected {
+  border-color: rgba(78, 167, 255, 0.28);
+  box-shadow: 0 0 0 1px rgba(78, 167, 255, 0.18);
+}
+
+body.v6-console-ui .demand-list {
+  display: grid;
+  gap: 8px;
+}
+
+body.v6-console-ui .demand-row {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  border-radius: 16px;
+  background: rgba(13, 22, 36, 0.82);
+  border: 1px solid rgba(120, 150, 193, 0.1);
+}
+
+body.v6-console-ui .demand-row.selected {
+  border-color: rgba(78, 167, 255, 0.3);
+  box-shadow: 0 0 0 1px rgba(78, 167, 255, 0.16);
+}
+
+body.v6-console-ui .demand-row-main,
+body.v6-console-ui .demand-row-meta,
+body.v6-console-ui .inspector-panel-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.v6-console-ui .demand-row-copy {
+  display: grid;
+  gap: 2px;
+}
+
+body.v6-console-ui .batch-inspector-panel {
+  min-height: calc(100vh - 36px);
+}
+
+body.v6-console-ui .batch-inspector-panel.empty {
+  min-height: 420px;
+}
+
+body.v6-console-ui .batch-task-launcher .batch-inspector-actions {
+  display: grid;
+}
+
+body.v6-console-ui .batch-task-launcher-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.v6-console-ui .inspector-qr-card {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(13, 22, 36, 0.88);
+  border: 1px solid rgba(120, 150, 193, 0.12);
+}
+
+body.v6-console-ui .inspector-qr-card .qr-image {
+  width: min(100%, 280px);
+  border-radius: 18px;
+}
+
+body.v6-console-ui .inspector-demand-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.v6-console-ui .inspector-datum {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(13, 22, 36, 0.82);
+  border: 1px solid rgba(120, 150, 193, 0.1);
+}
+
+body.v6-console-ui .inspector-panel-block {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(13, 22, 36, 0.82);
+  border: 1px solid rgba(120, 150, 193, 0.1);
+}
+
+body.v6-console-ui .task-detail-pane,
+body.v6-console-ui .manual-query-bar,
+body.v6-console-ui .result-panel-vnext {
+  background: var(--bg-panel);
+  border-color: rgba(120, 150, 193, 0.14);
+}
+
+body.v6-console-ui .batch-task-detail-hero,
+body.v6-console-ui .batch-task-detail-main-surface,
+body.v6-console-ui .batch-task-detail-side-card {
+  background: var(--bg-panel);
+  border: 1px solid rgba(120, 150, 193, 0.14);
+}
+
+body.v6-console-ui .batch-task-detail-drawer {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  width: min(920px, calc(100vw - 72px));
+  z-index: 80;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(7, 14, 24, 0.96), rgba(9, 18, 31, 0.94)),
+    rgba(8, 14, 24, 0.94);
+  border: 1px solid rgba(120, 150, 193, 0.16);
+  box-shadow:
+    -24px 0 48px rgba(3, 8, 14, 0.34),
+    0 24px 60px rgba(3, 8, 14, 0.38);
+  overflow: hidden;
+  animation: batch-task-drawer-enter 220ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+body.v6-console-ui .batch-task-detail-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: linear-gradient(90deg, rgba(3, 8, 14, 0.12), rgba(3, 8, 14, 0.18));
+}
+
+body.v6-console-ui .batch-task-detail-drawer::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(78, 167, 255, 0.3), rgba(78, 167, 255, 0.04));
+}
+
+body.v6-console-ui .batch-task-detail-drawer-shell {
+  position: relative;
+  height: 100%;
+  overflow: auto;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+body.v6-console-ui .batch-task-detail-drawer-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 0;
+}
+
+body.v6-console-ui .batch-task-detail-drawer-topbar-copy {
+  display: grid;
+  gap: 2px;
+}
+
+body.v6-console-ui .batch-task-detail-drawer-topbar-copy strong {
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+body.v6-console-ui .batch-task-detail-drawer-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.v6-console-ui .batch-task-drawer-collapse {
+  min-height: 36px;
+}
+
+body.v6-console-ui .task-detail-pane-copy p,
+body.v6-console-ui .manual-workspace-header p,
+body.v6-console-ui .manual-query-inline-hint,
+body.v6-console-ui .result-state-label,
+body.v6-console-ui .image-panel-header small,
+body.v6-console-ui .batch-task-detail-copy p,
+body.v6-console-ui .batch-task-detail-side-header small,
+body.v6-console-ui .batch-task-detail-inline-meta,
+body.v6-console-ui .batch-task-detail-drawer-topbar-copy strong {
+  color: var(--text-secondary);
+}
+
+body.v6-console-ui .batch-task-detail-page {
+  display: grid;
+  gap: 12px;
+}
+
+body.v6-console-ui .batch-task-detail-hero {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 20px;
+}
+
+body.v6-console-ui .batch-task-detail-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+body.v6-console-ui .batch-task-detail-header,
+body.v6-console-ui .batch-task-detail-header-actions,
+body.v6-console-ui .batch-task-detail-meta-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.v6-console-ui .batch-task-detail-copy {
+  display: grid;
+  gap: 4px;
+}
+
+body.v6-console-ui .batch-task-detail-copy h2 {
+  margin: 0;
+}
+
+body.v6-console-ui .batch-task-detail-inline-meta,
+body.v6-console-ui .batch-task-detail-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.v6-console-ui .batch-task-detail-meta-row {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(13, 22, 36, 0.82);
+  border: 1px solid rgba(120, 150, 193, 0.1);
+}
+
+body.v6-console-ui .batch-task-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+body.v6-console-ui .batch-task-detail-main-surface,
+body.v6-console-ui .batch-task-detail-side-card {
+  border-radius: 20px;
+}
+
+body.v6-console-ui .batch-task-detail-main-surface {
+  padding: 18px;
+}
+
+body.v6-console-ui .batch-task-detail-side {
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 18px;
+}
+
+body.v6-console-ui .batch-task-detail-side-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+body.v6-console-ui .batch-task-detail-side-header,
+body.v6-console-ui .batch-task-detail-meta {
+  display: grid;
+  gap: 8px;
+}
+
+body.v6-console-ui .batch-task-detail-links {
+  display: grid;
+  gap: 8px;
+}
+
+body.v6-console-ui .manual-workspace-vnext {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+body.v6-console-ui .manual-workspace-vnext::before {
+  display: none;
+}
+
+body.v6-console-ui .manual-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: rgba(8, 14, 24, 0.84);
+  border: 1px solid rgba(120, 150, 193, 0.12);
+}
+
+body.v6-console-ui .manual-vnext-layout {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 16px;
+}
+
+body.v6-console-ui .manual-vnext-sidebar,
+body.v6-console-ui .manual-vnext-main {
+  min-width: 0;
+}
+
+body.v6-console-ui .manual-query-bar-header {
+  align-items: flex-start;
+}
+
+body.v6-console-ui .manual-query-inline {
+  grid-template-columns: minmax(0, 1fr) 240px 168px;
+  align-items: end;
+}
+
+body.v6-console-ui .manual-query-account-pill {
+  background: rgba(13, 22, 36, 0.82);
+  border-color: rgba(120, 150, 193, 0.12);
+  color: var(--text-primary);
+}
+
+body.v6-console-ui .result-conclusion-card,
+body.v6-console-ui .image-panel,
+body.v6-console-ui .result-supporting-details,
+body.v6-console-ui .task-focus-banner,
+body.v6-console-ui .task-detail-section,
+body.v6-console-ui .result-state-card,
+body.v6-console-ui .task-state-banner,
+body.v6-console-ui .sync-preview-card {
+  background: rgba(13, 22, 36, 0.82);
+  border-color: rgba(120, 150, 193, 0.12);
+}
+
+body.v6-console-ui .result-primary-kpis,
+body.v6-console-ui .task-conclusion-grid {
+  gap: 8px;
+}
+
+body.v6-console-ui .metric-card,
+body.v6-console-ui .meta-card,
+body.v6-console-ui .task-conclusion-card {
+  background: rgba(15, 23, 38, 0.88);
+  border-color: rgba(120, 150, 193, 0.1);
+}
+
+body.v6-console-ui .toolbar-search-field span,
+body.v6-console-ui .field span,
+body.v6-console-ui .mission-summary-card span,
+body.v6-console-ui .demand-summary-card span {
+  color: var(--text-secondary);
+}
+
+body.v6-console-ui .workspace-module-fallback {
+  background: rgba(10, 19, 31, 0.92);
+  border: 1px solid rgba(120, 150, 193, 0.12);
+  color: var(--text-primary);
+}
+
+@media (max-width: 1280px) {
+  body.v6-console-ui .app-heartbeat-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.v6-console-ui .batch-v6-grid {
+    grid-template-columns: 300px minmax(0, 1fr) 380px;
+  }
+
+  body.v6-console-ui .batch-task-detail-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+
+  body.v6-console-ui .batch-task-detail-drawer {
+    width: min(860px, calc(100vw - 56px));
+  }
+}
+
+@media (max-width: 1100px) {
+  body.v6-console-ui .batch-v6-grid,
+  body.v6-console-ui .manual-vnext-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .batch-v6-sidebar,
+  body.v6-console-ui .batch-v6-inspector {
+    position: static;
+  }
+
+  body.v6-console-ui .batch-task-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .batch-task-detail-side {
+    position: static;
+  }
+
+  body.v6-console-ui .batch-task-detail-drawer {
+    width: min(780px, calc(100vw - 36px));
+    right: 12px;
+    top: 12px;
+    bottom: 12px;
+  }
+}
+
+@media (max-width: 900px) {
+  body.v6-console-ui .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .app-sidebar {
+    position: static;
+  }
+
+  body.v6-console-ui .app-heartbeat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.v6-console-ui .batch-v6-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .batch-v6-queue-header,
+  body.v6-console-ui .batch-mission-header,
+  body.v6-console-ui .batch-inspector-header,
+  body.v6-console-ui .queue-panel-header,
+  body.v6-console-ui .batch-task-detail-header,
+  body.v6-console-ui .demand-row-main,
+  body.v6-console-ui .demand-row-meta,
+  body.v6-console-ui .inspector-panel-block-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  body.v6-console-ui .manual-query-inline {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .inspector-demand-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .mission-stepper,
+  body.v6-console-ui .mission-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .batch-task-detail-drawer {
+    width: calc(100vw - 24px);
+  }
+}
+
+@media (max-width: 640px) {
+  body.v6-console-ui .app-heartbeat-strip {
+    grid-template-columns: 1fr;
+  }
+
+  body.v6-console-ui .app-topbar,
+  body.v6-console-ui .manual-workspace-header {
+    padding: 14px;
+  }
+
+  body.v6-console-ui .batch-task-detail-drawer-topbar {
+    align-items: flex-start;
+  }
+
+  body.v6-console-ui .batch-task-detail-drawer-topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@keyframes batch-task-drawer-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(26px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}

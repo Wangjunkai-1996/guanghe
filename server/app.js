@@ -2,8 +2,9 @@ const express = require('express')
 const path = require('path')
 const session = require('express-session')
 const { AppError } = require('./lib/errors')
+const { attachV7Routes } = require('./v7/routes')
 
-function createApp({ config, loginService, queryService, taskService, tencentDocsSyncService }) {
+function createApp({ config, loginService, queryService, taskService, tencentDocsSyncService, v7Service = null }) {
   const app = express()
   app.set('trust proxy', 1)
   app.use(express.json())
@@ -57,6 +58,8 @@ function createApp({ config, loginService, queryService, taskService, tencentDoc
     }
     next()
   })
+
+  attachV7Routes(app, { v7Service })
 
   app.get('/api/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream')

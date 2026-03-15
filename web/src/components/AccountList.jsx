@@ -9,19 +9,19 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
   const [menuOpenId, setMenuOpenId] = useState('')
 
   return (
-    <SectionCard className="sidebar-panel stack-md" variant="feature">
-      <div className="sidebar-panel-header">
-        <div>
-          <h2>账号侧栏</h2>
-          <p>这里只保留账号管理与切换；交接表匹配和批量下发已经回到批量工作台处理。</p>
-        </div>
-        <div className="account-list-actions">
-          <button className="primary-btn" type="button" onClick={onCreate} disabled={loading}>
-            <Plus size={18} aria-hidden="true" />
-            <span>{loading ? '创建中...' : '新增账号'}</span>
-          </button>
-        </div>
-      </div>
+    <SectionCard
+      className="account-list-panel stack-md"
+      eyebrow="账号列表"
+      title="切换账号与管理授权"
+      description="这里只保留新增账号、切换账号和单条复核。"
+      variant="feature"
+      actions={(
+        <button className="primary-btn" type="button" onClick={onCreate} disabled={loading}>
+          <Plus size={18} aria-hidden="true" />
+          <span>{loading ? '创建中...' : '新增账号'}</span>
+        </button>
+      )}
+    >
 
       {accounts.length === 0 ? (
         <EmptyState
@@ -30,7 +30,7 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
           tone="neutral"
           icon={UserRound}
           title="还没有已保存账号"
-          description="先新增一个光合账号，后续就能直接切换并查询。"
+          description="先新增一个可用账号，后续就能直接切换并查询。"
           actionLabel="立即扫码登录"
           onAction={onCreate}
         />
@@ -39,9 +39,10 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
           {accounts.map((account) => {
             const selected = account.accountId === selectedAccountId
             const isMenuOpen = menuOpenId === account.accountId
+            const tone = account.status === 'READY' ? 'success' : 'warning'
 
             return (
-              <article key={account.accountId} className={`account-card ${selected ? 'selected' : ''}`}>
+              <article key={account.accountId} className={`account-card compact-account-card ${selected ? 'selected' : ''}`}>
                 <button
                   type="button"
                   className="account-select"
@@ -54,16 +55,14 @@ export function AccountList({ accounts, selectedAccountId, loading, onSelect, on
                   <div className="account-copy">
                     <div className="account-title-row">
                       <strong className="account-name">{account.nickname || '未命名账号'}</strong>
-                      <StatusBadge
-                        tone={account.status === 'READY' ? 'success' : 'warning'}
-                        emphasis={selected ? 'solid' : 'soft'}
-                        icon={account.status === 'READY' ? ShieldCheck : UserRound}
-                      >
+                      <StatusBadge tone={tone} emphasis={selected ? 'solid' : 'soft'} size="sm" icon={account.status === 'READY' ? ShieldCheck : UserRound}>
                         {formatAccountStatus(account.status)}
                       </StatusBadge>
                     </div>
-                    <div className="account-meta account-meta-spaced">账号 ID：{account.accountId}</div>
-                    <div className="account-meta">最近登录：{formatDateTime(account.lastLoginAt)}</div>
+                    <div className="account-meta-grid">
+                      <span>{account.accountId}</span>
+                      <span>最近登录 {formatDateTime(account.lastLoginAt)}</span>
+                    </div>
                   </div>
                 </button>
 

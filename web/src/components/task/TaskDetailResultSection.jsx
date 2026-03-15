@@ -137,7 +137,7 @@ export const TaskDetailResultSection = React.memo(function TaskDetailResultSecti
                                 刷新
                             </button>
                         </div>
-                        <p className="qr-help-text">请使用手机光合平台或微信扫码。确认成功后，系统会自动开始查询。</p>
+                        <p className="qr-help-text">请使用手机端扫码。确认成功后，系统会自动开始查询。</p>
                     </div>
                 ) : (
                     <div className="stack-sm">

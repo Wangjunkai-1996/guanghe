@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowRight, Hash, LoaderCircle, SearchCheck, UserRound } from 'lucide-react'
-import { CommandBar } from './ui/CommandBar'
+import { ArrowRight, Hash, LoaderCircle, UserRound } from 'lucide-react'
 
 export function QueryForm({ activeAccount, loading, onSubmit }) {
   const [contentId, setContentId] = useState('')
@@ -8,8 +7,8 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
 
   const canSubmit = Boolean(activeAccount?.accountId && contentId)
   const helperText = useMemo(() => {
-    if (!activeAccount?.accountId) return '先在左侧选择账号，或新增账号后再发起验证。'
-    return '固定查询近 30 日的 5 个主 KPI，并同步生成汇总图与原始截图。'
+    if (!activeAccount?.accountId) return '先从账号列表选择一个账号。'
+    return '会保留最近一次结果，并在刷新时局部显示加载状态。'
   }, [activeAccount?.accountId])
 
   const handleChange = (event) => {
@@ -33,24 +32,21 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
   }
 
   return (
-    <CommandBar
-      className="query-command-bar"
-      eyebrow="验证命令条"
-      title="单条内容验证"
-      description={helperText}
-      meta={(
-        <div className="query-command-meta">
-          <span className="query-command-chip">
-            <UserRound size={16} aria-hidden="true" />
-            <span>当前账号</span>
-            <strong>{activeAccount?.nickname || '未选择'}</strong>
-          </span>
-          <small>{activeAccount?.accountId || '请先在左侧选择可用账号'}</small>
+    <section className="panel manual-query-bar stack-sm">
+      <div className="manual-query-bar-header">
+        <div>
+          <span className="section-eyebrow">Command Bar</span>
+          <h3>选账号，输 ID，直接看结论</h3>
         </div>
-      )}
-    >
-      <form className="query-command-strip" onSubmit={handleSubmit}>
-        <label className="field query-input-field query-command-field">
+        <div className="manual-query-account-pill">
+          <UserRound size={16} aria-hidden="true" />
+          <span>当前账号</span>
+          <strong>{activeAccount?.nickname || '未选择'}</strong>
+        </div>
+      </div>
+
+      <form className="manual-query-inline" onSubmit={handleSubmit}>
+        <label className="field manual-query-inline-field">
           <span className="query-input-label">
             <Hash size={16} aria-hidden="true" />
             <span>内容 ID</span>
@@ -64,22 +60,22 @@ export function QueryForm({ activeAccount, loading, onSubmit }) {
           />
         </label>
 
+        <div className={`manual-query-inline-hint ${inputHint ? 'tone-warning' : ''}`} aria-live="polite">
+          {loading ? (
+            <>
+              <LoaderCircle size={16} aria-hidden="true" className="spinning-icon" />
+              <span>正在查询，上一条结果会继续保留。</span>
+            </>
+          ) : (
+            <span>{inputHint || helperText}</span>
+          )}
+        </div>
+
         <button className="primary-btn query-submit-btn" type="submit" disabled={loading || !canSubmit}>
           {loading ? <LoaderCircle size={18} aria-hidden="true" className="spinning-icon" /> : <ArrowRight size={18} aria-hidden="true" />}
           <span>{loading ? '查询中...' : '开始查询'}</span>
         </button>
       </form>
-
-      {loading ? (
-        <div className="query-processing-hint" aria-live="polite">
-          <LoaderCircle size={16} aria-hidden="true" className="spinning-icon" />
-          <span>正在查询并生成截图…</span>
-        </div>
-      ) : null}
-
-      <p className={`query-toolbar-helper-note ${inputHint ? 'tone-warning' : ''}`}>
-        {inputHint || '主 KPI 会优先展示在结果舞台，次要信息收纳到折叠区中。'}
-      </p>
-    </CommandBar>
+    </section>
   )
 }

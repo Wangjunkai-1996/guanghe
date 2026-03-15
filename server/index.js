@@ -8,6 +8,9 @@ const { GuangheQueryService } = require('./services/queryService')
 const { GuangheTaskService } = require('./services/taskService')
 const { KeepAliveService } = require('./services/keepAliveService')
 const { TencentDocsSyncService } = require('./integrations/tencentDocs')
+const { createV7Database } = require('./v7/database')
+const { V7EventBus } = require('./v7/eventBus')
+const { V7WorkspaceService } = require('./v7/service')
 const { createApp } = require('./app')
 
 ensureDir(config.dataDir)
@@ -61,10 +64,21 @@ const keepAliveService = new KeepAliveService({
   browserManager,
   intervalMs: 12 * 60 * 60 * 1000 // 12 小时跑一次
 })
+const v7Database = createV7Database({ dbFile: config.v7DatabaseFile })
+const v7EventBus = new V7EventBus()
+const v7Service = new V7WorkspaceService({
+  db: v7Database,
+  eventBus: v7EventBus,
+  loginService,
+  queryService,
+  tencentDocsSyncService,
+  browserManager,
+  accountStore
+})
 
 taskService.start()
 keepAliveService.start()
-const app = createApp({ config, loginService, queryService, taskService, tencentDocsSyncService })
+const app = createApp({ config, loginService, queryService, taskService, tencentDocsSyncService, v7Service })
 
 let isShuttingDown = false
 

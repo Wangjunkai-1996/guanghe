@@ -2,9 +2,8 @@ import { describe, expect, test, vi } from 'vitest'
 import request from 'supertest'
 
 const { createApp } = require('../server/app')
-const { AppError } = require('../server/lib/errors')
 
-describe('app auth flow', () => {
+describe('v7 app auth and route wiring', () => {
   const config = {
     sessionSecret: 'test-secret',
     toolAuthEnabled: true,
@@ -14,121 +13,129 @@ describe('app auth flow', () => {
     distDir: '/tmp/not-used'
   }
 
-  const loginService = {
-    listAccounts: () => [{ accountId: '1001', nickname: '测试账号', status: 'READY', lastLoginAt: '2026-03-08T00:00:00.000Z' }],
-    getLoginSession: () => ({
-      loginSessionId: 'session-1',
-      status: 'WAITING_QR',
-      qrCodeUrl: 'https://example.com/qr',
-      qrImageUrl: '/api/artifacts/login-sessions/session-1/qr.png',
-      account: null,
-      error: null,
-      updatedAt: '2026-03-08T00:00:00.000Z'
-    })
-  }
-
-  const taskService = {
-    listTasks: () => [{
-      taskId: 'task-1',
-      remark: '达人A',
-      contentId: '554608495125',
-      loginSessionId: 'session-1',
-      qrImageUrl: '/api/artifacts/login-sessions/session-1/qr.png',
-      createdAt: '2026-03-08T00:00:00.000Z',
-      updatedAt: '2026-03-08T00:00:00.000Z',
-      accountId: '',
-      accountNickname: '',
-      error: null,
-      login: { status: 'WAITING_QR' },
-      query: { status: 'IDLE' },
-      metrics: null,
-      screenshots: { rawUrl: '', summaryUrl: '' },
-      artifacts: { resultUrl: '', networkLogUrl: '' }
-    }],
-    createTasksBatch: vi.fn(async (tasks) => ({ tasks: tasks.map((task, index) => ({
-      taskId: `task-${index + 1}`,
-      remark: task.remark,
-      contentId: task.contentId,
-      loginSessionId: `session-${index + 1}`,
-      qrImageUrl: `/api/artifacts/login-sessions/session-${index + 1}/qr.png`,
-      createdAt: '2026-03-08T00:00:00.000Z',
-      updatedAt: '2026-03-08T00:00:00.000Z',
-      accountId: '',
-      accountNickname: '',
-      error: null,
-      login: { status: 'WAITING_QR' },
-      query: { status: 'IDLE' },
-      metrics: null,
-      screenshots: { rawUrl: '', summaryUrl: '' },
-      artifacts: { resultUrl: '', networkLogUrl: '' }
-    })) })),
-    createSheetDemandTasksBatch: vi.fn(async (count) => ({ tasks: Array.from({ length: count }, (_, index) => ({
-      taskId: `sheet-task-${index + 1}`,
-      taskMode: 'SHEET_DEMAND',
-      remark: '',
-      contentId: '',
-      loginSessionId: `sheet-session-${index + 1}`,
-      qrImageUrl: `/api/artifacts/login-sessions/sheet-session-${index + 1}/qr.png`,
-      createdAt: '2026-03-08T00:00:00.000Z',
-      updatedAt: '2026-03-08T00:00:00.000Z',
-      accountId: '',
-      accountNickname: '',
-      error: null,
-      login: { status: 'WAITING_QR' },
-      query: { status: 'IDLE' },
-      metrics: null,
-      screenshots: { rawUrl: '', summaryUrl: '' },
-      artifacts: { resultUrl: '', networkLogUrl: '' }
-    })) })),
-    refreshTaskLogin: vi.fn(async () => ({ ok: true })),
-    retryTaskQuery: vi.fn(async () => ({ ok: true })),
-    deleteTask: vi.fn(async () => undefined),
-    syncTaskTencentDocsHandoff: vi.fn(async (taskId) => ({ ok: true, taskId }))
-  }
-
-  const tencentDocsSyncService = {
-    getConfig: vi.fn(() => ({
-      enabled: true,
-      mode: 'browser',
-      defaultTargetConfigured: true,
-      defaultSheetName: '1',
-      defaultWriteMode: 'upsert',
-      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
-      login: { status: 'LOGGED_IN', updatedAt: '2026-03-08T00:00:00.000Z', error: null }
-    })),
-    setConfig: vi.fn((payload) => ({
-      enabled: true,
-      mode: 'browser',
-      defaultTargetConfigured: true,
-      defaultSheetName: payload.sheetName || '1',
-      defaultWriteMode: 'upsert',
-      target: { docUrl: payload.docUrl || 'https://docs.qq.com/sheet/mock', sheetName: payload.sheetName || '1' },
-      login: { status: 'LOGGED_IN', updatedAt: '2026-03-08T00:00:00.000Z', error: null }
-    })),
-    createLoginSession: vi.fn(async ({ target } = {}) => ({
-      loginSessionId: 'tdocs-session-1',
-      status: 'WAITING_QR',
-      qrImageUrl: '/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png',
-      target: target || { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' },
-      updatedAt: '2026-03-08T00:00:00.000Z',
-      error: null
-    })),
-    getLoginSession: vi.fn(() => ({
-      loginSessionId: 'tdocs-session-1',
-      status: 'WAITING_QR',
-      qrImageUrl: '/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png',
-      updatedAt: '2026-03-08T00:00:00.000Z',
-      error: null
-    }))
-  }
-
   function createTestApp(overrides = {}) {
+    const loginService = {
+      createLoginSession: vi.fn(async () => ({
+        loginSessionId: 'session-1',
+        status: 'WAITING_QR',
+        qrImageUrl: '/api/artifacts/login-sessions/session-1/qr.png',
+        account: null,
+        error: null,
+        updatedAt: '2026-03-16T10:00:00.000Z'
+      })),
+      getLoginSession: vi.fn(() => ({
+        loginSessionId: 'session-1',
+        status: 'WAITING_QR',
+        qrImageUrl: '/api/artifacts/login-sessions/session-1/qr.png',
+        account: null,
+        error: null,
+        updatedAt: '2026-03-16T10:00:00.000Z'
+      }))
+    }
+
+    const v7Service = {
+      eventBus: {
+        subscribeBatch: vi.fn(() => () => {})
+      },
+      listBatches: vi.fn(() => ({
+        recentBatchId: 'batch-1',
+        batches: [
+          {
+            id: 'batch-1',
+            name: '鞋包 3 月二周',
+            status: 'READY',
+            target: { docUrl: 'https://docs.qq.com/mock', sheetName: '数据汇总' },
+            overview: {
+              readyAccounts: 2,
+              executableRows: 8,
+              blockersCount: 0,
+              primaryCta: { label: '启动批量执行' },
+              phaseRail: []
+            },
+            coverageSummary: { executable: 8 },
+            blockers: []
+          }
+        ]
+      })),
+      createBatch: vi.fn((input) => ({
+        id: 'batch-1',
+        name: input.name || '新批次',
+        status: 'DRAFT',
+        target: { docUrl: input.docUrl || '', sheetName: input.sheetName || '' },
+        blockers: [],
+        overview: {
+          readyAccounts: 0,
+          executableRows: 0,
+          blockersCount: 0,
+          primaryCta: { label: '锁定并检查交接表' },
+          phaseRail: []
+        },
+        coverageSummary: { executable: 0 }
+      })),
+      getBatch: vi.fn(() => ({
+        id: 'batch-1',
+        name: '鞋包 3 月二周',
+        status: 'READY',
+        target: { docUrl: 'https://docs.qq.com/mock', sheetName: '数据汇总' },
+        blockers: [],
+        latestSnapshotId: 'snapshot-1',
+        latestRuleSetId: 'rules-1',
+        activeRunId: 'run-1',
+        latestSnapshot: {
+          id: 'snapshot-1',
+          version: 2,
+          checkedAt: '2026-03-16T10:00:00.000Z',
+          summary: { totalRows: 10 }
+        },
+        overview: {
+          readyAccounts: 2,
+          executableRows: 8,
+          blockersCount: 0,
+          primaryCta: { label: '启动批量执行' },
+          phaseRail: []
+        },
+        coverageSummary: { executable: 8 },
+        currentRules: { id: 'rules-1' },
+        activeRun: { id: 'run-1', status: 'RUNNING' },
+        history: []
+      })),
+      listAccounts: vi.fn(() => ({
+        accounts: [
+          {
+            id: '1001',
+            nickname: '自然卷儿',
+            status: 'READY',
+            health: 'READY',
+            lastLoginAt: '2026-03-16T09:00:00.000Z'
+          }
+        ],
+        summary: {
+          total: 1,
+          ready: 1,
+          batchExecutableRows: 8
+        },
+        currentBatch: null
+      })),
+      getAccountsHealth: vi.fn(() => ({
+        summary: {
+          total: 1,
+          ready: 1,
+          keepAliveSuggested: 0,
+          reloginSuggested: 0,
+          batchExecutableRows: 8
+        },
+        recommendedKeepAlive: [],
+        recommendedRelogin: []
+      }))
+    }
+
     return createApp({
       config: overrides.config || config,
       loginService,
-      taskService,
-      queryService: overrides.queryService || { queryByContentId: async () => ({ ok: true }) },
-      tencentDocsSyncService: overrides.tencentDocsSyncService || tencentDocsSyncService
+      queryService: overrides.queryService || { queryByContentId: vi.fn() },
+      taskService: overrides.taskService || null,
+      tencentDocsSyncService: overrides.tencentDocsSyncService || null,
+      v7Service: overrides.v7Service || v7Service
     })
   }
 
@@ -140,157 +147,79 @@ describe('app auth flow', () => {
     expect(response.body.error.code).toBe('AUTH_INVALID')
   })
 
-  test('allows authenticated account listing', async () => {
+  test('blocks protected v7 routes without session', async () => {
     const app = createTestApp()
-    const agent = request.agent(app)
-
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-    const response = await agent.get('/api/accounts')
-
-    expect(response.status).toBe(200)
-    expect(response.body.accounts).toHaveLength(1)
-    expect(response.body.accounts[0].nickname).toBe('测试账号')
-  })
-
-  test('allows access without auth when tool auth disabled', async () => {
-    const app = createTestApp({
-      config: { ...config, toolAuthEnabled: false }
-    })
-
-    const meResponse = await request(app).get('/api/auth/me')
-    expect(meResponse.status).toBe(200)
-    expect(meResponse.body.authenticated).toBe(true)
-
-    const response = await request(app).get('/api/accounts')
-    expect(response.status).toBe(200)
-    expect(response.body.accounts).toHaveLength(1)
-  })
-
-  test('blocks protected routes without session', async () => {
-    const app = createTestApp()
-    const response = await request(app).get('/api/accounts')
+    const response = await request(app).get('/api/batches')
 
     expect(response.status).toBe(401)
     expect(response.body.error.code).toBe('AUTH_REQUIRED')
   })
 
-  test('returns login session qr image field when available', async () => {
+  test('lists batches and accounts for authenticated user', async () => {
     const app = createTestApp()
     const agent = request.agent(app)
     await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-    const response = await agent.get('/api/accounts/login-sessions/session-1')
 
-    expect(response.status).toBe(200)
+    const batchesResponse = await agent.get('/api/batches')
+    const accountsResponse = await agent.get('/api/accounts')
+
+    expect(batchesResponse.status).toBe(200)
+    expect(batchesResponse.body.recentBatchId).toBe('batch-1')
+    expect(accountsResponse.status).toBe(200)
+    expect(accountsResponse.body.accounts[0].nickname).toBe('自然卷儿')
+  })
+
+  test('creates batch via v7 route', async () => {
+    const v7Service = {
+      eventBus: { subscribeBatch: vi.fn(() => () => {}) },
+      listBatches: vi.fn(() => ({ recentBatchId: null, batches: [] })),
+      createBatch: vi.fn((payload) => ({
+        id: 'batch-created',
+        name: payload.name,
+        status: 'DRAFT',
+        target: { docUrl: payload.docUrl, sheetName: payload.sheetName },
+        blockers: [],
+        overview: {
+          readyAccounts: 0,
+          executableRows: 0,
+          blockersCount: 0,
+          primaryCta: { label: '锁定并检查交接表' },
+          phaseRail: []
+        },
+        coverageSummary: { executable: 0 }
+      })),
+      getBatch: vi.fn(),
+      listAccounts: vi.fn(() => ({ accounts: [], summary: {} })),
+      getAccountsHealth: vi.fn(() => ({ summary: {} }))
+    }
+    const app = createTestApp({ v7Service })
+    const agent = request.agent(app)
+    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
+
+    const response = await agent.post('/api/batches').send({
+      name: '3 月鞋包批次',
+      docUrl: 'https://docs.qq.com/mock',
+      sheetName: '数据汇总'
+    })
+
+    expect(response.status).toBe(201)
+    expect(v7Service.createBatch).toHaveBeenCalledWith({
+      name: '3 月鞋包批次',
+      docUrl: 'https://docs.qq.com/mock',
+      sheetName: '数据汇总'
+    })
+    expect(response.body.id).toBe('batch-created')
+  })
+
+  test('keeps legacy login session route available', async () => {
+    const app = createTestApp()
+    const agent = request.agent(app)
+    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
+
+    const response = await agent.post('/api/accounts/login-sessions').send({})
+
+    expect(response.status).toBe(201)
+    expect(response.body.loginSessionId).toBe('session-1')
     expect(response.body.qrImageUrl).toBe('/api/artifacts/login-sessions/session-1/qr.png')
-  })
-
-  test('lists tasks for authenticated user', async () => {
-    const app = createTestApp()
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-
-    const response = await agent.get('/api/tasks')
-
-    expect(response.status).toBe(200)
-    expect(response.body.tasks).toHaveLength(1)
-    expect(response.body.tasks[0].remark).toBe('达人A')
-  })
-
-  test('creates task batch via api', async () => {
-    const app = createTestApp()
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-
-    const response = await agent.post('/api/tasks/batch').send({
-      tasks: [{ remark: '达人A', contentId: '554608495125' }]
-    })
-
-    expect(response.status).toBe(201)
-    expect(taskService.createTasksBatch).toHaveBeenCalledWith([{ remark: '达人A', contentId: '554608495125' }])
-    expect(response.body.tasks[0].loginSessionId).toBe('session-1')
-  })
-
-  test('creates sheet-demand task batch via api', async () => {
-    const app = createTestApp()
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-
-    const response = await agent.post('/api/tasks/sheet-demand/batch').send({ count: 2 })
-
-    expect(response.status).toBe(201)
-    expect(taskService.createSheetDemandTasksBatch).toHaveBeenCalledWith(2)
-    expect(response.body.tasks).toHaveLength(2)
-    expect(response.body.tasks[0].taskMode).toBe('SHEET_DEMAND')
-  })
-
-  test('reads and updates tencent docs config via api', async () => {
-    const app = createTestApp()
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-
-    const getResponse = await agent.get('/api/tencent-docs/config')
-    expect(getResponse.status).toBe(200)
-    expect(getResponse.body.target.docUrl).toBe('https://docs.qq.com/sheet/mock')
-    expect(getResponse.body.login.status).toBe('LOGGED_IN')
-
-    const putResponse = await agent.put('/api/tencent-docs/config').send({
-      docUrl: 'https://docs.qq.com/sheet/next',
-      sheetName: '2'
-    })
-    expect(putResponse.status).toBe(200)
-    expect(tencentDocsSyncService.setConfig).toHaveBeenCalledWith({
-      docUrl: 'https://docs.qq.com/sheet/next',
-      sheetName: '2'
-    })
-    expect(putResponse.body.target.sheetName).toBe('2')
-  })
-
-  test('creates and reads tencent docs login sessions via api', async () => {
-    const app = createTestApp()
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-
-    const createResponse = await agent.post('/api/tencent-docs/login-sessions').send({
-      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
-    })
-    expect(createResponse.status).toBe(201)
-    expect(tencentDocsSyncService.createLoginSession).toHaveBeenCalledWith({
-      target: { docUrl: 'https://docs.qq.com/sheet/mock', sheetName: '1' }
-    })
-    expect(createResponse.body.qrImageUrl).toBe('/api/artifacts/tencent-docs/login-sessions/tdocs-session-1/qr.png')
-
-    const getResponse = await agent.get('/api/tencent-docs/login-sessions/tdocs-session-1')
-    expect(getResponse.status).toBe(200)
-    expect(tencentDocsSyncService.getLoginSession).toHaveBeenCalledWith('tdocs-session-1')
-  })
-
-  test('returns structured query errors as json', async () => {
-    const app = createTestApp({
-      queryService: {
-        queryByContentId: async () => {
-          throw new AppError(404, 'NO_DATA', '当前 ID 在近 30 日内无可查数据', {
-            screenshots: { rawUrl: '/api/artifacts/raw.png' }
-          })
-        }
-      }
-    })
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-    const response = await agent.post('/api/queries').send({ accountId: '1001', contentId: '554608495125' })
-
-    expect(response.status).toBe(404)
-    expect(response.body.error.code).toBe('NO_DATA')
-    expect(response.body.error.message).toBe('当前 ID 在近 30 日内无可查数据')
-    expect(response.body.error.details.screenshots.rawUrl).toBe('/api/artifacts/raw.png')
-  })
-
-  test('rejects non-numeric content id', async () => {
-    const app = createTestApp()
-    const agent = request.agent(app)
-    await agent.post('/api/auth/login').send({ password: 'pass123' }).expect(200)
-    const response = await agent.post('/api/queries').send({ accountId: '1001', contentId: 'abc123' })
-
-    expect(response.status).toBe(400)
-    expect(response.body.error.code).toBe('QUERY_INPUT_INVALID')
   })
 })

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react'
-import { CircleAlert, Copy, FileImage, LoaderCircle, ShieldAlert, Sparkles, TrendingUp } from 'lucide-react'
+import { CircleAlert, Copy, ExternalLink, FileImage, LoaderCircle, ShieldAlert, Sparkles } from 'lucide-react'
 import { formatDateTime, formatMetricValue, getErrorPresentation } from '../lib/ui'
 import { resolveMetricPayload } from '../lib/taskFormat'
 import { EmptyState } from './ui/EmptyState'
@@ -28,6 +28,8 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
   const summaryTabId = `${screenshotTabsId}-summary-tab`
   const rawTabId = `${screenshotTabsId}-raw-tab`
   const panelId = `${screenshotTabsId}-panel`
+  const errorState = useMemo(() => getErrorPresentation(error), [error])
+  const previewImageUrl = activeTab === 'summary' ? result?.screenshots?.summaryUrl : result?.screenshots?.rawUrl
   const screenshotTabs = [
     { value: 'summary', label: '作品分析截图', id: summaryTabId },
     { value: 'raw', label: '作品管理截图', id: rawTabId }
@@ -37,9 +39,6 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
     setActiveTab('summary')
     setCopyState('idle')
   }, [result])
-
-  const errorState = useMemo(() => getErrorPresentation(error), [error])
-  const previewImageUrl = activeTab === 'summary' ? result?.screenshots?.summaryUrl : result?.screenshots?.rawUrl
 
   const handleScreenshotTabsKeyDown = (event) => {
     const currentIndex = screenshotTabs.findIndex((item) => item.value === activeTab)
@@ -63,14 +62,13 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
     const tabList = event.currentTarget
     setActiveTab(nextTab.value)
     window.requestAnimationFrame(() => {
-      tabList
-        ?.querySelector(`[data-tab="${nextTab.value}"]`)
-        ?.focus()
+      tabList?.querySelector(`[data-tab="${nextTab.value}"]`)?.focus()
     })
   }
 
   const handleCopy = async () => {
     if (!result) return
+
     const content = [
       `账号昵称：${result.nickname}`,
       `账号 ID：${result.accountId}`,
@@ -92,31 +90,30 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
   }
 
   return (
-    <SectionCard className="result-panel stack-lg" variant="feature">
-      <div className="panel-header compact-panel-header result-panel-title-block">
-        <div className="result-panel-kicker">
-          <TrendingUp size={18} aria-hidden="true" />
-          <span className="section-eyebrow">结果舞台</span>
+    <SectionCard
+      className="result-panel-vnext stack-lg"
+      eyebrow="Inspector"
+      title="查询结论与证据"
+      description="先看结论与 5 个主 KPI，再决定是否打开截图、复制数据或处理账号问题。"
+      variant="feature"
+    >
+      {loading && !result ? (
+        <div className="result-state-card tone-info" role="status" aria-live="polite">
+          <div className="result-state-bar">
+            <div>
+              <span className="result-state-label">状态</span>
+              <strong>查询中</strong>
+            </div>
+            <small>正在拉取 30 日指标并生成截图…</small>
+          </div>
+          <p>正在拉取 30 日指标并生成证据截图…</p>
         </div>
-        <div>
-          <h2>验证结果舞台</h2>
-          <p>把主 KPI、证据截图和补充信息拆成清晰层级，优先让你先看结论，再看细节。</p>
-        </div>
-      </div>
-
-      {loading && !result ? <LoadingState /> : null}
+      ) : null}
 
       {loading && result ? (
         <div className="result-refresh-banner" role="status" aria-live="polite">
           <LoaderCircle size={16} aria-hidden="true" className="spinning-icon" />
-          <span>正在刷新当前结果，已有数据暂时保留在页面上。</span>
-        </div>
-      ) : null}
-
-      {!loading && errorState && result ? (
-        <div className={`result-refresh-banner tone-${errorState.tone}`} role={errorState.tone === 'danger' ? 'alert' : 'status'} aria-live="polite">
-          <CircleAlert size={16} aria-hidden="true" />
-          <span>{errorState.description}</span>
+          <span>正在查询，上一条结果会继续保留。</span>
         </div>
       ) : null}
 
@@ -130,7 +127,7 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
             <small>{error?.code || 'UNKNOWN_ERROR'}</small>
           </div>
           <p>{errorState.description}</p>
-          <div className="result-state-actions">
+          <div className="result-actions-row">
             {errorState.action === 'retry-login' ? (
               <button className="primary-btn" type="button" onClick={onRetryLogin}>
                 <ShieldAlert size={18} aria-hidden="true" />
@@ -144,9 +141,6 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
               </a>
             ) : null}
           </div>
-          {error?.details?.screenshots?.rawUrl ? (
-            <img className="result-image" src={error.details.screenshots.rawUrl} alt="错误态原始截图" />
-          ) : null}
         </div>
       ) : null}
 
@@ -158,38 +152,37 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
           title={activeAccount ? '输入内容 ID 后即可开始查询' : '请先选择或新增账号'}
           description={
             activeAccount
-              ? `当前账号为 ${activeAccount.nickname}，查询完成后这里会优先展示 5 个主 KPI、次要指标和两张截图。`
-              : '左侧选择一个账号后，再输入内容 ID 发起查询。'
+              ? `当前账号为 ${activeAccount.nickname}，查询完成后会在这里保留最近一次结果。`
+              : '左侧先选择一个账号，再输入内容 ID 发起查询。'
           }
         />
       ) : null}
 
       {result ? (
         <>
-          <div className="result-stage-header">
-            <div className="result-stage-title">
-              <StatusBadge tone="success" emphasis="solid">
-                查询成功
-              </StatusBadge>
-              <div className="result-stage-title-copy">
-                <strong>{result.nickname}</strong>
-                <small>内容 ID：{result.contentId}</small>
+          <div className="result-conclusion-card">
+            <div className="result-conclusion-main">
+              <div className="result-conclusion-title">
+                <StatusBadge tone="success" emphasis="soft">
+                  查询成功
+                </StatusBadge>
+                <div className="result-conclusion-copy">
+                  <strong>{result.nickname}</strong>
+                  <span>内容 ID：{result.contentId}</span>
+                </div>
               </div>
             </div>
-            <div className="result-state-bar success-bar" role="status" aria-live="polite">
-              <div>
-                <span className="result-state-label">状态</span>
-                <strong>查询成功</strong>
-              </div>
-              <small>{formatDateTime(result.fetchedAt)}</small>
+            <div className="result-conclusion-meta">
+              <span>最近拉取</span>
+              <strong>{formatDateTime(result.fetchedAt)}</strong>
             </div>
           </div>
 
-          <div className="metrics-grid">
+          <div className="result-primary-kpis">
             {PRIMARY_METRICS.map((metric) => {
               const payload = resolveMetricPayload(result.metrics, metric)
               return (
-                <div key={metric} className="metric-card emphasized-metric-card result-hero-metric">
+                <div key={metric} className="metric-card emphasized-metric-card">
                   <span>{metric}</span>
                   <strong>{formatMetricValue(payload?.value)}</strong>
                   <small>{payload?.field || '-'}</small>
@@ -198,12 +191,12 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
             })}
           </div>
 
-          <div className="image-panel evidence-panel">
+          <div className="image-panel">
             <div className="image-panel-header">
               <div className="image-panel-header-copy">
-                <span className="section-eyebrow">证据视图</span>
-                <h3>截图舞台</h3>
-                <small>{activeTab === 'summary' ? '对应“作品分析”页面 30 日汇总数据。' : '对应“内容管理 > 作品管理”页面的单条卡片数据。'}</small>
+                <span className="section-eyebrow">Evidence</span>
+                <h3>截图视图</h3>
+                <small>{activeTab === 'summary' ? '作品分析页 30 日汇总数据。' : '作品管理页单条卡片截图。'}</small>
               </div>
               <div className="tabs-switcher" role="tablist" aria-label="截图切换" onKeyDown={handleScreenshotTabsKeyDown}>
                 {screenshotTabs.map((tab) => (
@@ -253,74 +246,29 @@ export function ResultPanel({ result, error, loading, activeAccount, onRetryLogi
             </button>
             {result.screenshots?.rawUrl ? (
               <a className="secondary-btn inline-link-btn" href={result.screenshots.rawUrl} target="_blank" rel="noreferrer">
-                <FileImage size={18} aria-hidden="true" />
+                <ExternalLink size={18} aria-hidden="true" />
                 <span>打开原图</span>
               </a>
             ) : null}
           </div>
 
           <details className="result-supporting-details">
-            <summary>查看次要指标与元信息</summary>
+            <summary>查看附加指标与元信息</summary>
             <div className="result-stage-subgrid">
-              <section className="secondary-metrics-section stack-md" aria-label="次要指标">
-                <div className="compact-panel-header">
-                  <h3>次要指标</h3>
-                  <p>补充展示互动类指标，保持主 KPI 读数区的聚焦感。</p>
-                </div>
-                <div className="secondary-metrics-grid">
-                  {SECONDARY_METRICS.map((metric) => {
-                    const payload = resolveMetricPayload(result.metrics, metric)
-                    return (
-                      <div key={metric} className="metric-card secondary-metric-card">
-                        <span>{metric}</span>
-                        <strong>{formatMetricValue(payload?.value)}</strong>
-                        <small>{payload?.field || '-'}</small>
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
-
-              <div className="result-meta-grid expanded-meta-grid">
-                <div className="meta-card"><span>账号昵称</span><strong>{result.nickname}</strong></div>
-                <div className="meta-card"><span>账号 ID</span><strong>{result.accountId}</strong></div>
-                <div className="meta-card"><span>内容 ID</span><strong>{result.contentId}</strong></div>
-                <div className="meta-card"><span>查询时间</span><strong>{formatDateTime(result.fetchedAt)}</strong></div>
-              </div>
+              {SECONDARY_METRICS.map((metric) => {
+                const payload = resolveMetricPayload(result.metrics, metric)
+                return (
+                  <div key={metric} className="meta-card">
+                    <span>{metric}</span>
+                    <strong>{formatMetricValue(payload?.value)}</strong>
+                    <small>{payload?.field || '-'}</small>
+                  </div>
+                )
+              })}
             </div>
           </details>
         </>
       ) : null}
     </SectionCard>
-  )
-}
-
-function LoadingState() {
-  return (
-    <div className="stack-lg result-loading-shell">
-      <div className="result-state-bar loading-bar">
-        <div>
-          <span className="result-state-label">状态</span>
-          <strong>查询中</strong>
-        </div>
-        <small>正在拉取数据并生成截图…</small>
-      </div>
-      <div className="metrics-grid">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="metric-card skeleton-card">
-            <div className="skeleton-line short" />
-            <div className="skeleton-line tall" />
-            <div className="skeleton-line medium" />
-          </div>
-        ))}
-      </div>
-      <div className="image-stage skeleton-stage">
-        <div className="skeleton-line full" />
-      </div>
-      <div className="result-loading-copy">
-        <LoaderCircle size={16} aria-hidden="true" className="spinning-icon" />
-        <span>正在拉取 30 日指标并生成证据截图…</span>
-      </div>
-    </div>
   )
 }

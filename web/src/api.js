@@ -26,41 +26,86 @@ async function request(path, options = {}) {
 
 export const api = {
   me: () => request('/api/auth/me', { method: 'GET' }),
-  login: (password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
-  listAccounts: () => request('/api/accounts', { method: 'GET' }),
+  login: (password) => request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ password })
+  }),
+
+  listBatches: () => request('/api/batches', { method: 'GET' }),
+  createBatch: (payload) => request('/api/batches', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  }),
+  getBatch: (batchId) => request(`/api/batches/${batchId}`, { method: 'GET' }),
+  updateBatchTarget: (batchId, payload) => request(`/api/batches/${batchId}/target`, {
+    method: 'PUT',
+    body: JSON.stringify(payload || {})
+  }),
+  inspectBatchIntake: (batchId) => request(`/api/batches/${batchId}/intake/inspect`, {
+    method: 'POST'
+  }),
+  getSnapshot: (batchId, snapshotId) => request(`/api/batches/${batchId}/snapshots/${snapshotId}`, {
+    method: 'GET'
+  }),
+  getCoverage: (batchId) => request(`/api/batches/${batchId}/coverage`, { method: 'GET' }),
+  generateCoverage: (batchId) => request(`/api/batches/${batchId}/coverage/generate`, {
+    method: 'POST'
+  }),
+  updateCoverageBinding: (batchId, itemId, payload) => request(`/api/batches/${batchId}/coverage/${itemId}/binding`, {
+    method: 'PUT',
+    body: JSON.stringify(payload || {})
+  }),
+  getRules: (batchId) => request(`/api/batches/${batchId}/rules`, { method: 'GET' }),
+  saveRules: (batchId, payload) => request(`/api/batches/${batchId}/rules`, {
+    method: 'PUT',
+    body: JSON.stringify(payload || {})
+  }),
+  createRun: (batchId) => request(`/api/batches/${batchId}/runs`, {
+    method: 'POST'
+  }),
+  getRun: (batchId, runId) => request(`/api/batches/${batchId}/runs/${runId}`, {
+    method: 'GET'
+  }),
+  listRunTasks: (batchId, runId) => request(`/api/batches/${batchId}/runs/${runId}/tasks`, {
+    method: 'GET'
+  }),
+  retryRun: (batchId, runId, payload) => request(`/api/batches/${batchId}/runs/${runId}/retry`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  }),
+  getBatchHistory: (batchId) => request(`/api/batches/${batchId}/history`, { method: 'GET' }),
+  cloneBatch: (batchId, payload) => request(`/api/batches/${batchId}/clone`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  }),
+
+  listAccounts: (batchId) => request(batchId ? `/api/accounts?batchId=${encodeURIComponent(batchId)}` : '/api/accounts', {
+    method: 'GET'
+  }),
+  getAccountHealth: (batchId) => request(batchId ? `/api/accounts/health?batchId=${encodeURIComponent(batchId)}` : '/api/accounts/health', {
+    method: 'GET'
+  }),
   createLoginSession: () => request('/api/accounts/login-sessions', { method: 'POST' }),
   getLoginSession: (loginSessionId) => request(`/api/accounts/login-sessions/${loginSessionId}`, { method: 'GET' }),
-  submitSmsCode: (loginSessionId, code) => request(`/api/accounts/login-sessions/${loginSessionId}/sms-code`, { method: 'POST', body: JSON.stringify({ code }) }),
-  submitTaskSmsCode: (taskId, code) => request(`/api/tasks/${taskId}/sms-code`, { method: 'POST', body: JSON.stringify({ code }) }),
+  submitSmsCode: (loginSessionId, code) => request(`/api/accounts/login-sessions/${loginSessionId}/sms-code`, {
+    method: 'POST',
+    body: JSON.stringify({ code })
+  }),
   deleteAccount: (accountId) => request(`/api/accounts/${accountId}`, { method: 'DELETE' }),
-  listTasks: () => request('/api/tasks', { method: 'GET' }),
-  createTaskBatch: (tasks) => request('/api/tasks/batch', { method: 'POST', body: JSON.stringify({ tasks }) }),
-  createSheetDemandTaskBatch: (count) => request('/api/tasks/sheet-demand/batch', { method: 'POST', body: JSON.stringify({ count }) }),
-  createSheetDemandTaskFromAccounts: ({ accountIds, sheetTarget }) => request('/api/tasks/sheet-demand/from-accounts', { method: 'POST', body: JSON.stringify({ accountIds, sheetTarget }) }),
-  refreshTaskLogin: (taskId) => request(`/api/tasks/${taskId}/refresh-login`, { method: 'POST' }),
-  retryTaskQuery: (taskId) => request(`/api/tasks/${taskId}/retry-query`, { method: 'POST' }),
-  deleteTask: (taskId) => request(`/api/tasks/${taskId}`, { method: 'DELETE' }),
-  queryContent: ({ accountId, contentId }) => request('/api/queries', { method: 'POST', body: JSON.stringify({ accountId, contentId }) }),
-  getTencentDocsConfig: () => request('/api/tencent-docs/config', { method: 'GET' }),
-  updateTencentDocsConfig: ({ docUrl, sheetName } = {}) => request('/api/tencent-docs/config', {
-    method: 'PUT',
-    body: JSON.stringify({ docUrl, sheetName })
-  }),
-  createTencentDocsLoginSession: ({ target } = {}) => request('/api/tencent-docs/login-sessions', {
+  keepAliveAccounts: (payload) => request('/api/accounts/keepalive', {
     method: 'POST',
-    body: JSON.stringify({ target })
+    body: JSON.stringify(payload || {})
   }),
-  getTencentDocsLoginSession: (loginSessionId) => request(`/api/tencent-docs/login-sessions/${loginSessionId}`, { method: 'GET' }),
-  inspectTencentDocsSheet: ({ target, maxRows, forceRefresh = false } = {}) => request('/api/tencent-docs/sheet/inspect', {
+  debugQuery: (payload) => request('/api/accounts/debug/query', {
     method: 'POST',
-    body: JSON.stringify({ target, maxRows, forceRefresh })
+    body: JSON.stringify(payload || {})
   }),
-  previewTencentDocsHandoff: ({ resultUrl, target, maxRows, match } = {}) => request('/api/tencent-docs/handoff/preview', {
+  listRuleTemplates: () => request('/api/rule-templates', { method: 'GET' }),
+  saveRuleTemplate: (payload) => request('/api/rule-templates', {
     method: 'POST',
-    body: JSON.stringify({ source: { resultUrl }, target, maxRows, match })
+    body: JSON.stringify(payload || {})
   }),
-  syncTencentDocsHandoff: ({ taskId, resultUrl, target, maxRows, match } = {}) => request('/api/tencent-docs/handoff/sync', {
-    method: 'POST',
-    body: JSON.stringify({ taskId, source: { resultUrl }, target, maxRows, match })
+  applyRuleTemplate: (batchId, templateId) => request(`/api/batches/${batchId}/rules/apply-template/${templateId}`, {
+    method: 'POST'
   })
 }

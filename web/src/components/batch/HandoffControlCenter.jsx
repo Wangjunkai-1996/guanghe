@@ -1,4 +1,4 @@
-import { FileStack, QrCode, ScanSearch, Settings2, ShieldCheck, Waypoints } from 'lucide-react'
+import { ExternalLink, FileStack, QrCode, ScanSearch, ShieldCheck, TriangleAlert } from 'lucide-react'
 import {
   formatDateTime,
   formatTencentDocsLoginStatus,
@@ -6,7 +6,7 @@ import {
   getTencentDocsLoginTone
 } from '../../lib/ui'
 import { InlineNotice } from '../ui/InlineNotice'
-import { SectionCard } from '../ui/SectionCard'
+import { StageSectionCard } from '../ui/StageSectionCard'
 import { StatusBadge } from '../ui/StatusBadge'
 
 export function HandoffControlCenter({
@@ -18,55 +18,82 @@ export function HandoffControlCenter({
   docsDiagnostic,
   diagnosticPending,
   docsLoginSession,
-  onStartLogin
+  onStartLogin,
+  diagnosticsOpen,
+  onToggleDiagnostics,
+  mobileExpanded = false,
+  onToggleMobile = () => {}
 }) {
   const tabs = docsDiagnostic.payload?.tabs || []
   const loginStatus = docsLoginSession?.status || syncConfig.login?.status || 'IDLE'
   const qrImageUrl = docsLoginSession?.qrImageUrl || syncConfig.login?.qrImageUrl || ''
   const showLoginQr = Boolean(qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(loginStatus))
-  const urlTabToken = readTencentDocsTabToken(docsConfigDraft.docUrl)
+  const draftDocUrl = String(docsConfigDraft.docUrl || '').trim()
+  const resolvedSheetName = String(docsConfigDraft.sheetName || syncConfig.target?.sheetName || '').trim()
+  const savedDocUrl = String(syncConfig.target?.docUrl || '').trim()
+  const savedSheetName = String(syncConfig.target?.sheetName || '').trim()
+  const needsSave = draftDocUrl !== savedDocUrl || (resolvedSheetName && resolvedSheetName !== savedSheetName)
+  const targetReady = Boolean(draftDocUrl && resolvedSheetName && !needsSave)
+  const headerTone = docsDiagnostic.error
+    ? 'danger'
+    : diagnosticPending
+      ? 'info'
+      : (loginStatus === 'LOGGED_IN' ? 'success' : 'warning')
+  const setupHeadline = getSetupHeadline({
+    draftDocUrl,
+    resolvedSheetName,
+    loginStatus,
+    diagnosticPending,
+    docsDiagnostic
+  })
+  const primaryAction = getPrimaryAction({
+    draftDocUrl,
+    resolvedSheetName,
+    needsSave,
+    loginStatus,
+    onSaveConfig,
+    onStartLogin,
+    onInspect
+  })
+  const setupProgress = getSetupProgress({
+    draftDocUrl,
+    resolvedSheetName,
+    loginStatus,
+    diagnosticPending,
+    docsDiagnostic
+  })
+  const mobileSummary = {
+    status: setupProgress.status,
+    statusTone: setupProgress.statusTone,
+    value: resolvedSheetName ? `工作表 ${resolvedSheetName}` : '等待目标确认',
+    detail: primaryAction.label,
+    description: `当前状态：${setupHeadline.title}。下一步：${primaryAction.label}。`
+  }
 
   return (
-    <SectionCard className="batch-control-center stack-lg" variant="feature">
-      <div className="panel-split-header">
-        <div className="compact-panel-header">
-          <span className="section-eyebrow">交接表控制区</span>
-          <h2>腾讯交接表驱动工作台</h2>
-          <p>先锁定交接表和腾讯文档登录态，再让缺数达人列表和二维码任务队列保持同一个节奏。</p>
+    <StageSectionCard
+      id="batch-setup-stage"
+      className="batch-stage-card batch-setup-stage stack-lg"
+      eyebrow="阶段 1 / 4"
+      title="交接表准备"
+      description="先锁定文档目标，再确认登录态，最后重新检查工作表。"
+      variant="feature"
+      mobileSummary={mobileSummary}
+      mobileExpanded={mobileExpanded}
+      onToggleMobile={onToggleMobile}
+    >
+      <div className={`setup-stage-banner tone-${headerTone}`}>
+        <div>
+          <strong>{setupHeadline.title}</strong>
+          <small>{setupHeadline.detail}</small>
         </div>
-        <div className="task-sync-meta">
-          <StatusBadge tone={getTencentDocsLoginTone(loginStatus)} emphasis="glass">
-            {formatTencentDocsLoginStatus(loginStatus)}
-          </StatusBadge>
-          <strong>{getHubHeadline(docsDiagnostic.payload?.summary, loginStatus, docsConfigDraft, diagnosticPending)}</strong>
-          <small>
-            {docsDiagnostic.checkedAt
-              ? `最近检查：${formatDateTime(docsDiagnostic.checkedAt)}`
-              : (diagnosticPending ? '首屏已就绪，交接表检查将在空闲时静默启动' : '尚未检查交接表')}
-          </small>
-        </div>
+        <StatusBadge tone={getTencentDocsLoginTone(loginStatus)} emphasis="soft">
+          {formatTencentDocsLoginStatus(loginStatus)}
+        </StatusBadge>
       </div>
 
-      {diagnosticPending ? (
-        <InlineNotice
-          tone="info"
-          eyebrow="静默检查"
-          icon={ScanSearch}
-          title="交接表正在后台预检查"
-          description="默认首屏先让英雄区、控制区和任务区落稳，再在浏览器空闲时读取工作表。若你现在就要核对数据，可直接点击“检查工作表”。"
-        />
-      ) : null}
-
-      <div className="handoff-hub-grid batch-control-grid">
-        <section className="panel handoff-config-panel stack-md v2-console-card">
-          <div className="compact-panel-header">
-            <div className="v2-panel-badge">
-              <FileStack size={18} aria-hidden="true" />
-              <span>目标与模板</span>
-            </div>
-            <h3>交接表配置</h3>
-            <p>输入腾讯文档链接，检查工作表后手动选定交接表，配置会保存在本地。</p>
-          </div>
+      <div className="setup-stage-layout">
+        <section className="setup-stage-panel stack-md">
           <label className="field">
             <span>腾讯文档链接</span>
             <input
@@ -76,11 +103,7 @@ export function HandoffControlCenter({
               onChange={(event) => onDraftChange({ docUrl: event.target.value })}
             />
           </label>
-          {urlTabToken ? (
-            <div className="task-inline-hint">
-              已检测到链接里包含工作表定位参数，保存或检查后会自动识别当前工作表。
-            </div>
-          ) : null}
+
           <label className="field">
             <span>目标工作表</span>
             <select value={docsConfigDraft.sheetName} onChange={(event) => onDraftChange({ sheetName: event.target.value })}>
@@ -92,79 +115,153 @@ export function HandoffControlCenter({
               ))}
             </select>
           </label>
-          <div className="task-actions-inline">
-            <button className="primary-btn" type="button" onClick={onSaveConfig} disabled={!docsConfigDraft.docUrl}>
-              <Settings2 size={18} aria-hidden="true" />
-              <span>保存交接表</span>
+
+          {readTencentDocsTabToken(draftDocUrl) ? (
+            <InlineNotice
+              tone="info"
+              eyebrow="链接提示"
+              icon={FileStack}
+              title="链接已带工作表定位参数"
+              description="保存或检查后会优先识别当前工作表，不会按异常提示处理。"
+            />
+          ) : null}
+
+          <div className="setup-stage-actions">
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={!draftDocUrl || primaryAction.disabled}
+              onClick={primaryAction.onClick}
+            >
+              {primaryAction.icon}
+              <span>{primaryAction.label}</span>
             </button>
-            <button className="secondary-btn" type="button" onClick={onInspect} disabled={!docsConfigDraft.docUrl || docsDiagnostic.loading}>
-              <ScanSearch size={18} aria-hidden="true" />
-              <span>{docsDiagnostic.loading ? '检查中...' : '检查工作表'}</span>
-            </button>
-          </div>
-          <div className="task-summary-grid diagnostic-summary-grid">
-            <div className="meta-card compact-meta-card diagnostic-card tone-info">
-              <span>当前目标</span>
-              <strong>{docsConfigDraft.sheetName || syncConfig.target?.sheetName || '未选择'}</strong>
-              <small>{docsConfigDraft.docUrl || syncConfig.target?.docUrl || '请先录入腾讯文档链接'}</small>
-            </div>
-            <div className={`meta-card compact-meta-card diagnostic-card tone-${getTencentDocsLoginTone(loginStatus)}`}>
-              <span>腾讯文档登录</span>
-              <strong>{formatTencentDocsLoginStatus(loginStatus)}</strong>
-              <small>
-                {docsLoginSession?.updatedAt
-                  ? formatDateTime(docsLoginSession.updatedAt)
-                  : (syncConfig.login?.updatedAt ? formatDateTime(syncConfig.login.updatedAt) : '未登录')}
-              </small>
+
+            <div className="setup-stage-secondary-actions">
+              {draftDocUrl ? (
+                <a className="secondary-btn inline-link-btn" href={draftDocUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink size={16} aria-hidden="true" />
+                  <span>查看原链接</span>
+                </a>
+              ) : null}
+              <button className="secondary-btn ghost-btn" type="button" onClick={onToggleDiagnostics}>
+                <TriangleAlert size={16} aria-hidden="true" />
+                <span>{diagnosticsOpen ? '收起排障' : '打开排障'}</span>
+              </button>
             </div>
           </div>
-          {docsDiagnostic.error ? <div className="inline-error">{docsDiagnostic.error.message}</div> : null}
         </section>
 
-        <section className="panel handoff-login-panel stack-md v2-console-card accent-card">
-          <div className="compact-panel-header">
-            <div className="v2-panel-badge">
-              <Waypoints size={18} aria-hidden="true" />
-              <span>登录与授权</span>
-            </div>
-            <h3>腾讯文档扫码登录</h3>
-            <p>登录一次后会长期保存编辑态；读表或写表提示失效时，再重新生成二维码即可。</p>
+        <section className="setup-stage-status-panel stack-md">
+          <div className="setup-status-grid">
+            <SetupSummaryCard
+              label="文档目标"
+              value={summarizeTencentDocUrl(draftDocUrl || savedDocUrl)}
+              detail={draftDocUrl || savedDocUrl ? '目标文档已录入' : '请先输入文档链接'}
+              tone={draftDocUrl || savedDocUrl ? 'info' : 'warning'}
+            />
+            <SetupSummaryCard
+              label="工作表"
+              value={resolvedSheetName || '未选择'}
+              detail={resolvedSheetName ? '当前回填目标' : '需先检查后确认'}
+              tone={resolvedSheetName ? 'info' : 'warning'}
+            />
+            <SetupSummaryCard
+              label="腾讯文档"
+              value={formatTencentDocsLoginStatus(loginStatus)}
+              detail={getTencentDocsLoginDescription(loginStatus)}
+              tone={getTencentDocsLoginTone(loginStatus)}
+            />
+            <SetupSummaryCard
+              label="最近检查"
+              value={docsDiagnostic.checkedAt ? formatDateTime(docsDiagnostic.checkedAt) : '未检查'}
+              detail={diagnosticPending ? '后台预检查中' : (docsDiagnostic.error ? '上次检查失败' : '可随时重新检查')}
+              tone={docsDiagnostic.error ? 'danger' : (docsDiagnostic.checkedAt ? 'success' : 'neutral')}
+            />
           </div>
-          <div className={`task-state-banner tone-${getTencentDocsLoginTone(loginStatus)}`}>
-            <strong>{formatTencentDocsLoginStatus(loginStatus)}</strong>
-            <small>{getTencentDocsLoginDescription(loginStatus)}</small>
-          </div>
-          <div className="task-actions-inline">
-            <button className="primary-btn" type="button" onClick={onStartLogin} disabled={!docsConfigDraft.docUrl}>
-              <QrCode size={18} aria-hidden="true" />
-              <span>{showLoginQr ? '重新生成腾讯文档二维码' : '腾讯文档扫码登录'}</span>
-            </button>
-          </div>
-          <div className="qr-wrap handoff-login-qr-wrap">
-            {showLoginQr ? (
+
+          {showLoginQr ? (
+            <div className="setup-qr-card">
+              <div className="setup-qr-copy">
+                <strong>登录二维码已就绪</strong>
+                <small>扫码并在手机确认后，平台会自动更新为可读表状态。</small>
+              </div>
               <img className="qr-image" src={qrImageUrl} alt="腾讯文档登录二维码" />
-            ) : (
-              <div className="task-qr-placeholder">
-                <ShieldCheck size={22} aria-hidden="true" />
-                <strong>
-                  {loginStatus === 'LOGGED_IN'
-                    ? '已登录腾讯文档'
-                    : (loginStatus === 'WAITING_QR' || loginStatus === 'WAITING_CONFIRM' ? '二维码恢复中' : '等待生成登录二维码')}
-                </strong>
+            </div>
+          ) : (
+            <div className={`setup-inline-status tone-${targetReady ? 'success' : 'warning'}`}>
+              <ShieldCheck size={18} aria-hidden="true" />
+              <div>
+                <strong>{targetReady ? '目标已锁定，可继续操作' : '请先完成目标设置'}</strong>
                 <small>
-                  {loginStatus === 'LOGGED_IN'
-                    ? '现在可以检查工作表、识别缺数达人并执行自动回填。'
-                    : ((loginStatus === 'WAITING_QR' || loginStatus === 'WAITING_CONFIRM')
-                        ? '当前已有登录会话在等待扫码，若图片未出现可再点一次上方按钮恢复。'
-                        : '先保存腾讯文档链接，再点击上方按钮生成登录二维码。')}
+                  {targetReady
+                    ? '下一步建议根据当前登录态选择“登录腾讯文档”或“重新检查工作表”。'
+                    : '链接、工作表和已保存配置需先收敛到同一目标。'}
                 </small>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>
       </div>
-    </SectionCard>
+
+      {docsDiagnostic.error ? (
+        <InlineNotice
+          tone="danger"
+          eyebrow="检查失败"
+          icon={TriangleAlert}
+          title={docsDiagnostic.error.message || '最近一次工作表检查失败'}
+          description="建议先处理登录态或目标工作表，再重新检查。"
+        />
+      ) : null}
+    </StageSectionCard>
   )
+}
+
+function SetupSummaryCard({ label, value, detail, tone }) {
+  return (
+    <div className={`setup-summary-card tone-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  )
+}
+
+function getPrimaryAction({ draftDocUrl, resolvedSheetName, needsSave, loginStatus, onSaveConfig, onStartLogin, onInspect }) {
+  if (!draftDocUrl || !resolvedSheetName || needsSave) {
+    return {
+      label: '保存并检查工作表',
+      onClick: onSaveConfig,
+      icon: <ScanSearch size={18} aria-hidden="true" />,
+      disabled: !draftDocUrl
+    }
+  }
+
+  if (loginStatus !== 'LOGGED_IN') {
+    return {
+      label: '登录腾讯文档',
+      onClick: onStartLogin,
+      icon: <QrCode size={18} aria-hidden="true" />,
+      disabled: false
+    }
+  }
+
+  return {
+    label: '重新检查工作表',
+    onClick: onInspect,
+    icon: <ScanSearch size={18} aria-hidden="true" />,
+    disabled: false
+  }
+}
+
+function summarizeTencentDocUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim())
+    const path = url.pathname.replace(/^\/+/, '')
+    return path || url.hostname
+  } catch (_error) {
+    return value ? '链接待检查' : '未设置'
+  }
 }
 
 function readTencentDocsTabToken(value) {
@@ -176,11 +273,60 @@ function readTencentDocsTabToken(value) {
   }
 }
 
-function getHubHeadline(summary = {}, loginStatus, docsConfigDraft, diagnosticPending) {
-  const needsFillRows = Number(summary?.needsFillRows || 0)
-  if (!docsConfigDraft.docUrl) return '先配置腾讯文档链接，再开始交接表闭环。'
-  if (diagnosticPending) return '交接表正在后台预检查，完成后会更新缺数达人与账号匹配信息。'
-  if (loginStatus !== 'LOGGED_IN') return '腾讯文档未完成登录，建议先补登录态再发码。'
-  if (needsFillRows > 0) return `当前有 ${needsFillRows} 位达人待补数，可以准备发码。`
-  return '交接表已完成本轮检查，可以继续抽查任务结果或重新读表。'
+function getSetupHeadline({ draftDocUrl, resolvedSheetName, loginStatus, diagnosticPending, docsDiagnostic }) {
+  if (!draftDocUrl) {
+    return {
+      title: '先输入腾讯文档链接',
+      detail: '准备区只做一件事：把文档目标锁定下来。'
+    }
+  }
+
+  if (!resolvedSheetName) {
+    return {
+      title: '先确认目标工作表',
+      detail: '工作表未确定时，不进入登录和发码阶段。'
+    }
+  }
+
+  if (loginStatus !== 'LOGGED_IN') {
+    return {
+      title: '目标已确定，下一步登录腾讯文档',
+      detail: '先建立可复用的编辑态，再开始检查工作表。'
+    }
+  }
+
+  if (diagnosticPending) {
+    return {
+      title: '登录态已就绪，后台正在预检查工作表',
+      detail: '你也可以直接手动触发重新检查。'
+    }
+  }
+
+  if (docsDiagnostic.checkedAt) {
+    return {
+      title: '交接表已完成最近一次检查',
+      detail: '现在可以继续确认需求、发起任务或抽查结果。'
+    }
+  }
+
+  return {
+    title: '登录态已就绪，建议立即检查工作表',
+    detail: '只有检查完成后，需求摘要和任务发起区才会进入稳定状态。'
+  }
+}
+
+function getSetupProgress({ draftDocUrl, resolvedSheetName, loginStatus, diagnosticPending, docsDiagnostic }) {
+  if (!draftDocUrl || !resolvedSheetName) {
+    return { status: '未准备', statusTone: 'warning' }
+  }
+  if (docsDiagnostic.error || loginStatus === 'FAILED') {
+    return { status: '需处理', statusTone: 'danger' }
+  }
+  if (diagnosticPending || loginStatus === 'WAITING_QR' || loginStatus === 'WAITING_CONFIRM' || loginStatus === 'WAITING_SMS') {
+    return { status: '进行中', statusTone: 'info' }
+  }
+  if (docsDiagnostic.checkedAt && loginStatus === 'LOGGED_IN') {
+    return { status: '已完成', statusTone: 'success' }
+  }
+  return { status: '需处理', statusTone: 'warning' }
 }

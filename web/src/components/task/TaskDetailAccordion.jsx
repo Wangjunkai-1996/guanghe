@@ -3,19 +3,19 @@ import {
   canDeleteTask,
   canRefreshTaskLogin,
   canRetryTaskQuery,
-  formatDateTime,
-  formatTaskLoginStatus,
-  getTaskOverallTone,
-  getTaskQueryTone,
+  formatTaskSyncStatus,
+  getTaskPrimaryActionLabel,
   getTaskRecommendations,
   getTaskSummary,
+  isExceptionalTask,
   isTaskBusy,
-  stopPropagation,
   supportsClipboardImage
 } from '../../lib/taskFormat'
 import { TaskDetailResultSection } from './TaskDetailResultSection'
 import { TaskDetailSheetMatchSection } from './TaskDetailSheetMatchSection'
 import { TaskDetailSyncSection } from './TaskDetailSyncSection'
+import { TaskSmsInput } from './TaskSmsInput'
+import { StatusBadge } from '../ui/StatusBadge'
 
 export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
   task,
@@ -29,32 +29,32 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
   onRetryQuery,
   onDeleteTask,
   onPreviewSync,
-  onSyncTask
+  onSyncTask,
+  onSubmitSmsCode
 }) {
-  const [activeTab, setActiveTab] = useState('summary')
-  const [detailTab, setDetailTab] = useState('results')
+  const [activeResultTab, setActiveResultTab] = useState('summary')
+  const [detailTab, setDetailTab] = useState('conclusion')
   const detailTabsId = useId()
 
   useEffect(() => {
-    setActiveTab('summary')
+    setActiveResultTab('summary')
+    setDetailTab('conclusion')
   }, [task?.taskId, task?.screenshots?.summaryUrl, task?.screenshots?.rawUrl])
-
-  useEffect(() => {
-    setDetailTab('results')
-  }, [task?.taskId])
 
   if (!task) return null
 
-  const previewImageUrl = activeTab === 'summary' ? task.screenshots?.summaryUrl : task.screenshots?.rawUrl
+  const previewImageUrl = activeResultTab === 'summary' ? task.screenshots?.summaryUrl : task.screenshots?.rawUrl
   const taskBusy = isTaskBusy(task)
   const canCopyQr = Boolean(task.qrImageUrl && supportsClipboardImage())
   const canRefresh = canRefreshTaskLogin(task)
   const canRetry = canRetryTaskQuery(task)
   const canDelete = canDeleteTask(task)
-  const showQr = Boolean(task.qrImageUrl && ['WAITING_QR', 'WAITING_CONFIRM'].includes(task.login.status))
   const recommendations = getTaskRecommendations(task, syncConfig)
+  const requiresManual = requiresManualIntervention(task)
+  const writebackStatus = formatTaskSyncStatus(task, syncConfig)
+  const nextAction = getTaskPrimaryActionLabel(task)
   const detailTabs = [
-    { value: 'results', label: '概览与结果' },
+    { value: 'conclusion', label: '结论' },
     { value: 'sync', label: '文档回填' },
     { value: 'logs', label: '二维码与日志' }
   ]
@@ -81,15 +81,13 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
     const tabList = event.currentTarget
     setDetailTab(nextTab.value)
     window.requestAnimationFrame(() => {
-      tabList
-        ?.querySelector(`[data-tab="${nextTab.value}"]`)
-        ?.focus()
+      tabList?.querySelector(`[data-tab="${nextTab.value}"]`)?.focus()
     })
   }
 
   return (
     <div className="task-detail-accordion stack-md">
-      <div className={`task-focus-banner tone-${getTaskOverallTone(task)}`}>
+      <div className={`task-focus-banner tone-${requiresManual ? 'danger' : 'info'}`}>
         <strong>当前建议</strong>
         <small>{getTaskSummary(task)}</small>
         {recommendations.length > 0 ? (
@@ -127,23 +125,56 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
         </div>
       </div>
 
-      {detailTab === 'results' ? (
+      {detailTab === 'conclusion' ? (
         <div
           className="stack-md"
           role="tabpanel"
-          id={`${detailTabsId}-results-panel`}
-          aria-labelledby={`${detailTabsId}-results-tab`}
+          id={`${detailTabsId}-conclusion-panel`}
+          aria-labelledby={`${detailTabsId}-conclusion-tab`}
         >
-          <div className="task-detail-section stack-md">
-            <div className="task-summary-grid">
-              <div className="meta-card compact-meta-card"><span>内容 ID</span><strong>{task.contentId || '-'}</strong></div>
-              <div className="meta-card compact-meta-card"><span>登录账号</span><strong>{task.accountNickname || '待扫码'}</strong><small>{task.accountId || '扫码成功后自动回填'}</small></div>
-              <div className="meta-card compact-meta-card"><span>更新时间</span><strong>{formatDateTime(task.updatedAt)}</strong><small>{task.fetchedAt ? `查询时间：${formatDateTime(task.fetchedAt)}` : '等待自动查询'}</small></div>
-            </div>
+          <div className="task-conclusion-grid">
+            <ConclusionCard label="当前建议" value={getTaskSummary(task)} tone={requiresManual ? 'danger' : 'info'} />
+            <ConclusionCard label="是否人工介入" value={requiresManual ? '需要' : '不需要'} tone={requiresManual ? 'danger' : 'success'} />
+            <ConclusionCard label="回填状态" value={writebackStatus} tone={task.sync?.status === 'SUCCEEDED' ? 'success' : (task.sync?.status === 'FAILED' ? 'danger' : 'warning')} />
+            <ConclusionCard label="下一步动作" value={nextAction} tone="warning" />
           </div>
+
+          <div className="task-detail-actions-row">
+            {canRetry ? (
+              <button className="secondary-btn" type="button" disabled={busy} onClick={() => onRetryQuery(task.taskId)}>
+                重试查询
+              </button>
+            ) : null}
+            {canRefresh ? (
+              <button className="secondary-btn" type="button" disabled={busy || taskBusy} onClick={() => onRefreshLogin(task.taskId)}>
+                刷新二维码
+              </button>
+            ) : null}
+            <details className="task-detail-more-actions">
+              <summary>更多操作</summary>
+              <div className="task-detail-more-actions-menu">
+                <button className="secondary-btn danger-ghost-btn" type="button" disabled={!canDelete || busy} onClick={() => onDeleteTask(task.taskId)}>
+                  删除任务
+                </button>
+              </div>
+            </details>
+          </div>
+
+          {task.login?.status === 'WAITING_SMS' ? (
+            <div className="task-detail-section stack-sm">
+              <div className="task-section-header">
+                <div>
+                  <strong>短信验证码</strong>
+                  <small>当前任务需要人工输入验证码后才能继续。</small>
+                </div>
+              </div>
+              <TaskSmsInput taskId={task.taskId} onSubmitSmsCode={onSubmitSmsCode} />
+            </div>
+          ) : null}
+
           <TaskDetailResultSection
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
+            activeTab={activeResultTab}
+            setActiveTab={setActiveResultTab}
             previewImageUrl={previewImageUrl}
             task={task}
             busy={busy}
@@ -189,54 +220,60 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
           <div className="task-detail-section stack-md">
             <div className="task-section-header">
               <div>
-                <strong>二维码区</strong>
-                <small>{showQr ? '适合直接下载或复制图片发到微信群。' : '当前状态没有可用二维码，可按需刷新后继续。'}</small>
+                <strong>二维码与截图</strong>
+                <small>二维码、结果截图和原始文件统一在这里查看。</small>
               </div>
-              <div className="task-actions-inline" onClick={stopPropagation}>
-                <a
-                  className={`secondary-btn inline-link-btn ${!task.qrImageUrl ? 'disabled' : ''}`}
-                  href={task.qrImageUrl || '#'}
-                  download={`task-${task.taskId}-qr.png`}
-                  onClick={(event) => {
-                    stopPropagation(event)
-                    if (!task.qrImageUrl) event.preventDefault()
-                  }}
-                >
-                  下载二维码
-                </a>
+              <div className="task-actions-inline">
+                {task.qrImageUrl ? (
+                  <a className="secondary-btn inline-link-btn" href={task.qrImageUrl} download={`task-${task.taskId}-qr.png`}>
+                    下载二维码
+                  </a>
+                ) : null}
                 <button className="secondary-btn" type="button" disabled={!canCopyQr || busy || taskBusy} onClick={() => onCopyQr(task)}>
-                  {copying ? '已复制' : '复制图片'}
-                </button>
-                <button className="secondary-btn" type="button" disabled={!canRefresh || busy} onClick={() => onRefreshLogin(task.taskId)}>
-                  刷新二维码
+                  {copying ? '已复制' : '复制二维码'}
                 </button>
               </div>
             </div>
-            <div className="qr-wrap task-detail-qr-wrap">
-              {showQr ? (
-                <img className="qr-image" src={task.qrImageUrl} alt={`任务 ${task.remark} 的二维码`} />
-              ) : (
-                <div className="task-qr-placeholder">
-                  <strong>{formatTaskLoginStatus(task.login.status)}</strong>
-                  <small>如果二维码过期、会话中断或登录失败，可刷新重新生成。</small>
+
+            <div className="task-log-gallery">
+              {task.qrImageUrl ? (
+                <div className="task-log-gallery-card">
+                  <span>登录二维码</span>
+                  <img className="qr-image" src={task.qrImageUrl} alt={`任务 ${task.remark || task.taskId} 的二维码`} />
                 </div>
-              )}
+              ) : null}
+
+              {task.screenshots?.summaryUrl ? (
+                <a className="task-log-gallery-card" href={task.screenshots.summaryUrl} target="_blank" rel="noreferrer">
+                  <span>分析截图</span>
+                  <img className="result-image" src={task.screenshots.summaryUrl} alt="任务分析截图" />
+                </a>
+              ) : null}
+
+              {task.screenshots?.rawUrl ? (
+                <a className="task-log-gallery-card" href={task.screenshots.rawUrl} target="_blank" rel="noreferrer">
+                  <span>作品截图</span>
+                  <img className="result-image" src={task.screenshots.rawUrl} alt="任务作品截图" />
+                </a>
+              ) : null}
             </div>
           </div>
 
           <div className="task-detail-section stack-md">
             <div className="task-section-header">
               <div>
-                <strong>任务日志与文件</strong>
-                <small>查询阶段的原始日志或开发者错误信息</small>
+                <strong>任务日志</strong>
+                <small>查询结果、网络日志和错误文件都在这里归档。</small>
               </div>
             </div>
-            <div className="task-actions-inline">
+            <div className="result-actions-row sync-artifact-links">
               {task.artifacts?.resultUrl ? <a className="secondary-btn inline-link-btn" href={task.artifacts.resultUrl} target="_blank" rel="noreferrer">打开结果 JSON</a> : null}
               {task.artifacts?.networkLogUrl ? <a className="secondary-btn inline-link-btn" href={task.artifacts.networkLogUrl} target="_blank" rel="noreferrer">打开网络日志</a> : null}
+              {task.sync?.artifacts?.writeLogUrl ? <a className="secondary-btn inline-link-btn" href={task.sync.artifacts.writeLogUrl} target="_blank" rel="noreferrer">打开写入日志</a> : null}
             </div>
+
             {task.error?.message ? (
-              <div className={`task-state-banner tone-${getTaskQueryTone(task.query.status)}`}>
+              <div className="task-state-banner tone-danger">
                 <strong>{task.error.message}</strong>
                 <small>{task.error.code || 'TASK_ERROR'}</small>
               </div>
@@ -244,15 +281,20 @@ export const TaskDetailAccordion = React.memo(function TaskDetailAccordion({
           </div>
         </div>
       ) : null}
-
-      <div className="task-actions-footer" onClick={stopPropagation}>
-        <button className="secondary-btn" type="button" disabled={!canRetry || busy} onClick={() => onRetryQuery(task.taskId)}>
-          重试查询
-        </button>
-        <button className="secondary-btn danger-ghost-btn" type="button" disabled={!canDelete || busy} onClick={() => onDeleteTask(task.taskId)}>
-          删除任务
-        </button>
-      </div>
     </div>
   )
 })
+
+function ConclusionCard({ label, value, tone }) {
+  return (
+    <div className={`task-conclusion-card tone-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function requiresManualIntervention(task) {
+  if (task.login?.status === 'WAITING_SMS') return true
+  return isExceptionalTask(task)
+}

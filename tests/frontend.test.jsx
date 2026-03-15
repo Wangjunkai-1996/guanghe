@@ -1,244 +1,423 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import React from 'react'
-import { afterEach, describe, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { AccountList } from '../web/src/components/AccountList'
-import { ConfirmDialog } from '../web/src/components/ui/ConfirmDialog'
-import { LoginForm } from '../web/src/components/LoginForm'
-import { QueryForm } from '../web/src/components/QueryForm'
-import { LoginSessionPanel } from '../web/src/components/LoginSessionPanel'
-import { ResultPanel } from '../web/src/components/ResultPanel'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+vi.mock('../web/src/api', () => {
+  const api = {
+    me: vi.fn(),
+    login: vi.fn(),
+    listBatches: vi.fn(),
+    createBatch: vi.fn(),
+    getBatch: vi.fn(),
+    updateBatchTarget: vi.fn(),
+    inspectBatchIntake: vi.fn(),
+    getSnapshot: vi.fn(),
+    getCoverage: vi.fn(),
+    generateCoverage: vi.fn(),
+    updateCoverageBinding: vi.fn(),
+    getRules: vi.fn(),
+    saveRules: vi.fn(),
+    createRun: vi.fn(),
+    getRun: vi.fn(),
+    listRunTasks: vi.fn(),
+    retryRun: vi.fn(),
+    getBatchHistory: vi.fn(),
+    cloneBatch: vi.fn(),
+    listAccounts: vi.fn(),
+    getAccountHealth: vi.fn(),
+    createLoginSession: vi.fn(),
+    getLoginSession: vi.fn(),
+    submitSmsCode: vi.fn(),
+    deleteAccount: vi.fn(),
+    keepAliveAccounts: vi.fn(),
+    debugQuery: vi.fn(),
+    listRuleTemplates: vi.fn(),
+    saveRuleTemplate: vi.fn(),
+    applyRuleTemplate: vi.fn()
+  }
+  return { api }
+})
+
+class MockEventSource {
+  constructor() {
+    this.listeners = new Map()
+  }
+
+  addEventListener(event, callback) {
+    this.listeners.set(event, callback)
+  }
+
+  close() {}
+}
+
+vi.stubGlobal('EventSource', MockEventSource)
+
+import App from '../web/src/App'
+import { api } from '../web/src/api'
 
 afterEach(() => {
   cleanup()
 })
 
-describe('frontend components', () => {
-  test('renders login form and submits password', async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined)
-    render(<LoginForm loading={false} error="" onSubmit={onSubmit} />)
+beforeEach(() => {
+  Object.values(api).forEach((fn) => fn.mockReset())
 
-    fireEvent.change(screen.getByPlaceholderText('请输入访问口令'), { target: { value: 'secret' } })
-    fireEvent.click(screen.getByRole('button', { name: '登录工具' }))
-
-    expect(onSubmit).toHaveBeenCalledWith('secret')
+  api.me.mockResolvedValue({ authenticated: true })
+  api.listBatches.mockResolvedValue({ recentBatchId: null, batches: [] })
+  api.createBatch.mockResolvedValue({
+    id: 'batch-created',
+    name: '新批次',
+    status: 'DRAFT',
+    target: { docUrl: '', sheetName: '' },
+    blockers: [],
+    overview: {
+      readyAccounts: 0,
+      executableRows: 0,
+      blockersCount: 0,
+      primaryCta: { label: '锁定并检查交接表' },
+      phaseRail: []
+    },
+    coverageSummary: { executable: 0 }
   })
-
-  test('query form shows active account and filters non-digits', async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined)
-    render(
-      <QueryForm
-        activeAccount={{ accountId: '1001', nickname: '自然卷儿' }}
-        loading={false}
-        onSubmit={onSubmit}
-      />
-    )
-
-    fireEvent.change(screen.getByPlaceholderText('例如：554608495125'), { target: { value: '55a4 608' } })
-    expect(screen.getByDisplayValue('554608')).toBeInTheDocument()
-    expect(screen.getByText('仅支持数字内容 ID，已自动过滤非数字字符。')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '开始查询' }))
-    expect(onSubmit).toHaveBeenCalledWith({ contentId: '554608' })
+  api.getBatch.mockResolvedValue(createBatchPayload())
+  api.listAccounts.mockResolvedValue({
+    accounts: [
+      {
+        id: '1001',
+        nickname: '自然卷儿',
+        status: 'READY',
+        health: 'READY',
+        lastLoginAt: '2026-03-16T09:00:00.000Z',
+        boundCoverageCount: 3
+      }
+    ],
+    summary: {
+      total: 1,
+      ready: 1,
+      batchExecutableRows: 3
+    }
   })
-
-  test('login drawer shows expired state and refresh action', () => {
-    const view = render(
-      <LoginSessionPanel
-        loginSession={{
-          loginSessionId: 'session-1',
-          status: 'EXPIRED',
-          qrImageUrl: '/api/artifacts/login-sessions/session-1/qr.png',
-          error: null,
-          account: null
-        }}
-        qrCodeDataUrl="/api/artifacts/login-sessions/session-1/qr.png"
-        isOpen
-        onClose={vi.fn()}
-        onRefresh={vi.fn()}
-      />
-    )
-
-    expect(view.getAllByText('二维码已过期').length).toBeGreaterThan(0)
-    expect(view.getByRole('button', { name: '刷新二维码' })).toBeInTheDocument()
+  api.getCoverage.mockResolvedValue(createCoveragePayload())
+  api.getRules.mockResolvedValue({
+    id: 'rules-1',
+    executionScope: 'ALL_EXECUTABLE',
+    accountScope: 'READY_ONLY',
+    skipPolicies: {
+      missingContentId: true,
+      missingAccount: true,
+      ambiguous: true,
+      complete: true
+    },
+    syncPolicy: 'FILL_EMPTY_ONLY',
+    failurePolicy: 'KEEP_FOR_RETRY',
+    concurrencyProfile: 'STANDARD',
+    preview: {
+      willRunRows: 3,
+      willSkipRows: 2,
+      estimatedAccountUsage: 1,
+      targetColumns: ['查看次数', '查看人数']
+    }
   })
-
-  test('login drawer submits sms verification code', async () => {
-    const onSubmitSmsCode = vi.fn().mockResolvedValue(undefined)
-    const view = render(
-      <LoginSessionPanel
-        loginSession={{
-          loginSessionId: 'session-sms',
-          status: 'WAITING_SMS',
-          qrImageUrl: null,
-          error: null,
-          account: null
-        }}
-        qrCodeDataUrl=""
-        isOpen
-        onClose={vi.fn()}
-        onRefresh={vi.fn()}
-        onSubmitSmsCode={onSubmitSmsCode}
-      />
-    )
-
-    const input = view.getByPlaceholderText('请输入短信验证码')
-    fireEvent.change(input, { target: { value: ' 123456 ' } })
-    fireEvent.click(view.getByRole('button', { name: '提交验证码' }))
-
-    expect(onSubmitSmsCode).toHaveBeenCalledWith('123456')
+  api.getRun.mockResolvedValue({
+    run: {
+      id: 'run-1',
+      batchId: 'batch-1',
+      ruleSetId: 'rules-1',
+      status: 'PARTIAL_FAILED',
+      plannedCount: 3,
+      runningCount: 0,
+      successCount: 1,
+      failedCount: 2,
+      syncFailedCount: 1,
+      startedAt: '2026-03-16T09:00:00.000Z',
+      endedAt: '2026-03-16T09:05:00.000Z'
+    },
+    summary: {
+      completionRate: 33,
+      plannedCount: 3,
+      successCount: 1,
+      failedCount: 2,
+      syncFailedCount: 1,
+      runningCount: 0
+    },
+    buckets: [
+      { key: 'LOGIN_FAILED', label: '登录失败', count: 0 },
+      { key: 'QUERY_FAILED', label: '查询失败', count: 1 },
+      { key: 'SYNC_FAILED', label: '回填失败', count: 1 },
+      { key: 'BLOCKED', label: '歧义阻塞', count: 0 },
+      { key: 'RUNNING', label: '运行中', count: 0 },
+      { key: 'SUCCEEDED', label: '已完成', count: 1 }
+    ]
   })
-
-  test('login drawer closes on escape', () => {
-    const onClose = vi.fn()
-    render(
-      <LoginSessionPanel
-        loginSession={{
-          loginSessionId: 'session-2',
-          status: 'WAITING_QR',
-          qrImageUrl: null,
-          error: null,
-          account: null
-        }}
-        qrCodeDataUrl=""
-        isOpen
-        onClose={onClose}
-        onRefresh={vi.fn()}
-        onSubmitSmsCode={vi.fn()}
-      />
-    )
-
-    fireEvent.keyDown(window, { key: 'Escape' })
-    expect(onClose).toHaveBeenCalled()
-  })
-
-  test('result panel defaults to summary screenshot and supports tab switch', () => {
-    render(
-      <ResultPanel
-        loading={false}
-        error={null}
-        activeAccount={{ accountId: '1001', nickname: '测试账号' }}
-        onRetryLogin={vi.fn()}
-        result={{
+  api.listRunTasks.mockResolvedValue({
+    selectedTaskId: 'task-2',
+    buckets: [],
+    tasks: [
+      {
+        id: 'task-2',
+        coverageItemId: 'coverage-1',
+        accountId: '1001',
+        status: 'FAILED',
+        updatedAt: '2026-03-16T09:03:00.000Z',
+        errorCode: 'SYNC_FAILED',
+        errorMessage: '回填失败',
+        queryPayload: {
           accountId: '1001',
-          nickname: '测试账号',
+          nickname: '自然卷儿',
           contentId: '554608495125',
-          fetchedAt: '2026-03-08T15:00:00.000Z',
+          fetchedAt: '2026-03-16T09:02:00.000Z',
           metrics: {
-            内容查看次数: { value: '83611', field: 'consumePv' },
-            内容查看人数: { value: '18033', field: 'consumeUv' },
-            种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
-            种草成交人数: { value: '1', field: 'payBuyerCntZc' },
-            商品点击次数: { value: '3', field: 'ipvPv' }
+            内容查看次数: { value: '83611' },
+            内容查看人数: { value: '18033' },
+            商品点击次数: { value: '432' }
           },
           screenshots: {
-            rawUrl: '/api/artifacts/raw.png',
-            summaryUrl: '/api/artifacts/summary.png'
-          }
-        }}
-      />
-    )
-
-    expect(screen.getByAltText('汇总截图预览')).toHaveAttribute('src', '/api/artifacts/summary.png')
-    fireEvent.click(screen.getByRole('tab', { name: '作品管理截图' }))
-    expect(screen.getByAltText('原始截图预览')).toHaveAttribute('src', '/api/artifacts/raw.png')
-    expect(screen.getByRole('button', { name: '复制全部数据' })).toBeInTheDocument()
-  })
-
-  test('result panel renders retry login action for login-required error', () => {
-    const onRetryLogin = vi.fn()
-    render(
-      <ResultPanel
-        loading={false}
-        result={null}
-        activeAccount={{ accountId: '1001', nickname: '测试账号' }}
-        onRetryLogin={onRetryLogin}
-        error={{
-          code: 'ACCOUNT_LOGIN_REQUIRED',
-          message: '当前账号登录态已失效，请重新扫码登录',
-          details: null
-        }}
-      />
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: '重新扫码登录' }))
-    expect(onRetryLogin).toHaveBeenCalled()
-  })
-
-  test('result panel keeps existing data visible during refresh loading', () => {
-    render(
-      <ResultPanel
-        loading
-        error={null}
-        activeAccount={{ accountId: '1001', nickname: '测试账号' }}
-        onRetryLogin={vi.fn()}
-        result={{
-          accountId: '1001',
-          nickname: '测试账号',
-          contentId: '554608495125',
-          fetchedAt: '2026-03-08T15:00:00.000Z',
-          metrics: {
-            内容查看次数: { value: '83611', field: 'consumePv' },
-            内容查看人数: { value: '18033', field: 'consumeUv' },
-            种草成交金额: { value: '155.13', field: 'payAmtZcLast' },
-            种草成交人数: { value: '1', field: 'payBuyerCntZc' },
-            商品点击次数: { value: '3', field: 'ipvPv' }
+            summaryUrl: '/summary.png'
           },
-          screenshots: {
-            rawUrl: '/api/artifacts/raw.png',
-            summaryUrl: '/api/artifacts/summary.png'
+          artifacts: {
+            resultUrl: '/result.json'
           }
-        }}
-      />
-    )
-
-    expect(screen.getAllByText('测试账号').length).toBeGreaterThan(0)
-    expect(screen.getByText('正在刷新当前结果，已有数据暂时保留在页面上。')).toBeInTheDocument()
-    expect(screen.getByAltText('汇总截图预览')).toHaveAttribute('src', '/api/artifacts/summary.png')
+        }
+      }
+    ]
   })
-
-  test('account list exposes icon action button with accessible name', () => {
-    render(
-      <AccountList
-        accounts={[{ accountId: '1001', nickname: '自然卷儿', status: 'READY', lastLoginAt: '2026-03-11T00:29:00.000Z' }]}
-        selectedAccountId="1001"
-        loading={false}
-        onSelect={vi.fn()}
-        onCreate={vi.fn()}
-        onDelete={vi.fn()}
-      />
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: '自然卷儿 更多操作' }))
-    expect(screen.getByRole('menuitem', { name: '删除账号' })).toBeInTheDocument()
+  api.getBatchHistory.mockResolvedValue({ runs: [] })
+  api.cloneBatch.mockResolvedValue(createBatchPayload())
+  api.getAccountHealth.mockResolvedValue({
+    summary: {
+      total: 1,
+      ready: 1,
+      keepAliveSuggested: 0,
+      reloginSuggested: 0,
+      batchExecutableRows: 3
+    },
+    recommendedKeepAlive: [],
+    recommendedRelogin: []
   })
-
-  test('confirm dialog still renders in reduced motion environments', () => {
-    const originalMatchMedia = window.matchMedia
-    window.matchMedia = vi.fn().mockImplementation((query) => ({
-      matches: query.includes('prefers-reduced-motion'),
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn()
-    }))
-
-    render(
-      <ConfirmDialog
-        open
-        title="确认删除账号"
-        description="删除后需要重新扫码登录。"
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    )
-
-    expect(screen.getByRole('alertdialog', { name: '确认删除账号' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '关闭确认弹窗' })).toBeInTheDocument()
-
-    window.matchMedia = originalMatchMedia
+  api.listRuleTemplates.mockResolvedValue({ templates: [] })
+  api.saveRuleTemplate.mockResolvedValue({
+    id: 'template-1',
+    name: '默认模板',
+    useCount: 0,
+    rules: {
+      concurrencyProfile: 'STANDARD'
+    }
+  })
+  api.applyRuleTemplate.mockResolvedValue({
+    id: 'rules-1',
+    executionScope: 'ALL_EXECUTABLE',
+    accountScope: 'READY_ONLY',
+    skipPolicies: {
+      missingContentId: true,
+      missingAccount: true,
+      ambiguous: true,
+      complete: true
+    },
+    syncPolicy: 'FILL_EMPTY_ONLY',
+    failurePolicy: 'KEEP_FOR_RETRY',
+    concurrencyProfile: 'STANDARD',
+    preview: {
+      willRunRows: 3,
+      willSkipRows: 2,
+      estimatedAccountUsage: 1,
+      targetColumns: ['查看次数']
+    }
   })
 })
+
+describe('v7 frontend shell', () => {
+  test('shows login gate when auth is required and submits password', async () => {
+    api.me.mockResolvedValueOnce({ authenticated: false })
+    api.login.mockResolvedValueOnce({ ok: true })
+
+    renderWithRouter('/')
+
+    expect(await screen.findByText('进入批次运营台')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('工具口令'), { target: { value: 'pass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+
+    await waitFor(() => {
+      expect(api.login).toHaveBeenCalledWith('pass123')
+    })
+  })
+
+  test('shows new batch wizard when there is no recent batch', async () => {
+    renderWithRouter('/')
+
+    expect(await screen.findByText('从批次开始，而不是从任务开始')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('批次名称'), { target: { value: '3 月鞋包' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建首个批次' }))
+
+    await waitFor(() => {
+      expect(api.createBatch.mock.calls[0][0]).toEqual({
+        name: '3 月鞋包',
+        docUrl: '',
+        sheetName: ''
+      })
+    })
+  })
+
+  test('renders intake stage with inline blockers and compact heartbeat', async () => {
+    api.listBatches.mockResolvedValueOnce({
+      recentBatchId: 'batch-1',
+      batches: [createBatchPayload()]
+    })
+
+    renderWithRouter('/batches/batch-1/intake')
+
+    expect(await screen.findByRole('heading', { name: '交接表接入' })).toBeInTheDocument()
+    expect(screen.getAllByText('缺少必要列：查看次数').length).toBeGreaterThan(0)
+    expect(screen.getByText('当前批次')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /锁定并检查交接表/ })).toBeInTheDocument()
+  })
+
+  test('opens task drawer on run page and closes it with escape', async () => {
+    api.listBatches.mockResolvedValueOnce({
+      recentBatchId: 'batch-1',
+      batches: [createBatchPayload()]
+    })
+
+    renderWithRouter('/batches/batch-1/run')
+
+    expect(await screen.findByRole('heading', { name: '运行与回填' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: /coverage-1/ }))
+
+    expect(await screen.findByRole('dialog', { name: '任务详情抽屉' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '任务详情抽屉' })).not.toBeInTheDocument()
+    })
+  })
+})
+
+function renderWithRouter(initialEntry) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false
+      }
+    }
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
+function createBatchPayload() {
+  return {
+    id: 'batch-1',
+    name: '鞋包 3 月第二周',
+    status: 'NEEDS_ATTENTION',
+    target: {
+      docUrl: 'https://docs.qq.com/mock',
+      sheetName: '数据汇总'
+    },
+    blockers: ['缺少必要列：查看次数'],
+    latestSnapshotId: 'snapshot-1',
+    latestRuleSetId: 'rules-1',
+    activeRunId: 'run-1',
+    latestSnapshot: {
+      id: 'snapshot-1',
+      version: 2,
+      checkedAt: '2026-03-16T09:00:00.000Z',
+      summary: {
+        totalRows: 5,
+        completeRows: 1,
+        needsFillRows: 3,
+        missingContentIdRows: 1
+      },
+      blockers: [
+        {
+          code: 'HEADER_MISSING',
+          message: '缺少必要列：查看次数'
+        }
+      ],
+      headers: ['逛逛昵称', '内容id']
+    },
+    overview: {
+      readyAccounts: 1,
+      executableRows: 3,
+      blockersCount: 1,
+      primaryCta: {
+        label: '补跑失败项'
+      },
+      phaseRail: [
+        { key: 'intake', label: '交接表接入', status: '需处理' },
+        { key: 'accounts', label: '账号接入', status: '已完成' },
+        { key: 'coverage', label: '覆盖率生成', status: '可执行' },
+        { key: 'rules', label: '规则设定', status: '已完成' },
+        { key: 'run', label: '运行与回填', status: '需处理' },
+        { key: 'history', label: '历史复盘', status: '未就绪' }
+      ]
+    },
+    coverageSummary: {
+      total: 5,
+      executable: 3,
+      missingContentId: 1,
+      missingAccount: 0,
+      ambiguous: 1,
+      complete: 1
+    },
+    currentRules: {
+      id: 'rules-1',
+      preview: {
+        willRunRows: 3,
+        willSkipRows: 2,
+        estimatedAccountUsage: 1,
+        targetColumns: ['查看次数', '查看人数']
+      }
+    },
+    activeRun: {
+      id: 'run-1',
+      status: 'PARTIAL_FAILED',
+      syncFailedCount: 1,
+      failedCount: 2
+    },
+    history: []
+  }
+}
+
+function createCoveragePayload() {
+  return {
+    summary: {
+      total: 5,
+      executable: 3,
+      missingContentId: 1,
+      missingAccount: 0,
+      ambiguous: 1,
+      complete: 1
+    },
+    buckets: [
+      { key: 'EXECUTABLE', label: '可执行', count: 3 },
+      { key: 'MISSING_CONTENT_ID', label: '缺内容ID', count: 1 },
+      { key: 'MISSING_ACCOUNT', label: '缺账号', count: 0 },
+      { key: 'AMBIGUOUS', label: '歧义', count: 1 },
+      { key: 'COMPLETE', label: '已完整', count: 1 }
+    ],
+    defaultSelectedId: 'coverage-1',
+    items: [
+      {
+        id: 'coverage-1',
+        sheetRow: 6,
+        nickname: '自然卷儿',
+        contentId: '554608495125',
+        status: 'EXECUTABLE',
+        binding: {
+          accountId: '1001'
+        },
+        missingColumns: ['查看次数'],
+        recommendation: '可直接进入本批执行'
+      }
+    ]
+  }
+}

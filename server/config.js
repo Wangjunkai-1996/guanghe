@@ -24,6 +24,7 @@ module.exports = {
   tencentDocsWriteMode: process.env.TENCENT_DOCS_WRITE_MODE || 'upsert',
   tencentDocsHeadless: process.env.TENCENT_DOCS_HEADLESS !== 'false',
   tencentDocsTimezone: process.env.TENCENT_DOCS_TIMEZONE || 'Asia/Shanghai',
+  v7DatabaseFile: path.resolve(paths.dataDir, 'v7.sqlite'),
   tencentDocsJobsFile: path.resolve(paths.dataDir, 'tencent-docs-jobs.json'),
   tencentDocsStateFile: path.resolve(paths.dataDir, 'tencent-docs-state.json'),
   tencentDocsProfileDir: path.resolve(paths.profileRootDir, 'tencent-docs'),

@@ -148,96 +148,76 @@ export function ManualWorkspace({
         </Suspense>
       ) : null}
 
-      <section className="panel manual-entry-strip stack-lg">
-        <div className="manual-entry-bar">
-          <div className="compact-panel-header">
-            <div className="manual-entry-kicker">
-              <SearchCheck size={18} aria-hidden="true" />
-              <span className="section-eyebrow">手工验证工作台</span>
-            </div>
-            <h2>账号库与单条查询</h2>
-            <p>管理所有授权的光合账号，或者输入单条内容 ID 进行即时的数据验证。</p>
+      <section className="panel manual-workspace-vnext stack-lg">
+        <div className="manual-workspace-header">
+          <div>
+            <span className="section-eyebrow">Account Admin</span>
+            <h2>账号管理</h2>
+            <p>这是辅助工作区，只负责账号维护、单条查询和结果复核。</p>
           </div>
-          <div className="manual-entry-actions">
-            <button className="secondary-btn" type="button" onClick={onRequestBatchTab}>
-              <ArrowUpRight size={18} aria-hidden="true" />
-              <span>前往批量闭环</span>
-            </button>
-            <div className="workspace-summary-chip">
-              <span>
-                <Users size={16} aria-hidden="true" />
-                <span>已保存账号</span>
-              </span>
-              <strong>{isAccountInventoryPending ? '...' : accounts.length}</strong>
-              <small>
-                {manualEntryStatus
-                  ? '当前仍有登录流程进行中'
-                  : (isAccountInventoryPending ? '首次进入手工页后按需加载账号库' : '单条查询与账号切换都可在这里完成')}
-              </small>
-            </div>
-          </div>
+          <button className="secondary-btn" type="button" onClick={onRequestBatchTab}>
+            <ArrowUpRight size={18} aria-hidden="true" />
+            <span>前往批量闭环</span>
+          </button>
         </div>
 
-        <div className="manual-query-shell stack-lg">
-          {isAccountInventoryPending ? (
-            <InlineNotice
-              tone="info"
-              eyebrow="账号库按需加载"
-              icon={Users}
-              title="手工页正在读取账号库"
-              description="默认首屏优先给批量闭环工作台让路；当你首次切到这里时，账号资源会按需加载，当前布局会保持稳定不闪空。"
+        {isAccountInventoryPending ? (
+          <InlineNotice
+            tone="info"
+            eyebrow="账号库按需加载"
+            icon={Users}
+            title="账号库正在按需加载"
+            description="首次进入账号管理时再读取账号库，避免批量页首屏被账号资源阻塞。"
+          />
+        ) : null}
+
+        {activeLoginBanner ? (
+          <InlineNotice
+            tone={activeLoginBanner.tone}
+            eyebrow="登录流程提示"
+            icon={Sparkles}
+            title={activeLoginBanner.title}
+            description={activeLoginBanner.description}
+            actionLabel={activeLoginBanner.actionLabel}
+            onAction={activeLoginBanner.action}
+          />
+        ) : null}
+
+        <div className="manual-vnext-layout">
+          <aside className="manual-vnext-sidebar">
+            <AccountList
+              accounts={accounts}
+              selectedAccountId={selectedAccountId}
+              loading={accountsLoading}
+              onSelect={setSelectedAccountId}
+              onCreate={handleCreateLoginSession}
+              onDelete={(accountId) => {
+                const targetAccount = accounts.find((account) => account.accountId === accountId)
+                setAccountDeleteState({
+                  open: true,
+                  accountId,
+                  label: targetAccount?.nickname || accountId,
+                  loading: false
+                })
+              }}
             />
-          ) : null}
+          </aside>
 
-          {activeLoginBanner ? (
-            <InlineNotice
-              tone={activeLoginBanner.tone}
-              eyebrow="登录流程提示"
-              icon={Sparkles}
-              title={activeLoginBanner.title}
-              description={activeLoginBanner.description}
-              actionLabel={activeLoginBanner.actionLabel}
-              onAction={activeLoginBanner.action}
+          <main className="manual-vnext-main stack-lg">
+            <QueryForm
+              activeAccount={activeAccount}
+              loading={queryLoading}
+              onSubmit={handleQuery}
             />
-          ) : null}
 
-          <div className="workspace-layout manual-workspace-layout">
-            <aside className="workspace-sidebar">
-              <AccountList
-                accounts={accounts}
-                selectedAccountId={selectedAccountId}
-                loading={accountsLoading}
-                onSelect={setSelectedAccountId}
-                onCreate={handleCreateLoginSession}
-                onDelete={(accountId) => {
-                  const targetAccount = accounts.find((account) => account.accountId === accountId)
-                  setAccountDeleteState({
-                    open: true,
-                    accountId,
-                    label: targetAccount?.nickname || accountId,
-                    loading: false
-                  })
-                }}
-              />
-            </aside>
-
-            <main className="workspace-main stack-lg">
-              <QueryForm
-                activeAccount={activeAccount}
-                loading={queryLoading}
-                onSubmit={handleQuery}
-              />
-
-              <ResultPanel
-                result={queryResult}
-                error={queryError}
-                loading={queryLoading}
-                activeAccount={activeAccount}
-                onRetryLogin={handleCreateLoginSession}
-              />
-            </main>
-          </div>
-
+            <ResultPanel
+              result={queryResult}
+              error={queryError}
+              loading={queryLoading}
+              activeAccount={activeAccount}
+              onRetryLogin={handleCreateLoginSession}
+            />
+          </main>
         </div>
       </section>
 

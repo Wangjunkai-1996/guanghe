@@ -10,9 +10,15 @@ export function LoginForm({ loading, error, onSubmit }) {
 
   return (
     <div className="panel auth-card">
-      <div className="panel-header">
-        <h1>光合平台查询工具</h1>
-        <p>输入工具口令后，才能管理账号和发起查询。</p>
+      <div className="panel-header auth-card-header">
+        <span className="section-eyebrow">访问控制</span>
+        <h1>Guanghe</h1>
+        <p>输入工具口令后，才能管理账号、发起查询和推进批量任务。</p>
+      </div>
+      <div className="auth-card-meta" aria-hidden="true">
+        <span className="auth-card-meta-chip">批量闭环</span>
+        <span className="auth-card-meta-chip">账号管理</span>
+        <span className="auth-card-meta-chip">桌面控制台</span>
       </div>
       <form className="stack-md" onSubmit={handleSubmit}>
         <label className="field">
@@ -30,6 +36,7 @@ export function LoginForm({ loading, error, onSubmit }) {
           {loading ? '登录中...' : '登录工具'}
         </button>
       </form>
+      <p className="auth-card-footnote">当前状态：认证后进入桌面工作台。下一步：输入口令开始使用。</p>
     </div>
   )
 }

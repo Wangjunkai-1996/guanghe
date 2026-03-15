@@ -48,7 +48,7 @@ export function DiagnosticsPanel({ open, syncConfig, diagnostic, diagnosticPendi
               tone="info"
               eyebrow="排障延后执行"
               title="诊断尚未抢占首屏"
-              description="为了先稳定呈现英雄区、控制区和任务区，默认诊断会延后到空闲时启动；展开后仍可手动立即发起诊断。"
+              description="当前状态：诊断会延后到空闲时启动。下一步：需要立即排查时可手动发起诊断。"
             />
           ) : null}
           <TencentDocsDiagnosticPanel
